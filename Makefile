@@ -12,6 +12,9 @@ init-db:
 ingest:
 	$(PYTHON) -m scripts.ingest_historical
 
+ingest-current:
+	$(PYTHON) -m scripts.ingest_current
+
 price-par:
 	$(PYTHON) -m scripts.show_price_par
 

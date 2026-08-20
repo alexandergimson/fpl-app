@@ -9,6 +9,20 @@ from backend.models.price_par import ParPoint
 
 
 def upsert_players(con: sqlite3.Connection, season: str, players: pd.DataFrame, source: str, fetched_at: str) -> int:
+    teams = players.attrs.get("teams")
+    team_names = {}
+    if teams is not None and not teams.empty:
+        team_names = dict(zip(teams["id"], teams["short_name"]))
+        con.executemany(
+            """
+            INSERT OR REPLACE INTO teams (season, team_id, name, short_name, source, fetched_at, data_period)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (season, int(row.id), str(row.name), str(row.short_name), source, fetched_at, season)
+                for row in teams.itertuples(index=False)
+            ],
+        )
     rows = []
     for row in players.itertuples(index=False):
         data = row._asdict()
@@ -22,7 +36,7 @@ def upsert_players(con: sqlite3.Connection, season: str, players: pd.DataFrame, 
                 str(data.get("first_name") or ""),
                 str(data.get("second_name") or ""),
                 int(data["team"]) if pd.notna(data.get("team")) else None,
-                str(data.get("team_code") or data.get("team") or ""),
+                str(team_names.get(data.get("team")) or data.get("team_code") or data.get("team") or ""),
                 position,
                 float(data["now_cost"]) / 10,
                 int(data.get("total_points") or 0),

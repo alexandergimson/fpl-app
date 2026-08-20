@@ -31,6 +31,10 @@ article {
   padding: 16px;
 }
 
+.wide {
+  grid-column: 1 / -1;
+}
+
 table {
   border-collapse: collapse;
   font-size: 14px;
@@ -45,4 +49,14 @@ th, td {
 
 th:first-child, td:first-child {
   text-align: left;
+}
+
+.positive {
+  color: #047857;
+  font-weight: 700;
+}
+
+.negative {
+  color: #b91c1c;
+  font-weight: 700;
 }

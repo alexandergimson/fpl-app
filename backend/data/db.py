@@ -30,6 +30,17 @@ CREATE TABLE IF NOT EXISTS players (
   PRIMARY KEY (season, player_id)
 );
 
+CREATE TABLE IF NOT EXISTS teams (
+  season TEXT NOT NULL,
+  team_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  short_name TEXT NOT NULL,
+  source TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  data_period TEXT NOT NULL,
+  PRIMARY KEY (season, team_id)
+);
+
 CREATE TABLE IF NOT EXISTS price_par_points (
   season TEXT NOT NULL,
   source_season TEXT NOT NULL,
@@ -119,8 +130,10 @@ CREATE TABLE IF NOT EXISTS alerts (
 """
 
 
-def connect(path: Path = DB_PATH) -> sqlite3.Connection:
-    path.parent.mkdir(parents=True, exist_ok=True)
+def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
+    if path != ":memory:":
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(path)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)

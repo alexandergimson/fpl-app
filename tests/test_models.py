@@ -3,6 +3,8 @@ import unittest
 from backend.models.price_par import ParPoint, interpolate, pava
 from backend.models.projections import clean_sheet_ev, defcon_ev, expected_minutes
 from backend.services.valuation import player_status, selling_price
+from backend.services.boards import buy_board, infer_gameweeks
+from backend.data.db import connect
 
 
 class ModelTests(unittest.TestCase):
@@ -32,6 +34,31 @@ class ModelTests(unittest.TestCase):
     def test_status(self):
         self.assertEqual(player_status(0.8, 0.4, 0.9), "STRONG BUY")
         self.assertEqual(player_status(-0.6, -0.2, 0.8), "SELL")
+
+    def test_buy_board_uses_current_price(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 6.0, 4.0, 4.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Test', '', '', NULL, 'TST', 'MID',
+                  5.5, 40, 900, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            row = buy_board(con, "2026-27", "2026-27", 10, 1)[0]
+        self.assertEqual(row["value_par"], 4.0)
+
+    def test_preseason_bootstrap_totals_use_full_season_denominator(self):
+        rows = [{"total_points": 240}]
+        self.assertEqual(infer_gameweeks(rows, "2026-27", "2026-27"), 38)
 
 
 if __name__ == "__main__":

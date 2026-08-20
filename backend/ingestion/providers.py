@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+import json
 from urllib.request import urlopen
 
 import pandas as pd
@@ -43,5 +44,11 @@ class VaastavHistoricalProvider(HistoricalProvider):
 class OfficialFplProvider:
     def bootstrap(self, season: str = "2026-27") -> Dataset:
         with urlopen(FPL_BOOTSTRAP, timeout=30) as response:
-            data = pd.read_json(response)
-        return Dataset(data, FPL_BOOTSTRAP, datetime.now(timezone.utc).isoformat(), season)
+            payload = json.load(response)
+        fetched_at = datetime.now(timezone.utc).isoformat()
+        elements = pd.DataFrame(payload["elements"])
+        teams = pd.DataFrame(payload["teams"])
+        events = pd.DataFrame(payload["events"])
+        elements.attrs["teams"] = teams
+        elements.attrs["current_gameweek"] = int(events.loc[events["finished"], "id"].max()) if events["finished"].any() else 0
+        return Dataset(elements, FPL_BOOTSTRAP, fetched_at, season)

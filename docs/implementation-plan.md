@@ -18,7 +18,7 @@
 
 ## Phase 3: Dynamic Current-Price Par
 
-- Evaluate every current player against current price, not starting price.
+- Evaluate every current player against current price, not starting price. Implemented through Buy Board interpolation.
 - Blend historical and current-season curves with configured GW weights.
 - Keep confidence low when evaluating outside observed historical price ranges.
 
@@ -27,6 +27,7 @@
 - Start with transparent fixture components: appearance, goals, assists, clean sheets, DefCon, bonus, saves and cards.
 - Minutes are a veto through expected minutes and manual override history.
 - Keep each component inspectable on player detail.
+- V1 uses minutes-shrunk actual PPG until fixture and event ingestion are available.
 
 ## Phase 5: Team Strength And Fixtures
 

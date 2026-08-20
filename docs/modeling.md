@@ -21,6 +21,16 @@ points_per_team_gameweek = total_points / 38
 
 `points_per_90` remains a diagnostic, but does not drive squad valuation.
 
+## Projection V1
+
+The first Buy Board uses a deliberately plain projection:
+
+- actual PPG supplies current production
+- minutes confidence shrinks that production toward the position/price Market Mean
+- Next 3 and Next 6 are equal until fixture ingestion lands
+
+This is not pretending to be a finished predictive model; it gives the API/UI a working valuation path and keeps weak-minute samples from dominating the board.
+
 ## Provenance
 
 Imported rows store:
