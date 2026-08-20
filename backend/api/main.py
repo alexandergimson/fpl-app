@@ -7,6 +7,7 @@ except ImportError:  # pragma: no cover
 
 from backend.data.db import connect
 from backend.services.boards import breakout_board, buy_board, trap_board
+from backend.services.player_detail import player_detail
 from backend.services.squad import remove_squad_player, squad_analysis, upsert_squad_player
 from backend.services.tracking import snapshot_tracked, track_player, tracked_players, tracked_snapshots, untrack_player
 
@@ -46,6 +47,12 @@ if FastAPI:
                 (season, limit),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    @app.get("/players/{player_id}")
+    def get_player(player_id: int, season: str = "2026-27", par_season: str = "2026-27"):
+        with connect() as con:
+            detail = player_detail(con, season, player_id, par_season)
+        return detail or {}
 
     @app.get("/buy-board")
     def get_buy_board(

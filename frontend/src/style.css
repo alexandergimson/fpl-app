@@ -60,3 +60,26 @@ th:first-child, td:first-child {
   color: #b91c1c;
   font-weight: 700;
 }
+
+.link {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: #1d4ed8;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.metrics span {
+  border: 1px solid #d4d4d8;
+  border-radius: 6px;
+  padding: 6px 8px;
+}

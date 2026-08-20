@@ -41,3 +41,4 @@ The ingestion layer uses provider classes so future xG/xA/team-strength sources 
 - Trap Board: actual PPG above Value Par while forward expectation falls below par.
 - Tracked Players: saved players plus current valuation and immutable snapshots.
 - My Squad: owned players, selling price, hold delta, best replacement and transfer gain.
+- Player Detail: current valuation, recent gameweeks and tracked snapshots.

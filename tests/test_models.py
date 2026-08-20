@@ -10,6 +10,7 @@ from backend.services.history import future_points, player_totals_as_of
 from backend.backtests.metrics import evaluate_rows, mae, ranks, rmse, spearman
 from backend.services.tracking import snapshot_tracked, track_player, tracked_players, tracked_snapshots, untrack_player
 from backend.services.squad import remove_squad_player, squad_analysis, squad_verdict, upsert_squad_player
+from backend.services.player_detail import player_detail, recent_gameweeks
 
 
 class ModelTests(unittest.TestCase):
@@ -230,6 +231,36 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(row["best_replacement"], "Buy")
         self.assertGreater(row["transfer_gain"], 0)
         self.assertEqual(squad_verdict(0, 6), "SELL")
+
+    def test_player_detail_includes_recent_history(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Detail', '', '', 1, 'TST', 'MID',
+                  5.0, 10, 90, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2026-27', 1, 1, 1, 2, 1, 10, 90, 1, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'test', 'now', 'test')
+                """
+            )
+            detail = player_detail(con, "2026-27", 1)
+            recent = recent_gameweeks(con, "2026-27", 1)
+        self.assertEqual(detail["current"]["player"], "Detail")
+        self.assertEqual(recent[0]["total_points"], 10)
 
 
 if __name__ == "__main__":

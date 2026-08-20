@@ -13,6 +13,7 @@ type ParPoint = {
 };
 
 type BoardRow = {
+  player_id: number;
   player: string;
   team: string;
   position: string;
@@ -35,6 +36,12 @@ type BoardRow = {
   squad_verdict?: string;
 };
 
+type PlayerDetail = {
+  current: BoardRow;
+  recent_gameweeks: { gameweek: number; total_points: number; minutes: number; value: number }[];
+  tracked_snapshots: { gameweek: number; buy_delta: number; price: number }[];
+};
+
 function App() {
   const [points, setPoints] = useState<ParPoint[]>([]);
   const [board, setBoard] = useState<BoardRow[]>([]);
@@ -42,6 +49,7 @@ function App() {
   const [traps, setTraps] = useState<BoardRow[]>([]);
   const [tracked, setTracked] = useState<BoardRow[]>([]);
   const [squad, setSquad] = useState<BoardRow[]>([]);
+  const [detail, setDetail] = useState<PlayerDetail | null>(null);
 
   useEffect(() => {
     fetch("http://127.0.0.1:8000/price-par")
@@ -72,6 +80,13 @@ function App() {
 
   const positions = [...new Set(points.map((point) => point.position))];
 
+  function selectPlayer(row: BoardRow) {
+    fetch(`http://127.0.0.1:8000/players/${row.player_id}?season=2026-27`)
+      .then((response) => response.json())
+      .then(setDetail)
+      .catch(() => setDetail(null));
+  }
+
   return (
     <main>
       <header>
@@ -88,7 +103,7 @@ function App() {
             <tbody>
               {board.map((row) => (
                 <tr key={`${row.player}-${row.position}`}>
-                  <td>{row.player}</td>
+                  <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td>
                   <td>{row.position}</td>
                   <td>£{row.current_price.toFixed(1)}</td>
                   <td>{row.value_par.toFixed(2)}</td>
@@ -103,6 +118,34 @@ function App() {
             </tbody>
           </table>
         </article>
+        {detail?.current && (
+          <article className="wide">
+            <h2>{detail.current.player}</h2>
+            <div className="metrics">
+              <span>£{detail.current.current_price.toFixed(1)}</span>
+              <span>Par {detail.current.value_par.toFixed(2)}</span>
+              <span>Next 6 {detail.current.next_6_xppg.toFixed(2)}</span>
+              <span className={detail.current.buy_delta_6 >= 0 ? "positive" : "negative"}>Delta {detail.current.buy_delta_6.toFixed(2)}</span>
+              <span>{detail.current.status}</span>
+            </div>
+            <h3>Recent Gameweeks</h3>
+            <table>
+              <thead>
+                <tr><th>GW</th><th>Pts</th><th>Min</th><th>Price</th></tr>
+              </thead>
+              <tbody>
+                {detail.recent_gameweeks.map((row) => (
+                  <tr key={`gw-${row.gameweek}`}>
+                    <td>{row.gameweek}</td>
+                    <td>{row.total_points}</td>
+                    <td>{row.minutes}</td>
+                    <td>{row.value ? `£${row.value.toFixed(1)}` : "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </article>
+        )}
         <article>
           <h2>Breakouts</h2>
           <MiniBoard rows={breakouts} gapKey="breakout_gap" />
