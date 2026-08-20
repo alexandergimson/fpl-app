@@ -50,6 +50,8 @@ type BoardRow = {
   best_replacement?: string;
   transfer_gain?: number;
   squad_verdict?: string;
+  delta_momentum?: number;
+  tracking_status?: string;
 };
 
 type PlayerDetail = {
@@ -97,7 +99,7 @@ function App() {
     reason: "",
   });
 
-  useEffect(() => {
+  function loadData() {
     fetch("http://127.0.0.1:8000/price-par")
       .then((response) => response.json())
       .then(setPoints)
@@ -126,9 +128,14 @@ function App() {
       .then((response) => response.json())
       .then(setAlerts)
       .catch(() => setAlerts([]));
+  }
+
+  useEffect(() => {
+    loadData();
   }, []);
 
   const positions = [...new Set(points.map((point) => point.position))];
+  const trackedIds = useMemo(() => new Set(tracked.map((row) => row.player_id)), [tracked]);
   const boardPositions = ["ALL", ...[...new Set(board.map((row) => row.position))].sort()];
   const visibleBoard = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -183,6 +190,18 @@ function App() {
       .catch(() => undefined);
   }
 
+  function track(row: BoardRow) {
+    fetch(`http://127.0.0.1:8000/tracked-players/${row.player_id}?season=2026-27`, { method: "POST" })
+      .then(loadData)
+      .catch(() => undefined);
+  }
+
+  function untrack(row: BoardRow) {
+    fetch(`http://127.0.0.1:8000/tracked-players/${row.player_id}?season=2026-27`, { method: "DELETE" })
+      .then(loadData)
+      .catch(() => undefined);
+  }
+
   return (
     <main>
       <header>
@@ -226,6 +245,7 @@ function App() {
             <thead>
               <tr>
                 <th>Player</th>
+                <th></th>
                 <th>Pos</th>
                 <th><button className="sort" onClick={() => changeSort("current_price")}>Price</button></th>
                 <th>Par</th>
@@ -243,6 +263,13 @@ function App() {
               {visibleBoard.map((row) => (
                 <tr key={`${row.player}-${row.position}`}>
                   <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td>
+                  <td>
+                    {trackedIds.has(row.player_id) ? (
+                      <button className="action" onClick={() => untrack(row)}>Untrack</button>
+                    ) : (
+                      <button className="action" onClick={() => track(row)}>Track</button>
+                    )}
+                  </td>
                   <td>{row.position}</td>
                   <td>£{row.current_price.toFixed(1)}</td>
                   <td>{row.value_par.toFixed(2)}</td>
@@ -342,17 +369,20 @@ function App() {
           <h2>Tracked Players</h2>
           <table>
             <thead>
-              <tr><th>Player</th><th>Pos</th><th>Price</th><th>Par</th><th>Next 6</th><th>Delta</th><th>Status</th></tr>
+              <tr><th>Player</th><th></th><th>Pos</th><th>Price</th><th>Par</th><th>Next 6</th><th>Delta</th><th>Mom</th><th>Trend</th><th>Status</th></tr>
             </thead>
             <tbody>
               {tracked.map((row) => (
                 <tr key={`tracked-${row.player}-${row.position}`}>
                   <td>{row.player}</td>
+                  <td><button className="action" onClick={() => untrack(row)}>Untrack</button></td>
                   <td>{row.position}</td>
                   <td>£{row.current_price.toFixed(1)}</td>
                   <td>{row.value_par.toFixed(2)}</td>
                   <td>{row.next_6_xppg.toFixed(2)}</td>
                   <td className={row.buy_delta_6 >= 0 ? "positive" : "negative"}>{row.buy_delta_6.toFixed(2)}</td>
+                  <td className={(row.delta_momentum ?? 0) >= 0 ? "positive" : "negative"}>{(row.delta_momentum ?? 0).toFixed(2)}</td>
+                  <td>{row.tracking_status ?? "WATCH"}</td>
                   <td>{row.status}</td>
                 </tr>
               ))}

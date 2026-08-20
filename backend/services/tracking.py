@@ -25,11 +25,12 @@ def untrack_player(con: sqlite3.Connection, season: str, player_id: int) -> None
 def tracked_players(con: sqlite3.Connection, season: str, par_season: str = "2026-27") -> list[dict]:
     tracked = con.execute("SELECT player_id, note, tracked_at FROM tracked_players WHERE season = ?", (season,)).fetchall()
     rows = {row["player_id"]: row for row in buy_board(con, season, par_season, None, 2000)}
+    momentum = tracked_momentum(con, season)
     result = []
     for row in tracked:
         board_row = rows.get(row["player_id"])
         if board_row:
-            result.append(board_row | {"note": row["note"], "tracked_at": row["tracked_at"]})
+            result.append(board_row | {"note": row["note"], "tracked_at": row["tracked_at"]} | momentum.get(row["player_id"], {}))
     return sorted(result, key=lambda row: row["buy_delta_6"], reverse=True)
 
 
@@ -82,3 +83,40 @@ def tracked_snapshots(con: sqlite3.Connection, season: str, player_id: int) -> l
         (season, player_id),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def tracked_momentum(con: sqlite3.Connection, season: str) -> dict[int, dict]:
+    rows = con.execute(
+        """
+        SELECT player_id, gameweek, buy_delta, status
+        FROM tracked_snapshots
+        WHERE season = ?
+        ORDER BY player_id, gameweek DESC
+        """,
+        (season,),
+    ).fetchall()
+    by_player: dict[int, list[sqlite3.Row]] = {}
+    for row in rows:
+        by_player.setdefault(row["player_id"], []).append(row)
+    result = {}
+    for player_id, snapshots in by_player.items():
+        current = snapshots[0]
+        previous = snapshots[1] if len(snapshots) > 1 else None
+        delta = 0.0 if previous is None else current["buy_delta"] - previous["buy_delta"]
+        result[player_id] = {
+            "delta_momentum": round(delta, 2),
+            "tracking_status": tracking_status(current["buy_delta"], delta),
+        }
+    return result
+
+
+def tracking_status(buy_delta: float, delta_momentum: float) -> str:
+    if buy_delta >= 0.75 and delta_momentum >= 0:
+        return "IMPROVING"
+    if buy_delta >= 0.35:
+        return "BUY"
+    if delta_momentum <= -0.35:
+        return "DECLINING"
+    if abs(delta_momentum) < 0.1 and buy_delta >= 0:
+        return "FULLY PRICED"
+    return "WATCH"

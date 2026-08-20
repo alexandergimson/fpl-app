@@ -12,7 +12,7 @@ from backend.data.db import connect
 from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, upcoming_expected_opponent_goals, upcoming_fixture_factors
 from backend.services.history import future_points, player_totals_as_of
 from backend.backtests.metrics import evaluate_rows, mae, ranks, rmse, spearman
-from backend.services.tracking import snapshot_tracked, track_player, tracked_players, tracked_snapshots, untrack_player
+from backend.services.tracking import snapshot_tracked, track_player, tracked_momentum, tracked_players, tracked_snapshots, tracking_status, untrack_player
 from backend.services.squad import remove_squad_player, squad_analysis, squad_verdict, upsert_squad_player
 from backend.services.player_detail import player_detail, recent_gameweeks
 from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, list_alerts
@@ -243,6 +243,24 @@ class ModelTests(unittest.TestCase):
             self.assertEqual(len(tracked_snapshots(con, "2026-27", 1)), 1)
             untrack_player(con, "2026-27", 1)
             self.assertEqual(tracked_players(con, "2026-27"), [])
+
+    def test_tracked_momentum_uses_latest_two_snapshots(self):
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO tracked_snapshots (
+                  season, player_id, gameweek, price, market_mean, value_par,
+                  actual_ppg, neutral_xppg, next_3_xppg, next_6_xppg,
+                  buy_delta, ownership, start_probability, status
+                ) VALUES
+                ('2026-27', 1, 1, 5.0, 3.0, 3.5, 3.0, 3.2, 3.2, 3.2, 0.2, 10.0, 1.0, 'WATCH'),
+                ('2026-27', 1, 2, 5.0, 3.0, 3.5, 3.0, 4.0, 4.0, 4.0, 0.8, 10.0, 1.0, 'BUY')
+                """
+            )
+            momentum = tracked_momentum(con, "2026-27")
+        self.assertEqual(momentum[1]["delta_momentum"], 0.6)
+        self.assertEqual(momentum[1]["tracking_status"], "IMPROVING")
+        self.assertEqual(tracking_status(0.0, -0.4), "DECLINING")
 
     def test_squad_analysis_finds_replacement(self):
         with connect(":memory:") as con:

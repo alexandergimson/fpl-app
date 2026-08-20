@@ -116,6 +116,15 @@ th:first-child, td:first-child {
   padding: 0;
 }
 
+.action {
+  border: 1px solid #a1a1aa;
+  border-radius: 6px;
+  background: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  padding: 4px 8px;
+}
+
 .role-form {
   align-items: center;
   display: flex;
