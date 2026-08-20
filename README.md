@@ -7,11 +7,40 @@ Local-first Fantasy Premier League analytics for valuing players against positio
 ```bash
 make setup
 make ingest
+make ingest-current
 make price-par
 make test
 ```
 
 The app uses SQLite at `backend/data/fpl.sqlite`.
+
+## Launch The App
+
+Run the API in one terminal:
+
+```bash
+make dev
+```
+
+Run the dashboard in another terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:5173/`.
+
+## Daily Workflow
+
+```bash
+make ingest-current
+make snapshot-tracked
+make generate-alerts
+```
+
+Then review Data Status, Alerts, Buy Board, Tracked Players and My Squad in the dashboard.
 
 ## Commands
 

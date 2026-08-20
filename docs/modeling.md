@@ -3,9 +3,9 @@
 ## Assumptions In V1
 
 - 2025/26 is the historical prior because it includes defensive contribution scoring.
-- Historical Price Par currently uses season-end price from `players_raw.csv`; price-history curves can replace this once gameweek price snapshots are ingested.
+- Historical Price Par currently uses season-end price from `players_raw.csv`; current-season price snapshots are stored separately for movement tracking.
 - Sample sizes at premium prices are often thin, so curve points with low support are labelled `LOW`.
-- The first backtest command is a scaffold until merged gameweek ingestion is added.
+- Backtests use imported gameweek rows and only look at data available through the simulated deadline.
 
 ## Price Par
 
@@ -52,6 +52,8 @@ This is not pretending to be a finished predictive model; it gives the API/UI a 
 
 Player detail includes a v1 projection breakdown. It decomposes the current `next_6_xppg` into appearance, attacking, clean-sheet, bonus/other and fixture adjustment using fields already in the board row. This is explainability scaffolding, not a substitute for xG/xA/DefCon ingestion.
 
+Manual minutes overrides set start probability, expected starter minutes, substitute probability and substitute minutes. Boards use the latest override for projection minutes and player detail keeps the override history visible.
+
 ## Underlying Player Data
 
 Optional CSV ingestion stores player gameweek xG/xA rows in `player_underlying_gameweeks`.
@@ -94,6 +96,10 @@ Goalkeeper save EV uses `player_gameweeks.saves`, regressed toward the goalkeepe
 
 Buy Board rows expose raw `buy_delta_6` and `captain_adjusted_delta`. The captain adjustment is deliberately simple: players priced at £10.0m+ get a partial captaincy multiplier, and players priced at £12.0m+ get a larger one. This metric is visible but does not replace the primary Buy Board ranking.
 
+## Role Overrides
+
+Manual role overrides can mark penalties, direct free kicks, corners and indirect free kicks. The latest role override adds a conservative role xPPG boost and is shown in player detail.
+
 ## Projection Confidence
 
 Projection confidence combines minutes security, available underlying-data sample, role stability and FPL availability status. It still deliberately stays simple; injury/detail uncertainty can replace the coarse status factor when richer data is available.
@@ -102,6 +108,16 @@ Projection confidence combines minutes security, available underlying-data sampl
 
 Tracked-player momentum is `latest snapshot buy_delta - previous snapshot buy_delta`. The dashboard labels tracked players as improving, declining, fully priced, buy or watch from the latest delta and that one-step momentum.
 
+Alerts are generated from tracked snapshots and deduped by season, player, gameweek and alert kind. Current v1 alerts focus on large buy-delta movement and price movement.
+
+## Squad Valuation
+
+My Squad stores purchase price, current price and FPL selling price. Hold value uses the owned player's valuation against selling price, while transfer gain compares the owned player against the best affordable replacement by position. The dashboard shows next-3, next-6 and hit-adjusted gain.
+
+## Price Movements
+
+Official current ingest snapshots player prices into `price_history`. The dashboard reports latest price changes from those snapshots.
+
 ## Provenance
 
 Imported rows store:
@@ -109,6 +125,8 @@ Imported rows store:
 - `source`
 - `fetched_at`
 - `data_period`
+
+Data Status summarizes row counts, current gameweek and latest fetch timestamps for the core datasets so stale or missing inputs are visible before judging recommendations.
 
 ## Gameweek History
 

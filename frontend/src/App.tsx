@@ -108,6 +108,10 @@ type DataStatus = {
 
 type SortKey = "buy_delta_6" | "captain_adjusted_delta" | "opportunity_score" | "next_6_xppg" | "current_price" | "expected_minutes";
 
+function formatDate(value?: string | null) {
+  return value ? new Date(value).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" }) : "not loaded";
+}
+
 function App() {
   const [points, setPoints] = useState<ParPoint[]>([]);
   const [board, setBoard] = useState<BoardRow[]>([]);
@@ -383,7 +387,7 @@ function App() {
                 <div className="overview-item" key={source.key}>
                   <span>{source.label}</span>
                   <strong>{source.rows}</strong>
-                  <small>{source.fetched_at ?? "not loaded"}</small>
+                  <small>{formatDate(source.fetched_at)}</small>
                 </div>
               ))}
             </div>
@@ -403,10 +407,11 @@ function App() {
                 <tr key={alert.id}>
                   <td>{alert.kind}</td>
                   <td>{alert.message}</td>
-                  <td>{alert.created_at}</td>
+                  <td>{formatDate(alert.created_at)}</td>
                   <td><button className="action" onClick={() => acknowledgeAlert(alert)}>Ack</button></td>
                 </tr>
               ))}
+              {alerts.length === 0 && <tr><td colSpan={4}>No open alerts</td></tr>}
             </tbody>
           </table>
         </article>
@@ -427,6 +432,7 @@ function App() {
                   <td>{row.gameweek ?? "-"}</td>
                 </tr>
               ))}
+              {priceMovements.length === 0 && <tr><td colSpan={6}>No price movements yet</td></tr>}
             </tbody>
           </table>
         </article>
@@ -509,6 +515,7 @@ function App() {
                   <td>{row.status}</td>
                 </tr>
               ))}
+              {visibleBoard.length === 0 && <tr><td colSpan={14}>No players match these filters</td></tr>}
             </tbody>
           </table>
         </article>
@@ -623,6 +630,7 @@ function App() {
                     <td>{row.value ? `£${row.value.toFixed(1)}` : "-"}</td>
                   </tr>
                 ))}
+                {detail.recent_gameweeks.length === 0 && <tr><td colSpan={4}>No gameweek history yet</td></tr>}
               </tbody>
             </table>
           </article>
@@ -656,6 +664,7 @@ function App() {
                   <td>{row.status}</td>
                 </tr>
               ))}
+              {tracked.length === 0 && <tr><td colSpan={10}>No tracked players yet</td></tr>}
             </tbody>
           </table>
         </article>
@@ -725,6 +734,7 @@ function App() {
                   <td>{row.squad_verdict}</td>
                 </tr>
               ))}
+              {squad.length === 0 && <tr><td colSpan={12}>No squad players yet</td></tr>}
             </tbody>
           </table>
         </article>

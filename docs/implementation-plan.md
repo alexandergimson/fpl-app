@@ -67,5 +67,11 @@
 
 ## Phase 11: Polish And Documentation
 
-- Add focused tests for each modelling rule as it lands.
-- Keep assumptions documented in `docs/modeling.md`.
+- Focused tests cover the modelling and service rules added for v1.
+- `README.md` documents setup, launch commands and daily workflow.
+- `docs/modeling.md` documents v1 assumptions, projections, tracking, squad valuation, alerts and provenance.
+
+## Optional Post-V1
+
+- Replace optional CSV xG/xA imports with an automated provider when a reliable source is chosen.
+- Add deployment packaging if the app needs to run somewhere other than local dev.
