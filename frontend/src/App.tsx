@@ -42,6 +42,7 @@ type BoardRow = {
   minutes_confidence: string;
   minutes_override_reason?: string | null;
   fixture_factor_6: number;
+  ownership?: number | null;
   status: string;
   breakout_gap?: number;
   trap_gap?: number;
@@ -101,6 +102,12 @@ function App() {
   const [priceMovements, setPriceMovements] = useState<PriceMovement[]>([]);
   const [search, setSearch] = useState("");
   const [position, setPosition] = useState("ALL");
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
+  const [maxOwnership, setMaxOwnership] = useState("");
+  const [minBuyDelta, setMinBuyDelta] = useState("");
+  const [confidence, setConfidence] = useState("ALL");
+  const [trackedOnly, setTrackedOnly] = useState(false);
   const [bank, setBank] = useState(0);
   const [squadPlayerId, setSquadPlayerId] = useState("");
   const [purchasePrice, setPurchasePrice] = useState("");
@@ -163,14 +170,24 @@ function App() {
   const boardPositions = ["ALL", ...[...new Set(board.map((row) => row.position))].sort()];
   const visibleBoard = useMemo(() => {
     const query = search.trim().toLowerCase();
+    const min = Number(minPrice);
+    const max = Number(maxPrice);
+    const ownership = Number(maxOwnership);
+    const delta = Number(minBuyDelta);
     return board
       .filter((row) => position === "ALL" || row.position === position)
+      .filter((row) => !trackedOnly || trackedIds.has(row.player_id))
+      .filter((row) => !minPrice || row.current_price >= min)
+      .filter((row) => !maxPrice || row.current_price <= max)
+      .filter((row) => !maxOwnership || (row.ownership ?? 0) <= ownership)
+      .filter((row) => !minBuyDelta || row.buy_delta_6 >= delta)
+      .filter((row) => confidence === "ALL" || row.minutes_confidence === confidence)
       .filter((row) => !query || row.player.toLowerCase().includes(query) || row.team.toLowerCase().includes(query))
       .sort((a, b) => {
         const direction = sortDirection === "desc" ? -1 : 1;
         return (a[sortKey] - b[sortKey]) * direction;
       });
-  }, [board, position, search, sortDirection, sortKey]);
+  }, [board, confidence, maxOwnership, maxPrice, minBuyDelta, minPrice, position, search, sortDirection, sortKey, trackedIds, trackedOnly]);
   const recentTrend = useMemo(
     () => detail?.recent_gameweeks.map((row) => ({ ...row, price: row.value })) ?? [],
     [detail],
@@ -335,6 +352,20 @@ function App() {
                 <option key={option} value={option}>{option}</option>
               ))}
             </select>
+            <input aria-label="Minimum price" type="number" step="0.1" placeholder="Min £" value={minPrice} onChange={(event) => setMinPrice(event.target.value)} />
+            <input aria-label="Maximum price" type="number" step="0.1" placeholder="Max £" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} />
+            <input aria-label="Maximum ownership" type="number" step="0.1" placeholder="Max own %" value={maxOwnership} onChange={(event) => setMaxOwnership(event.target.value)} />
+            <input aria-label="Minimum buy delta" type="number" step="0.1" placeholder="Min delta" value={minBuyDelta} onChange={(event) => setMinBuyDelta(event.target.value)} />
+            <select aria-label="Minutes confidence filter" value={confidence} onChange={(event) => setConfidence(event.target.value)}>
+              <option value="ALL">All confidence</option>
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
+            </select>
+            <label className="check">
+              <input type="checkbox" checked={trackedOnly} onChange={(event) => setTrackedOnly(event.target.checked)} />
+              Tracked
+            </label>
           </div>
           <table>
             <thead>

@@ -127,7 +127,19 @@ th:first-child, td:first-child {
 }
 
 .toolbar input {
+  max-width: 240px;
+  min-width: 110px;
+}
+
+.toolbar input[aria-label="Search players"] {
   min-width: 240px;
+}
+
+.check {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  padding: 8px 0;
 }
 
 .sort {
