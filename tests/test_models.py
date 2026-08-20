@@ -6,6 +6,7 @@ from backend.models.projections import projection_breakdown
 import pandas as pd
 from backend.services.valuation import player_status, selling_price
 from backend.services.boards import breakout_board, buy_board, infer_gameweeks, trap_board
+from backend.services.bonus import bonus_rates, bonus_xppg
 from backend.data.db import connect
 from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, upcoming_expected_opponent_goals, upcoming_fixture_factors
 from backend.services.history import future_points, player_totals_as_of
@@ -53,6 +54,9 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(defcon_ev(2), 2)
         self.assertEqual(defcon_xppg("DEF", 90, 10, 0), 2)
         self.assertEqual(defcon_xppg("MID", 30, 0, 12), 1)
+
+    def test_bonus_xppg_scales_by_minutes(self):
+        self.assertEqual(bonus_xppg(45, 1.0), 0.5)
 
     def test_status(self):
         self.assertEqual(player_status(0.8, 0.4, 0.9), "STRONG BUY")
@@ -284,7 +288,7 @@ class ModelTests(unittest.TestCase):
     def test_projection_breakdown_sums_to_projection(self):
         row = {"position": "MID", "expected_minutes": 90, "neutral_xppg": 5.0, "actual_ppg": 4.0, "next_6_xppg": 5.2}
         breakdown = projection_breakdown(row)
-        total = sum(breakdown[key] for key in ("appearance_ev", "attacking_ev", "clean_sheet_ev", "defcon_ev", "bonus_other_ev", "fixture_adjustment"))
+        total = sum(breakdown[key] for key in ("appearance_ev", "attacking_ev", "clean_sheet_ev", "defcon_ev", "bonus_ev", "bonus_other_ev", "fixture_adjustment"))
         self.assertAlmostEqual(total, breakdown["fixture_xpts"])
 
     def test_underlying_import_rates_and_board_usage(self):
@@ -301,6 +305,17 @@ class ModelTests(unittest.TestCase):
                 )
                 """
             )
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2026-27', 1, 1, 1, 2, 1, 6, 90, 1, 0, 0, 0, 0, 0, 3, 0, NULL, NULL, NULL, 6.0, 'test', 'now', 'test')
+                """
+            )
             count = replace_player_underlying(
                 con,
                 "2026-27",
@@ -309,13 +324,16 @@ class ModelTests(unittest.TestCase):
                 "now",
             )
             rates = player_underlying_rates(con, "2026-27")
+            bonus = bonus_rates(con, "2026-27")
             row = buy_board(con, "2026-27", "2026-27", 10, 1)[0]
         self.assertEqual(count, 1)
         self.assertEqual(round(attacking_xppg("FWD", 90, 1, 0.5), 2), 5.5)
         self.assertEqual(round(rates[1]["xg90"], 2), 1.0)
         self.assertEqual(round(rates[1]["cbirt90"], 2), 12.0)
+        self.assertGreater(bonus[1], 0)
         self.assertEqual(row["xg90"], 1.0)
         self.assertEqual(row["defcon_xppg"], 2.0)
+        self.assertGreater(row["bonus_xppg"], 0)
 
     def test_role_override_boosts_board_projection(self):
         with connect(":memory:") as con:

@@ -82,6 +82,10 @@ Optional player-underlying CSV ingestion supports `cbit` and `cbirt`.
 
 DEF projections use `cbit` against the 10-action threshold. MID/FWD projections use `cbirt` against the 12-action threshold. The v1 probability is a capped rate-to-threshold estimate from per-90 actions, multiplied by expected 60-minute probability and capped at the +2 FPL points available per match.
 
+## Bonus
+
+Bonus EV uses `player_gameweeks.bonus` as a conservative bonus/90 rate regressed toward the player's positional average with a 900-minute prior. It appears as a separate projection component and is included in component-based projections when player underlying data is available.
+
 ## Provenance
 
 Imported rows store:
