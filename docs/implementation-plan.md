@@ -50,6 +50,7 @@
 - Breakout and Trap board API/UI slices are implemented from the same valuation rows as Buy Board; Breakout uses forward expectation until true xG/xA underlying data exists.
 - Tracked player API/UI slice is implemented with immutable per-gameweek snapshots.
 - My Squad API/UI slice is implemented with selling price, hold delta and best affordable replacement.
+- My Squad UI can add/remove players, enter purchase price and adjust bank for replacement budgets.
 - Player detail API/UI slice is implemented with valuation, recent gameweeks and tracked snapshots.
 - Dashboard alert generation is implemented for tracked-player snapshot changes.
 - Minutes override API is implemented and applied to board projections.

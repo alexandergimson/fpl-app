@@ -89,6 +89,9 @@ function App() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [search, setSearch] = useState("");
   const [position, setPosition] = useState("ALL");
+  const [bank, setBank] = useState(0);
+  const [squadPlayerId, setSquadPlayerId] = useState("");
+  const [purchasePrice, setPurchasePrice] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("buy_delta_6");
   const [sortDirection, setSortDirection] = useState<"desc" | "asc">("desc");
   const [roleForm, setRoleForm] = useState({
@@ -98,6 +101,13 @@ function App() {
     indirect_free_kicks: false,
     reason: "",
   });
+
+  function loadSquad(bankValue = bank) {
+    fetch(`http://127.0.0.1:8000/squad?season=2026-27&bank=${bankValue}`)
+      .then((response) => response.json())
+      .then(setSquad)
+      .catch(() => setSquad([]));
+  }
 
   function loadData() {
     fetch("http://127.0.0.1:8000/price-par")
@@ -120,10 +130,7 @@ function App() {
       .then((response) => response.json())
       .then(setTracked)
       .catch(() => setTracked([]));
-    fetch("http://127.0.0.1:8000/squad?season=2026-27")
-      .then((response) => response.json())
-      .then(setSquad)
-      .catch(() => setSquad([]));
+    loadSquad();
     fetch("http://127.0.0.1:8000/alerts?season=2026-27")
       .then((response) => response.json())
       .then(setAlerts)
@@ -136,6 +143,7 @@ function App() {
 
   const positions = [...new Set(points.map((point) => point.position))];
   const trackedIds = useMemo(() => new Set(tracked.map((row) => row.player_id)), [tracked]);
+  const squadIds = useMemo(() => new Set(squad.map((row) => row.player_id)), [squad]);
   const boardPositions = ["ALL", ...[...new Set(board.map((row) => row.position))].sort()];
   const visibleBoard = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -202,6 +210,28 @@ function App() {
       .catch(() => undefined);
   }
 
+  function addSquadPlayer(playerId: number, price: number) {
+    const params = new URLSearchParams({
+      season: "2026-27",
+      purchase_price: price.toString(),
+    });
+    fetch(`http://127.0.0.1:8000/squad/${playerId}?${params}`, { method: "POST" })
+      .then(() => loadSquad())
+      .catch(() => undefined);
+  }
+
+  function addSelectedSquadPlayer() {
+    const player = board.find((row) => row.player_id === Number(squadPlayerId));
+    if (!player) return;
+    addSquadPlayer(player.player_id, Number(purchasePrice || player.current_price));
+  }
+
+  function removeSquadPlayer(row: BoardRow) {
+    fetch(`http://127.0.0.1:8000/squad/${row.player_id}?season=2026-27`, { method: "DELETE" })
+      .then(() => loadSquad())
+      .catch(() => undefined);
+  }
+
   return (
     <main>
       <header>
@@ -246,6 +276,7 @@ function App() {
               <tr>
                 <th>Player</th>
                 <th></th>
+                <th></th>
                 <th>Pos</th>
                 <th><button className="sort" onClick={() => changeSort("current_price")}>Price</button></th>
                 <th>Par</th>
@@ -268,6 +299,13 @@ function App() {
                       <button className="action" onClick={() => untrack(row)}>Untrack</button>
                     ) : (
                       <button className="action" onClick={() => track(row)}>Track</button>
+                    )}
+                  </td>
+                  <td>
+                    {squadIds.has(row.player_id) ? (
+                      <button className="action" onClick={() => removeSquadPlayer(row)}>Remove</button>
+                    ) : (
+                      <button className="action" onClick={() => addSquadPlayer(row.player_id, row.current_price)}>Squad</button>
                     )}
                   </td>
                   <td>{row.position}</td>
@@ -391,14 +429,58 @@ function App() {
         </article>
         <article className="wide">
           <h2>My Squad</h2>
+          <div className="toolbar">
+            <select
+              aria-label="Squad player"
+              value={squadPlayerId}
+              onChange={(event) => {
+                const id = event.target.value;
+                const player = board.find((row) => row.player_id === Number(id));
+                setSquadPlayerId(id);
+                setPurchasePrice(player ? player.current_price.toFixed(1) : "");
+              }}
+            >
+              <option value="">Add player</option>
+              {board
+                .filter((row) => !squadIds.has(row.player_id))
+                .map((row) => (
+                  <option key={`squad-option-${row.player_id}`} value={row.player_id}>
+                    {row.player} {row.position} £{row.current_price.toFixed(1)}
+                  </option>
+                ))}
+            </select>
+            <input
+              aria-label="Purchase price"
+              type="number"
+              min="3.5"
+              step="0.1"
+              placeholder="Purchase price"
+              value={purchasePrice}
+              onChange={(event) => setPurchasePrice(event.target.value)}
+            />
+            <button className="action" onClick={addSelectedSquadPlayer}>Add</button>
+            <input
+              aria-label="Bank"
+              type="number"
+              min="0"
+              step="0.1"
+              value={bank}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                setBank(value);
+                loadSquad(value);
+              }}
+            />
+          </div>
           <table>
             <thead>
-              <tr><th>Player</th><th>Pos</th><th>Sell</th><th>Next 6</th><th>Hold</th><th>Replacement</th><th>Gain</th><th>Verdict</th></tr>
+              <tr><th>Player</th><th></th><th>Pos</th><th>Sell</th><th>Next 6</th><th>Hold</th><th>Replacement</th><th>Gain</th><th>Verdict</th></tr>
             </thead>
             <tbody>
               {squad.map((row) => (
                 <tr key={`squad-${row.player}-${row.position}`}>
                   <td>{row.player}</td>
+                  <td><button className="action" onClick={() => removeSquadPlayer(row)}>Remove</button></td>
                   <td>{row.position}</td>
                   <td>£{(row.selling_price ?? row.current_price).toFixed(1)}</td>
                   <td>{row.next_6_xppg.toFixed(2)}</td>
