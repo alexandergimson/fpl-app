@@ -2,6 +2,7 @@ import unittest
 
 from backend.models.price_par import ParPoint, interpolate, pava
 from backend.models.projections import clean_sheet_ev, defcon_ev, expected_minutes
+from backend.models.projections import projection_breakdown
 from backend.services.valuation import player_status, selling_price
 from backend.services.boards import breakout_board, buy_board, infer_gameweeks, trap_board
 from backend.data.db import connect
@@ -257,10 +258,17 @@ class ModelTests(unittest.TestCase):
                 ('2026-27', 1, 1, 1, 2, 1, 10, 90, 1, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'test', 'now', 'test')
                 """
             )
-            detail = player_detail(con, "2026-27", 1)
-            recent = recent_gameweeks(con, "2026-27", 1)
+        detail = player_detail(con, "2026-27", 1)
+        recent = recent_gameweeks(con, "2026-27", 1)
         self.assertEqual(detail["current"]["player"], "Detail")
+        self.assertIn("appearance_ev", detail["projection_breakdown"])
         self.assertEqual(recent[0]["total_points"], 10)
+
+    def test_projection_breakdown_sums_to_projection(self):
+        row = {"position": "MID", "expected_minutes": 90, "neutral_xppg": 5.0, "actual_ppg": 4.0, "next_6_xppg": 5.2}
+        breakdown = projection_breakdown(row)
+        total = sum(breakdown[key] for key in ("appearance_ev", "attacking_ev", "clean_sheet_ev", "bonus_other_ev", "fixture_adjustment"))
+        self.assertAlmostEqual(total, breakdown["fixture_xpts"])
 
 
 if __name__ == "__main__":

@@ -26,3 +26,25 @@ def confidence_label(score: float) -> str:
     if score >= 0.5:
         return "MEDIUM"
     return "LOW"
+
+
+def projection_breakdown(row: dict) -> dict[str, float]:
+    minutes_share = max(0.0, min(1.0, row["expected_minutes"] / 90))
+    appearance = min(2.0, 2.0 * minutes_share)
+    clean_sheet = 0.0
+    if row["position"] in {"GK", "DEF"}:
+        clean_sheet = max(0.0, row["neutral_xppg"] - row["actual_ppg"]) * 0.4
+    elif row["position"] == "MID":
+        clean_sheet = max(0.0, row["neutral_xppg"] - row["actual_ppg"]) * 0.1
+    fixture = row["next_6_xppg"] - row["neutral_xppg"]
+    remaining = row["neutral_xppg"] - appearance - clean_sheet
+    attacking = max(0.0, remaining * (0.75 if row["position"] != "GK" else 0.1))
+    bonus_other = row["neutral_xppg"] - appearance - clean_sheet - attacking
+    return {
+        "appearance_ev": round(appearance, 2),
+        "attacking_ev": round(attacking, 2),
+        "clean_sheet_ev": round(clean_sheet, 2),
+        "bonus_other_ev": round(bonus_other, 2),
+        "fixture_adjustment": round(fixture, 2),
+        "fixture_xpts": round(row["next_6_xppg"], 2),
+    }

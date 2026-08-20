@@ -38,6 +38,7 @@ type BoardRow = {
 
 type PlayerDetail = {
   current: BoardRow;
+  projection_breakdown: Record<string, number>;
   recent_gameweeks: { gameweek: number; total_points: number; minutes: number; value: number }[];
   tracked_snapshots: { gameweek: number; buy_delta: number; price: number }[];
 };
@@ -128,6 +129,17 @@ function App() {
               <span className={detail.current.buy_delta_6 >= 0 ? "positive" : "negative"}>Delta {detail.current.buy_delta_6.toFixed(2)}</span>
               <span>{detail.current.status}</span>
             </div>
+            <h3>Projection Breakdown</h3>
+            <table>
+              <tbody>
+                {Object.entries(detail.projection_breakdown).map(([key, value]) => (
+                  <tr key={key}>
+                    <td>{key.replaceAll("_", " ")}</td>
+                    <td>{value.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
             <h3>Recent Gameweeks</h3>
             <table>
               <thead>

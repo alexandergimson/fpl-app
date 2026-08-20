@@ -32,6 +32,8 @@ The first Buy Board uses a deliberately plain projection:
 
 This is not pretending to be a finished predictive model; it gives the API/UI a working valuation path and keeps weak-minute samples from dominating the board.
 
+Player detail includes a v1 projection breakdown. It decomposes the current `next_6_xppg` into appearance, attacking, clean-sheet, bonus/other and fixture adjustment using fields already in the board row. This is explainability scaffolding, not a substitute for xG/xA/DefCon ingestion.
+
 ## Provenance
 
 Imported rows store:
