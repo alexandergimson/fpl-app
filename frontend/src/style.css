@@ -1,21 +1,33 @@
 body {
   margin: 0;
-  background: #f7f7f4;
-  color: #18181b;
+  background: #eef3f0;
+  color: #17201d;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 main {
-  padding: 24px;
+  padding: 28px;
 }
 
 header {
-  border-bottom: 1px solid #d4d4d8;
-  margin-bottom: 20px;
+  background: #12382f;
+  border: 1px solid #225246;
+  border-radius: 8px;
+  color: #f6fff9;
+  margin-bottom: 18px;
+  padding: 20px 22px;
 }
 
 h1, h2, p {
   margin: 0 0 12px;
+}
+
+header p {
+  color: #c9eadc;
+}
+
+h2 {
+  color: #12382f;
 }
 
 .grid {
@@ -25,9 +37,10 @@ h1, h2, p {
 }
 
 article {
-  background: #ffffff;
-  border: 1px solid #d4d4d8;
+  background: #fbfdfb;
+  border: 1px solid #cad8d1;
   border-radius: 6px;
+  box-shadow: 0 10px 24px rgba(23, 32, 29, 0.06);
   padding: 16px;
 }
 
@@ -42,22 +55,33 @@ table {
 }
 
 th, td {
-  border-bottom: 1px solid #e4e4e7;
+  border-bottom: 1px solid #dbe5df;
   padding: 8px;
   text-align: right;
+}
+
+th {
+  background: #e7f1eb;
+  color: #31534a;
+  font-size: 12px;
+  text-transform: uppercase;
 }
 
 th:first-child, td:first-child {
   text-align: left;
 }
 
+tbody tr:hover {
+  background: #f2f8f5;
+}
+
 .positive {
-  color: #047857;
+  color: #087f5b;
   font-weight: 700;
 }
 
 .negative {
-  color: #b91c1c;
+  color: #c2410c;
   font-weight: 700;
 }
 
@@ -79,7 +103,8 @@ th:first-child, td:first-child {
 }
 
 .metrics span {
-  border: 1px solid #d4d4d8;
+  background: #f3faf6;
+  border: 1px solid #b9d8ca;
   border-radius: 6px;
   padding: 6px 8px;
 }
@@ -97,7 +122,9 @@ th:first-child, td:first-child {
 }
 
 .overview-item {
-  border: 1px solid #d4d4d8;
+  background: #ffffff;
+  border: 1px solid #cad8d1;
+  border-left: 4px solid #21a179;
   border-radius: 6px;
   display: grid;
   gap: 4px;
@@ -107,12 +134,13 @@ th:first-child, td:first-child {
 
 .overview-item span,
 .overview-item small {
-  color: #52525b;
+  color: #5b6b64;
   font-size: 12px;
 }
 
 .overview-item strong {
   font-size: 18px;
+  color: #17201d;
 }
 
 .toolbar {
@@ -127,8 +155,10 @@ th:first-child, td:first-child {
 .role-form input[type="number"],
 .role-form input[type="text"],
 .role-form input:not([type]) {
-  border: 1px solid #a1a1aa;
+  background: #ffffff;
+  border: 1px solid #a9bdb3;
   border-radius: 6px;
+  color: #17201d;
   font: inherit;
   padding: 8px 10px;
 }
@@ -153,7 +183,7 @@ th:first-child, td:first-child {
   appearance: none;
   background: transparent;
   border: 0;
-  color: inherit;
+  color: #0f766e;
   cursor: pointer;
   font: inherit;
   font-weight: 700;
@@ -161,12 +191,18 @@ th:first-child, td:first-child {
 }
 
 .action {
-  border: 1px solid #a1a1aa;
+  border: 1px solid #8fb2a4;
   border-radius: 6px;
   background: #ffffff;
+  color: #12382f;
   cursor: pointer;
   font: inherit;
   padding: 4px 8px;
+}
+
+.action:hover,
+.link:hover {
+  background: #e3f5ee;
 }
 
 .role-form {
@@ -185,9 +221,9 @@ th:first-child, td:first-child {
 }
 
 .role-form button {
-  border: 1px solid #18181b;
+  border: 1px solid #12382f;
   border-radius: 6px;
-  background: #18181b;
+  background: #12382f;
   color: #ffffff;
   cursor: pointer;
   font: inherit;
@@ -202,6 +238,6 @@ th:first-child, td:first-child {
 }
 
 .note {
-  color: #52525b;
+  color: #5b6b64;
   font-size: 14px;
 }
