@@ -336,6 +336,8 @@ class ModelTests(unittest.TestCase):
             remove_squad_player(con, "2026-27", 1)
         self.assertEqual(row["selling_price"], 4.9)
         self.assertEqual(row["best_replacement"], "Buy")
+        self.assertIn("transfer_gain_3", row)
+        self.assertAlmostEqual(row["hit_adjusted_gain"], row["transfer_gain"] - 4)
         self.assertGreater(row["transfer_gain"], 0)
         self.assertEqual(squad_verdict(0, 6), "SELL")
 

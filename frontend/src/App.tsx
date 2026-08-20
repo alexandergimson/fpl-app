@@ -21,6 +21,7 @@ type BoardRow = {
   value_par: number;
   actual_ppg: number;
   neutral_xppg: number;
+  next_3_xppg: number;
   next_6_xppg: number;
   buy_delta_6: number;
   captain_adjusted_delta: number;
@@ -49,7 +50,9 @@ type BoardRow = {
   selling_price?: number;
   hold_delta?: number;
   best_replacement?: string;
+  transfer_gain_3?: number;
   transfer_gain?: number;
+  hit_adjusted_gain?: number;
   squad_verdict?: string;
   delta_momentum?: number;
   tracking_status?: string;
@@ -602,7 +605,7 @@ function App() {
           </div>
           <table>
             <thead>
-              <tr><th>Player</th><th></th><th>Pos</th><th>Sell</th><th>Next 6</th><th>Hold</th><th>Replacement</th><th>Gain</th><th>Verdict</th></tr>
+              <tr><th>Player</th><th></th><th>Pos</th><th>Sell</th><th>Next 3</th><th>Next 6</th><th>Hold</th><th>Replacement</th><th>Gain 3</th><th>Gain 6</th><th>Hit</th><th>Verdict</th></tr>
             </thead>
             <tbody>
               {squad.map((row) => (
@@ -611,10 +614,13 @@ function App() {
                   <td><button className="action" onClick={() => removeSquadPlayer(row)}>Remove</button></td>
                   <td>{row.position}</td>
                   <td>£{(row.selling_price ?? row.current_price).toFixed(1)}</td>
+                  <td>{row.next_3_xppg.toFixed(2)}</td>
                   <td>{row.next_6_xppg.toFixed(2)}</td>
                   <td className={(row.hold_delta ?? 0) >= 0 ? "positive" : "negative"}>{(row.hold_delta ?? 0).toFixed(2)}</td>
                   <td>{row.best_replacement ?? "-"}</td>
+                  <td className={(row.transfer_gain_3 ?? 0) >= 0 ? "positive" : "negative"}>{(row.transfer_gain_3 ?? 0).toFixed(2)}</td>
                   <td className={(row.transfer_gain ?? 0) >= 0 ? "positive" : "negative"}>{(row.transfer_gain ?? 0).toFixed(2)}</td>
+                  <td className={(row.hit_adjusted_gain ?? 0) >= 0 ? "positive" : "negative"}>{(row.hit_adjusted_gain ?? 0).toFixed(2)}</td>
                   <td>{row.squad_verdict}</td>
                 </tr>
               ))}

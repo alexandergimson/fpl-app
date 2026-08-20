@@ -51,6 +51,7 @@
 - Tracked player API/UI slice is implemented with immutable per-gameweek snapshots.
 - My Squad API/UI slice is implemented with selling price, hold delta and best affordable replacement.
 - My Squad UI can add/remove players, enter purchase price and adjust bank for replacement budgets.
+- My Squad shows next-3, next-6 and hit-adjusted transfer gain.
 - Official current ingest stores price snapshots and the dashboard exposes recent price movements.
 - Dashboard overview summarizes top buy, breakout, trap, weakest squad spot, alerts and price moves.
 - Buy Board filters include price range, ownership, minimum delta, confidence and tracked-only.

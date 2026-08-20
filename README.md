@@ -48,7 +48,7 @@ Optional team-underlying CSV columns: `team_id`, `gameweek`, `xg`, `xga`, plus o
 - Breakout Board: forward xPPG above Value Par while actual PPG still lags.
 - Trap Board: actual PPG above Value Par while forward expectation falls below par.
 - Tracked Players: saved players plus current valuation and immutable snapshots.
-- My Squad: owned players, selling price, hold delta, best replacement and transfer gain.
+- My Squad: owned players, selling price, hold delta, best replacement, next-3/next-6 transfer gain and hit-adjusted gain.
 - Player Detail: current valuation, projection breakdown, recent gameweeks and tracked snapshots.
 - Price Movements: latest stored price changes from official ingest snapshots.
 - Alerts: generated events from tracked-player snapshot changes.

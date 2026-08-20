@@ -53,6 +53,7 @@ def squad_analysis(con: sqlite3.Connection, season: str, par_season: str = "2026
             and candidate["current_price"] <= budget
         ]
         replacement = replacements[0] if replacements else None
+        gain_3 = (replacement["next_3_xppg"] - player["next_3_xppg"]) * 3 if replacement else 0.0
         gain = (replacement["next_6_xppg"] - player["next_6_xppg"]) * 6 if replacement else 0.0
         hold_delta = player["next_6_xppg"] - player["market_mean"]
         result.append(
@@ -63,7 +64,9 @@ def squad_analysis(con: sqlite3.Connection, season: str, par_season: str = "2026
                 "hold_delta": round(hold_delta, 2),
                 "best_replacement": replacement["player"] if replacement else None,
                 "best_replacement_id": replacement["player_id"] if replacement else None,
+                "transfer_gain_3": round(gain_3, 2),
                 "transfer_gain": round(gain, 2),
+                "hit_adjusted_gain": round(gain - 4, 2),
                 "transfer_verdict": transfer_verdict(gain),
                 "squad_verdict": squad_verdict(hold_delta, gain),
             }
