@@ -31,6 +31,8 @@
 
 ## Phase 5: Team Strength And Fixtures
 
+- Official fixture ingestion is implemented.
+- V1 uses FPL fixture difficulty as a small fallback multiplier.
 - Use rolling team xG/xGA, split home/away where available.
 - Regress early-season values toward prior strength.
 - Keep FPL fixture difficulty as context, not the primary model input.

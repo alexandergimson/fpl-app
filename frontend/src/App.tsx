@@ -22,6 +22,7 @@ type BoardRow = {
   buy_delta_6: number;
   expected_minutes: number;
   minutes_confidence: string;
+  fixture_factor_6: number;
   status: string;
 };
 
@@ -53,7 +54,7 @@ function App() {
           <h2>Buy Board</h2>
           <table>
             <thead>
-              <tr><th>Player</th><th>Pos</th><th>Price</th><th>Par</th><th>Next 6</th><th>Delta</th><th>Min</th><th>Conf</th><th>Status</th></tr>
+              <tr><th>Player</th><th>Pos</th><th>Price</th><th>Par</th><th>Next 6</th><th>Delta</th><th>Fix</th><th>Min</th><th>Conf</th><th>Status</th></tr>
             </thead>
             <tbody>
               {board.map((row) => (
@@ -64,6 +65,7 @@ function App() {
                   <td>{row.value_par.toFixed(2)}</td>
                   <td>{row.next_6_xppg.toFixed(2)}</td>
                   <td className={row.buy_delta_6 >= 0 ? "positive" : "negative"}>{row.buy_delta_6.toFixed(2)}</td>
+                  <td>{row.fixture_factor_6.toFixed(2)}</td>
                   <td>{row.expected_minutes.toFixed(0)}</td>
                   <td>{row.minutes_confidence}</td>
                   <td>{row.status}</td>

@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 from backend.models.price_par import ParPoint, interpolate
+from backend.services.fixtures import adjusted_horizon_ppg, upcoming_fixture_factors
 from backend.services.valuation import player_status
 
 
@@ -30,7 +31,7 @@ def buy_board(con: sqlite3.Connection, season: str, par_season: str = "2026-27",
     par_points = load_par_points(con, par_season)
     rows = con.execute(
         """
-        SELECT player_id, web_name, team, position, current_price, total_points, minutes, ownership, status
+        SELECT player_id, web_name, team_id, team, position, current_price, total_points, minutes, ownership, status
         FROM players
         WHERE season = ?
         """,
@@ -43,8 +44,9 @@ def buy_board(con: sqlite3.Connection, season: str, par_season: str = "2026-27",
         actual_ppg = row["total_points"] / max(1, denominator)
         minutes_confidence = min(1.0, row["minutes"] / max(1, denominator * 90))
         neutral_xppg = actual_ppg * (0.35 + 0.65 * minutes_confidence) + market_mean * (1 - minutes_confidence) * 0.35
-        next_3_xppg = neutral_xppg
-        next_6_xppg = neutral_xppg
+        fixture_factors = upcoming_fixture_factors(con, season, row["team_id"], 6)
+        next_3_xppg = adjusted_horizon_ppg(neutral_xppg, fixture_factors, 3)
+        next_6_xppg = adjusted_horizon_ppg(neutral_xppg, fixture_factors, 6)
         buy_delta_3 = next_3_xppg - value_par
         buy_delta_6 = next_6_xppg - value_par
         confidence = min(1.0, 0.45 + minutes_confidence * 0.55)
@@ -66,6 +68,8 @@ def buy_board(con: sqlite3.Connection, season: str, par_season: str = "2026-27",
                 "expected_minutes": round(row["minutes"] / max(1, denominator), 1),
                 "start_probability": round(min(1.0, row["minutes"] / max(1, denominator * 60)), 2),
                 "minutes_confidence": "HIGH" if minutes_confidence >= 0.75 else "MEDIUM" if minutes_confidence >= 0.5 else "LOW",
+                "fixture_factor_3": round(sum((fixture_factors + [1.0, 1.0, 1.0])[:3]) / 3, 2),
+                "fixture_factor_6": round(sum((fixture_factors + [1.0] * 6)[:6]) / 6, 2),
                 "projection_confidence": round(confidence, 2),
                 "par_confidence": par_confidence,
                 "ownership": row["ownership"],

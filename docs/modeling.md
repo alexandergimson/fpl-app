@@ -27,7 +27,8 @@ The first Buy Board uses a deliberately plain projection:
 
 - actual PPG supplies current production
 - minutes confidence shrinks that production toward the position/price Market Mean
-- Next 3 and Next 6 are equal until fixture ingestion lands
+- official fixtures supply Next 3 and Next 6 horizons
+- FPL fixture difficulty applies a small temporary multiplier until rolling xG/xGA team strength lands
 
 This is not pretending to be a finished predictive model; it gives the API/UI a working valuation path and keeps weak-minute samples from dominating the board.
 

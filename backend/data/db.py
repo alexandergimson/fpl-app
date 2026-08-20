@@ -41,6 +41,30 @@ CREATE TABLE IF NOT EXISTS teams (
   PRIMARY KEY (season, team_id)
 );
 
+CREATE TABLE IF NOT EXISTS app_state (
+  season TEXT NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (season, key)
+);
+
+CREATE TABLE IF NOT EXISTS fixtures (
+  season TEXT NOT NULL,
+  fixture_id INTEGER NOT NULL,
+  gameweek INTEGER,
+  kickoff_time TEXT,
+  team_h INTEGER NOT NULL,
+  team_a INTEGER NOT NULL,
+  team_h_difficulty INTEGER NOT NULL,
+  team_a_difficulty INTEGER NOT NULL,
+  finished INTEGER NOT NULL DEFAULT 0,
+  source TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  data_period TEXT NOT NULL,
+  PRIMARY KEY (season, fixture_id)
+);
+
 CREATE TABLE IF NOT EXISTS price_par_points (
   season TEXT NOT NULL,
   source_season TEXT NOT NULL,

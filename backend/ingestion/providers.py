@@ -11,6 +11,7 @@ import pandas as pd
 
 RAW_BASE = "https://raw.githubusercontent.com/vaastav/Fantasy-Premier-League/master/data"
 FPL_BOOTSTRAP = "https://fantasy.premierleague.com/api/bootstrap-static/"
+FPL_FIXTURES = "https://fantasy.premierleague.com/api/fixtures/"
 
 
 @dataclass(frozen=True)
@@ -42,13 +43,31 @@ class VaastavHistoricalProvider(HistoricalProvider):
 
 
 class OfficialFplProvider:
+    def __init__(self, cache_dir: Path = Path("backend/data/raw")):
+        self.cache_dir = cache_dir
+
+    def _json(self, url: str, cache_name: str):
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        cached = self.cache_dir / cache_name
+        try:
+            with urlopen(url, timeout=60) as response:
+                payload = json.load(response)
+            cached.write_text(json.dumps(payload))
+            return payload, url, datetime.now(timezone.utc).isoformat()
+        except Exception:
+            if cached.exists():
+                return json.loads(cached.read_text()), str(cached), datetime.fromtimestamp(cached.stat().st_mtime, timezone.utc).isoformat()
+            raise
+
     def bootstrap(self, season: str = "2026-27") -> Dataset:
-        with urlopen(FPL_BOOTSTRAP, timeout=30) as response:
-            payload = json.load(response)
-        fetched_at = datetime.now(timezone.utc).isoformat()
+        payload, source, fetched_at = self._json(FPL_BOOTSTRAP, f"{season}-bootstrap.json")
         elements = pd.DataFrame(payload["elements"])
         teams = pd.DataFrame(payload["teams"])
         events = pd.DataFrame(payload["events"])
         elements.attrs["teams"] = teams
         elements.attrs["current_gameweek"] = int(events.loc[events["finished"], "id"].max()) if events["finished"].any() else 0
-        return Dataset(elements, FPL_BOOTSTRAP, fetched_at, season)
+        return Dataset(elements, source, fetched_at, season)
+
+    def fixtures(self, season: str = "2026-27") -> Dataset:
+        payload, source, fetched_at = self._json(FPL_FIXTURES, f"{season}-fixtures.json")
+        return Dataset(pd.DataFrame(payload), source, fetched_at, season)

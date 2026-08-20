@@ -19,7 +19,7 @@ The app uses SQLite at `backend/data/fpl.sqlite`.
 make setup      # create a local venv and install Python deps
 make init-db    # create SQLite schema
 make ingest     # ingest 2025/26 historical players and build 2026/27 Price Par prior
-make ingest-current # ingest current official FPL bootstrap data
+make ingest-current # ingest current official FPL bootstrap and fixtures
 make price-par  # print stored Price Par curves
 make backtest   # show walk-forward backtest scaffold
 make test       # run stdlib unit tests

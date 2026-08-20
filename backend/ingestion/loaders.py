@@ -99,3 +99,48 @@ def replace_price_par(
     )
     con.commit()
     return len(points)
+
+
+def replace_fixtures(con: sqlite3.Connection, season: str, fixtures: pd.DataFrame, source: str, fetched_at: str) -> int:
+    con.execute("DELETE FROM fixtures WHERE season = ?", (season,))
+    rows = []
+    for row in fixtures.itertuples(index=False):
+        data = row._asdict()
+        rows.append(
+            (
+                season,
+                int(data["id"]),
+                int(data["event"]) if pd.notna(data.get("event")) else None,
+                str(data.get("kickoff_time") or ""),
+                int(data["team_h"]),
+                int(data["team_a"]),
+                int(data["team_h_difficulty"]),
+                int(data["team_a_difficulty"]),
+                1 if data.get("finished") else 0,
+                source,
+                fetched_at,
+                season,
+            )
+        )
+    con.executemany(
+        """
+        INSERT INTO fixtures (
+          season, fixture_id, gameweek, kickoff_time, team_h, team_a,
+          team_h_difficulty, team_a_difficulty, finished, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    con.commit()
+    return len(rows)
+
+
+def set_state(con: sqlite3.Connection, season: str, key: str, value: str) -> None:
+    con.execute(
+        """
+        INSERT OR REPLACE INTO app_state (season, key, value, updated_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        """,
+        (season, key, value),
+    )
+    con.commit()
