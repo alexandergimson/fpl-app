@@ -3,7 +3,7 @@ import unittest
 from backend.models.price_par import ParPoint, interpolate, pava
 from backend.models.projections import clean_sheet_ev, defcon_ev, expected_minutes
 from backend.services.valuation import player_status, selling_price
-from backend.services.boards import buy_board, infer_gameweeks
+from backend.services.boards import breakout_board, buy_board, infer_gameweeks, trap_board
 from backend.data.db import connect
 from backend.services.fixtures import adjusted_horizon_ppg, upcoming_fixture_factors
 from backend.services.history import future_points, player_totals_as_of
@@ -123,6 +123,25 @@ class ModelTests(unittest.TestCase):
             )
             rows = buy_board(con, "2025-26", "2026-27", None, 10, as_of_gw=1)
         self.assertEqual([row["player"] for row in rows], ["Known"])
+
+    def test_breakout_and_trap_boards_filter_buy_board_rows(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES
+                ('2026-27', 1, NULL, 'Break', '', '', 1, 'TST', 'MID', 5.0, 35, 900, 10.0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 2, NULL, 'Trap', '', '', 1, 'TST', 'MID', 5.0, 50, 90, 10.0, 'a', 'test', 'now', 'test')
+                """
+            )
+            con.execute("INSERT INTO fixtures VALUES ('2026-27', 1, 1, '', 1, 2, 1, 5, 0, 'test', 'now', 'test')")
+            breakouts = breakout_board(con, "2026-27", "2026-27", 10, 10)
+            traps = trap_board(con, "2026-27", "2026-27", 10, 10)
+        self.assertEqual([row["player"] for row in breakouts], ["Break"])
+        self.assertEqual([row["player"] for row in traps], ["Trap"])
 
     def test_history_as_of_prevents_future_leakage(self):
         with connect(":memory:") as con:

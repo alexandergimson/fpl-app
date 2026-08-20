@@ -6,7 +6,7 @@ except ImportError:  # pragma: no cover
     FastAPI = None
 
 from backend.data.db import connect
-from backend.services.boards import buy_board
+from backend.services.boards import breakout_board, buy_board, trap_board
 
 
 if FastAPI:
@@ -55,6 +55,28 @@ if FastAPI:
     ):
         with connect() as con:
             return buy_board(con, season, par_season, gameweeks_played, limit, as_of_gw)
+
+    @app.get("/breakout-board")
+    def get_breakout_board(
+        season: str = "2026-27",
+        par_season: str = "2026-27",
+        gameweeks_played: int | None = None,
+        limit: int = 50,
+        as_of_gw: int | None = None,
+    ):
+        with connect() as con:
+            return breakout_board(con, season, par_season, gameweeks_played, limit, as_of_gw)
+
+    @app.get("/trap-board")
+    def get_trap_board(
+        season: str = "2026-27",
+        par_season: str = "2026-27",
+        gameweeks_played: int | None = None,
+        limit: int = 50,
+        as_of_gw: int | None = None,
+    ):
+        with connect() as con:
+            return trap_board(con, season, par_season, gameweeks_played, limit, as_of_gw)
 else:
     app = None
 

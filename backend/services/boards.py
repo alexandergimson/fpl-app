@@ -92,3 +92,37 @@ def buy_board(
             }
         )
     return sorted(board, key=lambda item: item["buy_delta_6"], reverse=True)[:limit]
+
+
+def breakout_board(
+    con: sqlite3.Connection,
+    season: str,
+    par_season: str = "2026-27",
+    gameweeks_played: int | None = None,
+    limit: int = 50,
+    as_of_gw: int | None = None,
+):
+    rows = buy_board(con, season, par_season, gameweeks_played, 2000, as_of_gw)
+    breakouts = [
+        row | {"breakout_gap": round(row["next_6_xppg"] - row["actual_ppg"], 2)}
+        for row in rows
+        if row["next_6_xppg"] > row["value_par"] and row["actual_ppg"] < row["next_6_xppg"]
+    ]
+    return sorted(breakouts, key=lambda row: (row["breakout_gap"], row["buy_delta_6"]), reverse=True)[:limit]
+
+
+def trap_board(
+    con: sqlite3.Connection,
+    season: str,
+    par_season: str = "2026-27",
+    gameweeks_played: int | None = None,
+    limit: int = 50,
+    as_of_gw: int | None = None,
+):
+    rows = buy_board(con, season, par_season, gameweeks_played, 2000, as_of_gw)
+    traps = [
+        row | {"trap_gap": round(row["actual_ppg"] - row["next_6_xppg"], 2)}
+        for row in rows
+        if row["actual_ppg"] > row["value_par"] and row["next_6_xppg"] < row["value_par"]
+    ]
+    return sorted(traps, key=lambda row: (row["trap_gap"], -row["buy_delta_6"]), reverse=True)[:limit]

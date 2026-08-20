@@ -18,17 +18,23 @@ type BoardRow = {
   position: string;
   current_price: number;
   value_par: number;
+  actual_ppg: number;
+  neutral_xppg: number;
   next_6_xppg: number;
   buy_delta_6: number;
   expected_minutes: number;
   minutes_confidence: string;
   fixture_factor_6: number;
   status: string;
+  breakout_gap?: number;
+  trap_gap?: number;
 };
 
 function App() {
   const [points, setPoints] = useState<ParPoint[]>([]);
   const [board, setBoard] = useState<BoardRow[]>([]);
+  const [breakouts, setBreakouts] = useState<BoardRow[]>([]);
+  const [traps, setTraps] = useState<BoardRow[]>([]);
 
   useEffect(() => {
     fetch("http://127.0.0.1:8000/price-par")
@@ -39,6 +45,14 @@ function App() {
       .then((response) => response.json())
       .then(setBoard)
       .catch(() => setBoard([]));
+    fetch("http://127.0.0.1:8000/breakout-board?season=2026-27&limit=10")
+      .then((response) => response.json())
+      .then(setBreakouts)
+      .catch(() => setBreakouts([]));
+    fetch("http://127.0.0.1:8000/trap-board?season=2026-27&limit=10")
+      .then((response) => response.json())
+      .then(setTraps)
+      .catch(() => setTraps([]));
   }, []);
 
   const positions = [...new Set(points.map((point) => point.position))];
@@ -73,6 +87,14 @@ function App() {
               ))}
             </tbody>
           </table>
+        </article>
+        <article>
+          <h2>Breakouts</h2>
+          <MiniBoard rows={breakouts} gapKey="breakout_gap" />
+        </article>
+        <article>
+          <h2>Traps</h2>
+          <MiniBoard rows={traps} gapKey="trap_gap" />
         </article>
         {positions.map((position) => {
           const rows = points.filter((point) => point.position === position);
@@ -109,6 +131,27 @@ function App() {
         })}
       </section>
     </main>
+  );
+}
+
+function MiniBoard({ rows, gapKey }: { rows: BoardRow[]; gapKey: "breakout_gap" | "trap_gap" }) {
+  return (
+    <table>
+      <thead>
+        <tr><th>Player</th><th>Pos</th><th>Actual</th><th>xPPG</th><th>Gap</th></tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={`${gapKey}-${row.player}-${row.position}`}>
+            <td>{row.player}</td>
+            <td>{row.position}</td>
+            <td>{row.actual_ppg?.toFixed(2)}</td>
+            <td>{row.neutral_xppg?.toFixed(2)}</td>
+            <td className={gapKey === "breakout_gap" ? "positive" : "negative"}>{(row[gapKey] ?? 0).toFixed(2)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

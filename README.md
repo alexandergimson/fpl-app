@@ -32,3 +32,9 @@ make dev        # run FastAPI after setup
 - Current data: official FPL API provider stub at `https://fantasy.premierleague.com/api/bootstrap-static/`.
 
 The ingestion layer uses provider classes so future xG/xA/team-strength sources can be added without rewriting the modelling layer.
+
+## Boards
+
+- Buy Board: ranked by Next 6 Buy Delta.
+- Breakout Board: forward xPPG above Value Par while actual PPG still lags.
+- Trap Board: actual PPG above Value Par while forward expectation falls below par.
