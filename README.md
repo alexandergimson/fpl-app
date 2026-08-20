@@ -40,3 +40,4 @@ The ingestion layer uses provider classes so future xG/xA/team-strength sources 
 - Breakout Board: forward xPPG above Value Par while actual PPG still lags.
 - Trap Board: actual PPG above Value Par while forward expectation falls below par.
 - Tracked Players: saved players plus current valuation and immutable snapshots.
+- My Squad: owned players, selling price, hold delta, best replacement and transfer gain.

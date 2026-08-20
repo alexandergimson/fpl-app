@@ -18,7 +18,7 @@ def selling_price(purchase_price: float, current_price: float) -> float:
     profit_tenths = round((current_price - purchase_price) * 10)
     if profit_tenths <= 0:
         return current_price
-    return purchase_price + (profit_tenths // 2) / 10
+    return round(purchase_price + (profit_tenths // 2) / 10, 1)
 
 
 def transfer_verdict(gain: float) -> str:

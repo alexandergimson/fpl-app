@@ -7,6 +7,7 @@ except ImportError:  # pragma: no cover
 
 from backend.data.db import connect
 from backend.services.boards import breakout_board, buy_board, trap_board
+from backend.services.squad import remove_squad_player, squad_analysis, upsert_squad_player
 from backend.services.tracking import snapshot_tracked, track_player, tracked_players, tracked_snapshots, untrack_player
 
 
@@ -106,6 +107,23 @@ if FastAPI:
     def get_tracked_snapshots(player_id: int, season: str = "2026-27"):
         with connect() as con:
             return tracked_snapshots(con, season, player_id)
+
+    @app.get("/squad")
+    def get_squad(season: str = "2026-27", par_season: str = "2026-27", bank: float = 0.0):
+        with connect() as con:
+            return squad_analysis(con, season, par_season, bank)
+
+    @app.post("/squad/{player_id}")
+    def post_squad_player(player_id: int, purchase_price: float, season: str = "2026-27", current_price: float | None = None):
+        with connect() as con:
+            upsert_squad_player(con, season, player_id, purchase_price, current_price)
+        return {"ok": True}
+
+    @app.delete("/squad/{player_id}")
+    def delete_squad_player(player_id: int, season: str = "2026-27"):
+        with connect() as con:
+            remove_squad_player(con, season, player_id)
+        return {"ok": True}
 else:
     app = None
 

@@ -28,6 +28,11 @@ type BoardRow = {
   status: string;
   breakout_gap?: number;
   trap_gap?: number;
+  selling_price?: number;
+  hold_delta?: number;
+  best_replacement?: string;
+  transfer_gain?: number;
+  squad_verdict?: string;
 };
 
 function App() {
@@ -36,6 +41,7 @@ function App() {
   const [breakouts, setBreakouts] = useState<BoardRow[]>([]);
   const [traps, setTraps] = useState<BoardRow[]>([]);
   const [tracked, setTracked] = useState<BoardRow[]>([]);
+  const [squad, setSquad] = useState<BoardRow[]>([]);
 
   useEffect(() => {
     fetch("http://127.0.0.1:8000/price-par")
@@ -58,6 +64,10 @@ function App() {
       .then((response) => response.json())
       .then(setTracked)
       .catch(() => setTracked([]));
+    fetch("http://127.0.0.1:8000/squad?season=2026-27")
+      .then((response) => response.json())
+      .then(setSquad)
+      .catch(() => setSquad([]));
   }, []);
 
   const positions = [...new Set(points.map((point) => point.position))];
@@ -117,6 +127,28 @@ function App() {
                   <td>{row.next_6_xppg.toFixed(2)}</td>
                   <td className={row.buy_delta_6 >= 0 ? "positive" : "negative"}>{row.buy_delta_6.toFixed(2)}</td>
                   <td>{row.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </article>
+        <article className="wide">
+          <h2>My Squad</h2>
+          <table>
+            <thead>
+              <tr><th>Player</th><th>Pos</th><th>Sell</th><th>Next 6</th><th>Hold</th><th>Replacement</th><th>Gain</th><th>Verdict</th></tr>
+            </thead>
+            <tbody>
+              {squad.map((row) => (
+                <tr key={`squad-${row.player}-${row.position}`}>
+                  <td>{row.player}</td>
+                  <td>{row.position}</td>
+                  <td>£{(row.selling_price ?? row.current_price).toFixed(1)}</td>
+                  <td>{row.next_6_xppg.toFixed(2)}</td>
+                  <td className={(row.hold_delta ?? 0) >= 0 ? "positive" : "negative"}>{(row.hold_delta ?? 0).toFixed(2)}</td>
+                  <td>{row.best_replacement ?? "-"}</td>
+                  <td className={(row.transfer_gain ?? 0) >= 0 ? "positive" : "negative"}>{(row.transfer_gain ?? 0).toFixed(2)}</td>
+                  <td>{row.squad_verdict}</td>
                 </tr>
               ))}
             </tbody>

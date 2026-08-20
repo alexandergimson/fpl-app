@@ -9,6 +9,7 @@ from backend.services.fixtures import adjusted_horizon_ppg, upcoming_fixture_fac
 from backend.services.history import future_points, player_totals_as_of
 from backend.backtests.metrics import evaluate_rows, mae, ranks, rmse, spearman
 from backend.services.tracking import snapshot_tracked, track_player, tracked_players, tracked_snapshots, untrack_player
+from backend.services.squad import remove_squad_player, squad_analysis, squad_verdict, upsert_squad_player
 
 
 class ModelTests(unittest.TestCase):
@@ -208,6 +209,27 @@ class ModelTests(unittest.TestCase):
             self.assertEqual(len(tracked_snapshots(con, "2026-27", 1)), 1)
             untrack_player(con, "2026-27", 1)
             self.assertEqual(tracked_players(con, "2026-27"), [])
+
+    def test_squad_analysis_finds_replacement(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES
+                ('2026-27', 1, NULL, 'Owned', '', '', 1, 'TST', 'MID', 5.0, 10, 900, 10.0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 2, NULL, 'Buy', '', '', 1, 'TST', 'MID', 5.0, 40, 900, 10.0, 'a', 'test', 'now', 'test')
+                """
+            )
+            upsert_squad_player(con, "2026-27", 1, 4.8, 5.0)
+            row = squad_analysis(con, "2026-27", bank=0.1)[0]
+            remove_squad_player(con, "2026-27", 1)
+        self.assertEqual(row["selling_price"], 4.9)
+        self.assertEqual(row["best_replacement"], "Buy")
+        self.assertGreater(row["transfer_gain"], 0)
+        self.assertEqual(squad_verdict(0, 6), "SELL")
 
 
 if __name__ == "__main__":
