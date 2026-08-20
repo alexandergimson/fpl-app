@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import "./style.css";
 
 type ParPoint = {
@@ -171,6 +171,11 @@ function App() {
         return (a[sortKey] - b[sortKey]) * direction;
       });
   }, [board, position, search, sortDirection, sortKey]);
+  const recentTrend = useMemo(
+    () => detail?.recent_gameweeks.map((row) => ({ ...row, price: row.value })) ?? [],
+    [detail],
+  );
+  const snapshotTrend = useMemo(() => detail?.tracked_snapshots ?? [], [detail]);
 
   function selectPlayer(row: BoardRow) {
     fetch(`http://127.0.0.1:8000/players/${row.player_id}?season=2026-27`)
@@ -402,6 +407,38 @@ function App() {
             {detail.role_history.length > 0 && (
               <p className="note">Latest: {detail.role_history[0].reason}</p>
             )}
+            <div className="chart-grid">
+              {recentTrend.length > 0 && (
+                <div>
+                  <h3>Recent Points And Minutes</h3>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <LineChart data={recentTrend}>
+                      <XAxis dataKey="gameweek" />
+                      <YAxis />
+                      <Tooltip />
+                      <Legend />
+                      <Line type="monotone" dataKey="total_points" name="Points" stroke="#2563eb" />
+                      <Line type="monotone" dataKey="minutes" name="Minutes" stroke="#16a34a" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+              {snapshotTrend.length > 0 && (
+                <div>
+                  <h3>Tracked Delta And Price</h3>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <LineChart data={snapshotTrend}>
+                      <XAxis dataKey="gameweek" />
+                      <YAxis />
+                      <Tooltip />
+                      <Legend />
+                      <Line type="monotone" dataKey="buy_delta" name="Buy Delta" stroke="#b91c1c" />
+                      <Line type="monotone" dataKey="price" name="Price" stroke="#7c3aed" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
             <h3>Projection Breakdown</h3>
             <table>
               <tbody>

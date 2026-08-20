@@ -53,6 +53,7 @@
 - My Squad UI can add/remove players, enter purchase price and adjust bank for replacement budgets.
 - Official current ingest stores price snapshots and the dashboard exposes recent price movements.
 - Player detail API/UI slice is implemented with valuation, recent gameweeks and tracked snapshots.
+- Player detail shows recent gameweek and tracked-snapshot trend charts.
 - Dashboard alert generation is implemented for tracked-player snapshot changes.
 - Minutes override API is implemented and applied to board projections.
 - Tracked snapshots are immutable by gameweek.

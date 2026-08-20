@@ -150,6 +150,13 @@ th:first-child, td:first-child {
   padding: 8px 10px;
 }
 
+.chart-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  margin-bottom: 16px;
+}
+
 .note {
   color: #52525b;
   font-size: 14px;
