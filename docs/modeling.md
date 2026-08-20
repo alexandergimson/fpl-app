@@ -86,6 +86,10 @@ DEF projections use `cbit` against the 10-action threshold. MID/FWD projections 
 
 Bonus EV uses `player_gameweeks.bonus` as a conservative bonus/90 rate regressed toward the player's positional average with a 900-minute prior. It appears as a separate projection component and is included in component-based projections when player underlying data is available.
 
+## Goalkeepers
+
+Goalkeeper save EV uses `player_gameweeks.saves`, regressed toward the goalkeeper average with a 900-minute prior. Projected saves convert to FPL save points at one point per three saves and appear as a separate player-detail component.
+
 ## Provenance
 
 Imported rows store:

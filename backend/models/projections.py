@@ -46,15 +46,17 @@ def projection_breakdown(row: dict) -> dict[str, float]:
     fixture = row["next_6_xppg"] - row["neutral_xppg"]
     defcon = row.get("defcon_xppg", 0.0)
     bonus = row.get("bonus_xppg", 0.0)
-    remaining = row["neutral_xppg"] - appearance - clean_sheet - defcon - bonus
+    saves = row.get("save_xppg", 0.0)
+    remaining = row["neutral_xppg"] - appearance - clean_sheet - defcon - bonus - saves
     attacking = max(0.0, remaining * (0.75 if row["position"] != "GK" else 0.1))
-    bonus_other = row["neutral_xppg"] - appearance - clean_sheet - defcon - bonus - attacking
+    bonus_other = row["neutral_xppg"] - appearance - clean_sheet - defcon - bonus - saves - attacking
     return {
         "appearance_ev": round(appearance, 2),
         "attacking_ev": round(attacking, 2),
         "clean_sheet_ev": round(clean_sheet, 2),
         "defcon_ev": round(defcon, 2),
         "bonus_ev": round(bonus, 2),
+        "save_ev": round(saves, 2),
         "bonus_other_ev": round(bonus_other, 2),
         "fixture_adjustment": round(fixture, 2),
         "fixture_xpts": round(row["next_6_xppg"], 2),

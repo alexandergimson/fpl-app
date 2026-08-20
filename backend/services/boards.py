@@ -6,6 +6,7 @@ from backend.models.price_par import ParPoint
 from backend.models.projections import role_xppg
 from backend.services.bonus import bonus_rates, bonus_xppg
 from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, upcoming_expected_opponent_goals, upcoming_fixture_factors
+from backend.services.goalkeepers import save_rates, save_xppg
 from backend.services.history import player_totals_as_of
 from backend.services.minutes import latest_minutes_overrides
 from backend.services.price_par import blended_par_for, current_curve_points
@@ -53,6 +54,7 @@ def buy_board(
     as_of_totals = player_totals_as_of(con, season, as_of_gw) if as_of_gw is not None else {}
     underlying = player_underlying_rates(con, season, as_of_gw)
     bonus90_by_player = bonus_rates(con, season, as_of_gw)
+    saves90_by_player = save_rates(con, season, as_of_gw)
     overrides = latest_minutes_overrides(con, season)
     roles = latest_role_overrides(con, season)
     current_par_points = current_curve_points(con, season, as_of_gw) if as_of_gw is not None else None
@@ -84,11 +86,12 @@ def buy_board(
             minutes_confidence = max(minutes_confidence, 0.75)
         rates = underlying.get(row["player_id"])
         bonus = bonus_xppg(expected_minutes, bonus90_by_player.get(row["player_id"], 0.0))
+        saves = save_xppg(row["position"], expected_minutes, saves90_by_player.get(row["player_id"], 0.0))
         if rates:
             appearance = min(2.0, 2.0 * expected_minutes / 90)
             attack = attacking_xppg(row["position"], expected_minutes, rates["xg90"], rates["xa90"])
             defcon = defcon_xppg(row["position"], expected_minutes, rates["cbit90"], rates["cbirt90"])
-            neutral_xppg = max(neutral_xppg * 0.5, appearance + attack + defcon + bonus + max(0.0, market_mean - 2.0) * 0.25)
+            neutral_xppg = max(neutral_xppg * 0.5, appearance + attack + defcon + bonus + saves + max(0.0, market_mean - 2.0) * 0.25)
         else:
             defcon = 0.0
         role = roles.get(row["player_id"])
@@ -130,6 +133,7 @@ def buy_board(
                 "clean_sheet_xppg_6": round(clean_sheet_6, 2),
                 "defcon_xppg": round(defcon, 2),
                 "bonus_xppg": round(bonus, 2),
+                "save_xppg": round(saves, 2),
                 "expected_opponent_goals_6": round(sum((opponent_goals + [1.35] * 6)[:6]) / 6, 2),
                 "role_override_reason": role["reason"] if role else None,
                 **{key: role[key] if role else 0 for key in ROLE_KEYS},

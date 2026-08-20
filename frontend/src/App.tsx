@@ -31,6 +31,7 @@ type BoardRow = {
   clean_sheet_xppg_6: number;
   defcon_xppg: number;
   bonus_xppg: number;
+  save_xppg: number;
   expected_opponent_goals_6: number;
   penalties: number;
   direct_free_kicks: number;
@@ -268,6 +269,7 @@ function App() {
               {detail.current.clean_sheet_xppg_6 > 0 && <span>CS {detail.current.clean_sheet_xppg_6.toFixed(2)}</span>}
               {detail.current.defcon_xppg > 0 && <span>DefCon {detail.current.defcon_xppg.toFixed(2)}</span>}
               {detail.current.bonus_xppg > 0 && <span>Bonus {detail.current.bonus_xppg.toFixed(2)}</span>}
+              {detail.current.save_xppg > 0 && <span>Saves {detail.current.save_xppg.toFixed(2)}</span>}
               {detail.current.expected_opponent_goals_6 > 0 && <span>Opp xG {detail.current.expected_opponent_goals_6.toFixed(2)}</span>}
               <span className={detail.current.buy_delta_6 >= 0 ? "positive" : "negative"}>Delta {detail.current.buy_delta_6.toFixed(2)}</span>
               <span>{detail.current.status}</span>

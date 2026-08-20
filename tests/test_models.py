@@ -7,6 +7,7 @@ import pandas as pd
 from backend.services.valuation import player_status, selling_price
 from backend.services.boards import breakout_board, buy_board, infer_gameweeks, trap_board
 from backend.services.bonus import bonus_rates, bonus_xppg
+from backend.services.goalkeepers import save_rates, save_xppg
 from backend.data.db import connect
 from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, upcoming_expected_opponent_goals, upcoming_fixture_factors
 from backend.services.history import future_points, player_totals_as_of
@@ -57,6 +58,10 @@ class ModelTests(unittest.TestCase):
 
     def test_bonus_xppg_scales_by_minutes(self):
         self.assertEqual(bonus_xppg(45, 1.0), 0.5)
+
+    def test_save_xppg_only_applies_to_goalkeepers(self):
+        self.assertEqual(save_xppg("GK", 90, 3), 1)
+        self.assertEqual(save_xppg("DEF", 90, 3), 0)
 
     def test_status(self):
         self.assertEqual(player_status(0.8, 0.4, 0.9), "STRONG BUY")
@@ -288,8 +293,38 @@ class ModelTests(unittest.TestCase):
     def test_projection_breakdown_sums_to_projection(self):
         row = {"position": "MID", "expected_minutes": 90, "neutral_xppg": 5.0, "actual_ppg": 4.0, "next_6_xppg": 5.2}
         breakdown = projection_breakdown(row)
-        total = sum(breakdown[key] for key in ("appearance_ev", "attacking_ev", "clean_sheet_ev", "defcon_ev", "bonus_ev", "bonus_other_ev", "fixture_adjustment"))
+        total = sum(breakdown[key] for key in ("appearance_ev", "attacking_ev", "clean_sheet_ev", "defcon_ev", "bonus_ev", "save_ev", "bonus_other_ev", "fixture_adjustment"))
         self.assertAlmostEqual(total, breakdown["fixture_xpts"])
+
+    def test_goalkeeper_save_history_reaches_board(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "GK", 4.5, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Save Man', '', '', 1, 'TST', 'GK',
+                  4.5, 10, 90, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2026-27', 1, 1, 1, 2, 1, 6, 90, 1, 0, 0, 0, 0, 6, 0, 0, NULL, NULL, NULL, 4.5, 'test', 'now', 'test')
+                """
+            )
+            rates = save_rates(con, "2026-27")
+            row = buy_board(con, "2026-27", "2026-27", 1, 1)[0]
+        self.assertGreater(rates[1], 0)
+        self.assertGreater(row["save_xppg"], 0)
 
     def test_underlying_import_rates_and_board_usage(self):
         with connect(":memory:") as con:
