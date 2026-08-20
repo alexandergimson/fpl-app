@@ -4,7 +4,7 @@ from backend.models.price_par import ParPoint, interpolate, pava
 from backend.models.projections import clean_sheet_ev, defcon_ev, expected_minutes, role_xppg
 from backend.models.projections import projection_breakdown
 import pandas as pd
-from backend.services.valuation import captain_adjusted_delta, captaincy_weight, player_status, selling_price
+from backend.services.valuation import captain_adjusted_delta, captaincy_weight, player_status, projection_confidence, selling_price
 from backend.services.boards import breakout_board, buy_board, infer_gameweeks, trap_board
 from backend.services.bonus import bonus_rates, bonus_xppg
 from backend.services.goalkeepers import save_rates, save_xppg
@@ -45,6 +45,12 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(captaincy_weight(9.5), 0.0)
         self.assertEqual(captaincy_weight(10.0), 0.35)
         self.assertAlmostEqual(captain_adjusted_delta(6.0, 5.0, 12.0), 4.6)
+
+    def test_projection_confidence_combines_sample_and_availability(self):
+        high = projection_confidence(1.0, 900, "a", True)
+        low = projection_confidence(0.2, 0, "i", False)
+        self.assertGreater(high, low)
+        self.assertLessEqual(high, 1.0)
 
     def test_expected_minutes(self):
         self.assertAlmostEqual(expected_minutes(0.8, 75, 0.15, 20), 63)

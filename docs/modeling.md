@@ -94,6 +94,10 @@ Goalkeeper save EV uses `player_gameweeks.saves`, regressed toward the goalkeepe
 
 Buy Board rows expose raw `buy_delta_6` and `captain_adjusted_delta`. The captain adjustment is deliberately simple: players priced at £10.0m+ get a partial captaincy multiplier, and players priced at £12.0m+ get a larger one. This metric is visible but does not replace the primary Buy Board ranking.
 
+## Projection Confidence
+
+Projection confidence combines minutes security, available underlying-data sample, role stability and FPL availability status. It still deliberately stays simple; injury/detail uncertainty can replace the coarse status factor when richer data is available.
+
 ## Tracking Momentum
 
 Tracked-player momentum is `latest snapshot buy_delta - previous snapshot buy_delta`. The dashboard labels tracked players as improving, declining, fully priced, buy or watch from the latest delta and that one-step momentum.

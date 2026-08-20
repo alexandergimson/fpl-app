@@ -41,3 +41,10 @@ def captaincy_weight(current_price: float) -> float:
 
 def captain_adjusted_delta(next_xppg: float, value_par: float, current_price: float) -> float:
     return next_xppg * (1 + captaincy_weight(current_price)) - value_par
+
+
+def projection_confidence(minutes_confidence: float, underlying_minutes: float, status: str, has_role_override: bool) -> float:
+    sample_confidence = min(1.0, underlying_minutes / 900) if underlying_minutes else 0.4
+    role_confidence = 0.85 if has_role_override else 0.7
+    availability = 1.0 if status == "a" else 0.55 if status in {"d", "i"} else 0.75
+    return max(0.0, min(1.0, minutes_confidence * 0.45 + sample_confidence * 0.25 + role_confidence * 0.15 + availability * 0.15))

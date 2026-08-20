@@ -12,7 +12,7 @@ from backend.services.minutes import latest_minutes_overrides
 from backend.services.price_par import blended_par_for, current_curve_points
 from backend.services.roles import ROLE_KEYS, latest_role_overrides
 from backend.services.underlying import attacking_xppg, defcon_xppg, player_underlying_rates
-from backend.services.valuation import captain_adjusted_delta, player_status
+from backend.services.valuation import captain_adjusted_delta, player_status, projection_confidence
 
 
 def load_par_points(con: sqlite3.Connection, season: str) -> list[ParPoint]:
@@ -108,7 +108,7 @@ def buy_board(
         buy_delta_3 = next_3_xppg - value_par
         buy_delta_6 = next_6_xppg - value_par
         captain_delta = captain_adjusted_delta(next_6_xppg, value_par, price)
-        confidence = min(1.0, 0.45 + minutes_confidence * 0.55)
+        confidence = projection_confidence(minutes_confidence, rates["underlying_minutes"] if rates else 0, row["status"], role is not None)
         opportunity_score = buy_delta_6 * minutes_confidence * confidence
         board.append(
             {
