@@ -100,6 +100,12 @@ type PriceMovement = {
   gameweek?: number | null;
 };
 
+type DataStatus = {
+  season: string;
+  current_gameweek?: number | null;
+  sources: { key: string; label: string; rows: number; fetched_at?: string | null; data_period?: string | null }[];
+};
+
 type SortKey = "buy_delta_6" | "captain_adjusted_delta" | "opportunity_score" | "next_6_xppg" | "current_price" | "expected_minutes";
 
 function App() {
@@ -112,6 +118,7 @@ function App() {
   const [detail, setDetail] = useState<PlayerDetail | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [priceMovements, setPriceMovements] = useState<PriceMovement[]>([]);
+  const [dataStatus, setDataStatus] = useState<DataStatus | null>(null);
   const [search, setSearch] = useState("");
   const [position, setPosition] = useState("ALL");
   const [minPrice, setMinPrice] = useState("");
@@ -181,6 +188,10 @@ function App() {
       .then((response) => response.json())
       .then(setPriceMovements)
       .catch(() => setPriceMovements([]));
+    fetch("http://127.0.0.1:8000/data-status?season=2026-27")
+      .then((response) => response.json())
+      .then(setDataStatus)
+      .catch(() => setDataStatus(null));
   }
 
   useEffect(() => {
@@ -359,6 +370,25 @@ function App() {
             ))}
           </div>
         </article>
+        {dataStatus && (
+          <article className="wide">
+            <h2>Data Status</h2>
+            <div className="status-grid">
+              <div className="overview-item">
+                <span>Season</span>
+                <strong>{dataStatus.season}</strong>
+                <small>GW {dataStatus.current_gameweek ?? "-"}</small>
+              </div>
+              {dataStatus.sources.map((source) => (
+                <div className="overview-item" key={source.key}>
+                  <span>{source.label}</span>
+                  <strong>{source.rows}</strong>
+                  <small>{source.fetched_at ?? "not loaded"}</small>
+                </div>
+              ))}
+            </div>
+          </article>
+        )}
         <article className="wide">
           <h2>Alerts</h2>
           <div className="toolbar">

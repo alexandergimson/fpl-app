@@ -14,6 +14,7 @@ from backend.services.player_detail import player_detail
 from backend.services.prices import price_movements
 from backend.services.roles import add_role_override, role_history
 from backend.services.squad import remove_squad_player, squad_analysis, upsert_squad_player
+from backend.services.status import data_status
 from backend.services.tracking import snapshot_tracked, track_player, tracked_players, tracked_snapshots, untrack_player
 
 
@@ -29,6 +30,11 @@ if FastAPI:
     @app.get("/health")
     def health():
         return {"ok": True}
+
+    @app.get("/data-status")
+    def get_data_status(season: str = "2026-27"):
+        with connect() as con:
+            return data_status(con, season)
 
     @app.get("/price-par")
     def price_par(season: str = "2026-27"):

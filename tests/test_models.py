@@ -14,6 +14,7 @@ from backend.services.history import future_points, player_totals_as_of
 from backend.backtests.metrics import evaluate_model, evaluate_rows, mae, ranks, rmse, spearman
 from backend.services.tracking import snapshot_tracked, track_player, tracked_momentum, tracked_players, tracked_snapshots, tracking_status, untrack_player
 from backend.services.squad import remove_squad_player, squad_analysis, squad_verdict, upsert_squad_player
+from backend.services.status import data_status
 from backend.services.player_detail import player_detail, recent_gameweeks
 from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, list_alerts
 from backend.services.minutes import add_minutes_override, latest_minutes_overrides
@@ -373,6 +374,23 @@ class ModelTests(unittest.TestCase):
         self.assertIn("appearance_ev", detail["projection_breakdown"])
         self.assertEqual(detail["minutes_history"][0]["reason"], "starter")
         self.assertEqual(recent[0]["total_points"], 10)
+
+    def test_data_status_summarizes_sources(self):
+        with connect(":memory:") as con:
+            con.execute("INSERT INTO app_state VALUES ('2026-27', 'current_gameweek', '3', CURRENT_TIMESTAMP)")
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Fresh', '', '', 1, 'TST', 'MID',
+                  5.0, 10, 90, 10.0, 'a', 'bootstrap', '2026-08-21T10:00:00Z', '2026-27'
+                )
+                """
+            )
+            status = data_status(con, "2026-27")
+        players = next(source for source in status["sources"] if source["key"] == "players")
+        self.assertEqual(status["current_gameweek"], 3)
+        self.assertEqual(players["rows"], 1)
+        self.assertEqual(players["fetched_at"], "2026-08-21T10:00:00Z")
 
     def test_projection_breakdown_sums_to_projection(self):
         row = {"position": "MID", "expected_minutes": 90, "neutral_xppg": 5.0, "actual_ppg": 4.0, "next_6_xppg": 5.2}

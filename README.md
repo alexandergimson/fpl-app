@@ -53,3 +53,4 @@ Optional team-underlying CSV columns: `team_id`, `gameweek`, `xg`, `xga`, plus o
 - Price Movements: latest stored price changes from official ingest snapshots.
 - Alerts: generated events from tracked-player snapshot changes.
 - Minutes Overrides: manual expected-minutes adjustments with history.
+- Data Status: row counts and latest fetch timestamps for the core datasets.
