@@ -144,3 +144,50 @@ def set_state(con: sqlite3.Connection, season: str, key: str, value: str) -> Non
         (season, key, value),
     )
     con.commit()
+
+
+def replace_player_gameweeks(con: sqlite3.Connection, season: str, gameweeks: pd.DataFrame, source: str, fetched_at: str) -> int:
+    con.execute("DELETE FROM player_gameweeks WHERE season = ?", (season,))
+    rows = []
+    for row in gameweeks.itertuples(index=False):
+        data = row._asdict()
+        rows.append(
+            (
+                season,
+                int(data["element"]),
+                int(data["round"]),
+                int(data["fixture"]) if pd.notna(data.get("fixture")) else None,
+                int(data["opponent_team"]) if pd.notna(data.get("opponent_team")) else None,
+                1 if data.get("was_home") else 0,
+                int(data.get("total_points") or 0),
+                int(data.get("minutes") or 0),
+                int(data.get("starts") or 0),
+                int(data.get("goals_scored") or 0),
+                int(data.get("assists") or 0),
+                int(data.get("clean_sheets") or 0),
+                int(data.get("goals_conceded") or 0),
+                int(data.get("saves") or 0),
+                int(data.get("bonus") or 0),
+                int(data.get("bps") or 0),
+                int(data["selected"]) if pd.notna(data.get("selected")) else None,
+                int(data["transfers_in"]) if pd.notna(data.get("transfers_in")) else None,
+                int(data["transfers_out"]) if pd.notna(data.get("transfers_out")) else None,
+                float(data["value"]) / 10 if pd.notna(data.get("value")) else None,
+                source,
+                fetched_at,
+                season,
+            )
+        )
+    con.executemany(
+        """
+        INSERT OR REPLACE INTO player_gameweeks (
+          season, player_id, gameweek, fixture_id, opponent_team, was_home,
+          total_points, minutes, starts, goals_scored, assists, clean_sheets,
+          goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+          value, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    con.commit()
+    return len(rows)

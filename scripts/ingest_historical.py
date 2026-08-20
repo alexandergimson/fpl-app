@@ -1,7 +1,7 @@
 import argparse
 
 from backend.data.db import connect
-from backend.ingestion.loaders import replace_price_par, upsert_players
+from backend.ingestion.loaders import replace_player_gameweeks, replace_price_par, upsert_players
 from backend.ingestion.providers import VaastavHistoricalProvider
 from backend.models.config import ModelConfig
 from backend.models.price_par import build_historical_curves
@@ -16,9 +16,11 @@ def main() -> None:
 
     config = ModelConfig(historical_min_minutes=args.min_minutes)
     dataset = VaastavHistoricalProvider().players(args.source_season)
+    gameweeks = VaastavHistoricalProvider().gameweeks(args.source_season)
     points = build_historical_curves(dataset.frame, config)
     with connect() as con:
         player_count = upsert_players(con, args.source_season, dataset.frame, dataset.source, dataset.fetched_at)
+        gameweek_count = replace_player_gameweeks(con, args.source_season, gameweeks.frame, gameweeks.source, gameweeks.fetched_at)
         par_count = replace_price_par(
             con,
             args.target_season,
@@ -28,7 +30,7 @@ def main() -> None:
             dataset.source,
             dataset.fetched_at,
         )
-    print(f"ingested {player_count} players and {par_count} par points from {dataset.source}")
+    print(f"ingested {player_count} players, {gameweek_count} player-gameweeks and {par_count} par points from {dataset.source}")
 
 
 if __name__ == "__main__":

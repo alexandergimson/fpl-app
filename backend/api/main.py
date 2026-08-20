@@ -46,9 +46,15 @@ if FastAPI:
         return [dict(row) for row in rows]
 
     @app.get("/buy-board")
-    def get_buy_board(season: str = "2026-27", par_season: str = "2026-27", gameweeks_played: int | None = None, limit: int = 50):
+    def get_buy_board(
+        season: str = "2026-27",
+        par_season: str = "2026-27",
+        gameweeks_played: int | None = None,
+        limit: int = 50,
+        as_of_gw: int | None = None,
+    ):
         with connect() as con:
-            return buy_board(con, season, par_season, gameweeks_played, limit)
+            return buy_board(con, season, par_season, gameweeks_played, limit, as_of_gw)
 else:
     app = None
 

@@ -39,3 +39,9 @@ Imported rows store:
 - `source`
 - `fetched_at`
 - `data_period`
+
+## Gameweek History
+
+Historical `merged_gw.csv` rows are stored in `player_gameweeks`.
+
+Backtest-style board generation can pass `as_of_gw`, which aggregates only rows at or before that gameweek. This prevents using end-of-season totals when ranking a historical deadline.

@@ -26,6 +26,9 @@ class HistoricalProvider:
     def players(self, season: str) -> Dataset:
         raise NotImplementedError
 
+    def gameweeks(self, season: str) -> Dataset:
+        raise NotImplementedError
+
 
 class VaastavHistoricalProvider(HistoricalProvider):
     def __init__(self, cache_dir: Path = Path("backend/data/raw")):
@@ -38,6 +41,16 @@ class VaastavHistoricalProvider(HistoricalProvider):
         if cached.exists():
             return Dataset(pd.read_csv(cached), str(cached), datetime.fromtimestamp(cached.stat().st_mtime, timezone.utc).isoformat(), season)
         with urlopen(url, timeout=30) as response:
+            cached.write_bytes(response.read())
+        return Dataset(pd.read_csv(cached), url, datetime.now(timezone.utc).isoformat(), season)
+
+    def gameweeks(self, season: str) -> Dataset:
+        url = f"{RAW_BASE}/{season}/gws/merged_gw.csv"
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        cached = self.cache_dir / f"{season}-merged_gw.csv"
+        if cached.exists():
+            return Dataset(pd.read_csv(cached), str(cached), datetime.fromtimestamp(cached.stat().st_mtime, timezone.utc).isoformat(), season)
+        with urlopen(url, timeout=60) as response:
             cached.write_bytes(response.read())
         return Dataset(pd.read_csv(cached), url, datetime.now(timezone.utc).isoformat(), season)
 

@@ -6,6 +6,7 @@ from backend.services.valuation import player_status, selling_price
 from backend.services.boards import buy_board, infer_gameweeks
 from backend.data.db import connect
 from backend.services.fixtures import adjusted_horizon_ppg, upcoming_fixture_factors
+from backend.services.history import future_points, player_totals_as_of
 
 
 class ModelTests(unittest.TestCase):
@@ -94,6 +95,53 @@ class ModelTests(unittest.TestCase):
             )
             row = buy_board(con, "2026-27", "2026-27", 38, 1)[0]
         self.assertGreater(row["next_3_xppg"], row["neutral_xppg"])
+
+    def test_buy_board_as_of_skips_players_without_history(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES
+                ('2025-26', 1, NULL, 'Future', '', '', 1, 'TST', 'MID', 5.0, 200, 3000, 10.0, 'a', 'test', 'now', 'test'),
+                ('2025-26', 2, NULL, 'Known', '', '', 1, 'TST', 'MID', 5.0, 20, 450, 10.0, 'a', 'test', 'now', 'test')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2025-26', 2, 1, 1, 2, 1, 5, 90, 1, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'test', 'now', 'test')
+                """
+            )
+            rows = buy_board(con, "2025-26", "2026-27", None, 10, as_of_gw=1)
+        self.assertEqual([row["player"] for row in rows], ["Known"])
+
+    def test_history_as_of_prevents_future_leakage(self):
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2025-26', 1, 1, 1, 2, 1, 5, 90, 1, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'test', 'now', 'test'),
+                ('2025-26', 1, 2, 2, 3, 0, 9, 90, 1, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.1, 'test', 'now', 'test')
+                """
+            )
+            totals = player_totals_as_of(con, "2025-26", 1)
+            future = future_points(con, "2025-26", 1, 2, 2)
+        self.assertEqual(totals[1]["total_points"], 5)
+        self.assertEqual(totals[1]["current_price"], 5.0)
+        self.assertEqual(future, 9)
 
 
 if __name__ == "__main__":

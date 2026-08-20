@@ -65,6 +65,33 @@ CREATE TABLE IF NOT EXISTS fixtures (
   PRIMARY KEY (season, fixture_id)
 );
 
+CREATE TABLE IF NOT EXISTS player_gameweeks (
+  season TEXT NOT NULL,
+  player_id INTEGER NOT NULL,
+  gameweek INTEGER NOT NULL,
+  fixture_id INTEGER,
+  opponent_team INTEGER,
+  was_home INTEGER NOT NULL DEFAULT 0,
+  total_points INTEGER NOT NULL DEFAULT 0,
+  minutes INTEGER NOT NULL DEFAULT 0,
+  starts INTEGER NOT NULL DEFAULT 0,
+  goals_scored INTEGER NOT NULL DEFAULT 0,
+  assists INTEGER NOT NULL DEFAULT 0,
+  clean_sheets INTEGER NOT NULL DEFAULT 0,
+  goals_conceded INTEGER NOT NULL DEFAULT 0,
+  saves INTEGER NOT NULL DEFAULT 0,
+  bonus INTEGER NOT NULL DEFAULT 0,
+  bps INTEGER NOT NULL DEFAULT 0,
+  selected INTEGER,
+  transfers_in INTEGER,
+  transfers_out INTEGER,
+  value REAL,
+  source TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  data_period TEXT NOT NULL,
+  PRIMARY KEY (season, player_id, gameweek, fixture_id)
+);
+
 CREATE TABLE IF NOT EXISTS price_par_points (
   season TEXT NOT NULL,
   source_season TEXT NOT NULL,

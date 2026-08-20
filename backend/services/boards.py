@@ -4,6 +4,7 @@ import sqlite3
 
 from backend.models.price_par import ParPoint, interpolate
 from backend.services.fixtures import adjusted_horizon_ppg, upcoming_fixture_factors
+from backend.services.history import player_totals_as_of
 from backend.services.valuation import player_status
 
 
@@ -27,7 +28,14 @@ def infer_gameweeks(rows, season: str, par_season: str) -> int:
     return 38 if max_points > 50 else 1
 
 
-def buy_board(con: sqlite3.Connection, season: str, par_season: str = "2026-27", gameweeks_played: int | None = None, limit: int = 50):
+def buy_board(
+    con: sqlite3.Connection,
+    season: str,
+    par_season: str = "2026-27",
+    gameweeks_played: int | None = None,
+    limit: int = 50,
+    as_of_gw: int | None = None,
+):
     par_points = load_par_points(con, par_season)
     rows = con.execute(
         """
@@ -37,12 +45,19 @@ def buy_board(con: sqlite3.Connection, season: str, par_season: str = "2026-27",
         """,
         (season,),
     ).fetchall()
-    denominator = gameweeks_played or infer_gameweeks(rows, season, par_season)
+    as_of_totals = player_totals_as_of(con, season, as_of_gw) if as_of_gw is not None else {}
+    denominator = gameweeks_played or as_of_gw or infer_gameweeks(rows, season, par_season)
     board = []
     for row in rows:
-        market_mean, value_par, par_confidence = interpolate(par_points, row["position"], row["current_price"])
-        actual_ppg = row["total_points"] / max(1, denominator)
-        minutes_confidence = min(1.0, row["minutes"] / max(1, denominator * 90))
+        if as_of_gw is not None and row["player_id"] not in as_of_totals:
+            continue
+        totals = as_of_totals.get(row["player_id"], {})
+        price = totals.get("current_price") or row["current_price"]
+        points = totals.get("total_points", row["total_points"])
+        minutes = totals.get("minutes", row["minutes"])
+        market_mean, value_par, par_confidence = interpolate(par_points, row["position"], price)
+        actual_ppg = points / max(1, denominator)
+        minutes_confidence = min(1.0, minutes / max(1, denominator * 90))
         neutral_xppg = actual_ppg * (0.35 + 0.65 * minutes_confidence) + market_mean * (1 - minutes_confidence) * 0.35
         fixture_factors = upcoming_fixture_factors(con, season, row["team_id"], 6)
         next_3_xppg = adjusted_horizon_ppg(neutral_xppg, fixture_factors, 3)
@@ -56,7 +71,7 @@ def buy_board(con: sqlite3.Connection, season: str, par_season: str = "2026-27",
                 "player": row["web_name"],
                 "team": row["team"],
                 "position": row["position"],
-                "current_price": row["current_price"],
+                "current_price": price,
                 "market_mean": round(market_mean, 2),
                 "value_par": round(value_par, 2),
                 "actual_ppg": round(actual_ppg, 2),
@@ -65,8 +80,8 @@ def buy_board(con: sqlite3.Connection, season: str, par_season: str = "2026-27",
                 "next_6_xppg": round(next_6_xppg, 2),
                 "buy_delta_3": round(buy_delta_3, 2),
                 "buy_delta_6": round(buy_delta_6, 2),
-                "expected_minutes": round(row["minutes"] / max(1, denominator), 1),
-                "start_probability": round(min(1.0, row["minutes"] / max(1, denominator * 60)), 2),
+                "expected_minutes": round(minutes / max(1, denominator), 1),
+                "start_probability": round(min(1.0, minutes / max(1, denominator * 60)), 2),
                 "minutes_confidence": "HIGH" if minutes_confidence >= 0.75 else "MEDIUM" if minutes_confidence >= 0.5 else "LOW",
                 "fixture_factor_3": round(sum((fixture_factors + [1.0, 1.0, 1.0])[:3]) / 3, 2),
                 "fixture_factor_6": round(sum((fixture_factors + [1.0] * 6)[:6]) / 6, 2),
