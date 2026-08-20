@@ -9,7 +9,7 @@ from backend.services.history import player_totals_as_of
 from backend.services.minutes import latest_minutes_overrides
 from backend.services.price_par import blended_par_for, current_curve_points
 from backend.services.roles import ROLE_KEYS, latest_role_overrides
-from backend.services.underlying import attacking_xppg, player_underlying_rates
+from backend.services.underlying import attacking_xppg, defcon_xppg, player_underlying_rates
 from backend.services.valuation import player_status
 
 
@@ -84,7 +84,10 @@ def buy_board(
         if rates:
             appearance = min(2.0, 2.0 * expected_minutes / 90)
             attack = attacking_xppg(row["position"], expected_minutes, rates["xg90"], rates["xa90"])
-            neutral_xppg = max(neutral_xppg * 0.5, appearance + attack + max(0.0, market_mean - 2.0) * 0.35)
+            defcon = defcon_xppg(row["position"], expected_minutes, rates["cbit90"], rates["cbirt90"])
+            neutral_xppg = max(neutral_xppg * 0.5, appearance + attack + defcon + max(0.0, market_mean - 2.0) * 0.35)
+        else:
+            defcon = 0.0
         role = roles.get(row["player_id"])
         role_boost = role_xppg(row["position"], expected_minutes, role)
         neutral_xppg += role_boost
@@ -122,6 +125,7 @@ def buy_board(
                 "role_xppg": round(role_boost, 2),
                 "clean_sheet_xppg_3": round(clean_sheet_3, 2),
                 "clean_sheet_xppg_6": round(clean_sheet_6, 2),
+                "defcon_xppg": round(defcon, 2),
                 "expected_opponent_goals_6": round(sum((opponent_goals + [1.35] * 6)[:6]) / 6, 2),
                 "role_override_reason": role["reason"] if role else None,
                 **{key: role[key] if role else 0 for key in ROLE_KEYS},

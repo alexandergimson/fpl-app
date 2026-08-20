@@ -76,6 +76,12 @@ P(clean sheet) = exp(-expected opponent goals)
 
 The model then applies FPL clean-sheet points by position and expected 60-minute probability.
 
+## Defensive Contributions
+
+Optional player-underlying CSV ingestion supports `cbit` and `cbirt`.
+
+DEF projections use `cbit` against the 10-action threshold. MID/FWD projections use `cbirt` against the 12-action threshold. The v1 probability is a capped rate-to-threshold estimate from per-90 actions, multiplied by expected 60-minute probability and capped at the +2 FPL points available per match.
+
 ## Provenance
 
 Imported rows store:

@@ -18,7 +18,7 @@ from backend.services.minutes import add_minutes_override, latest_minutes_overri
 from backend.services.roles import add_role_override, latest_role_overrides, role_history
 from backend.ingestion.loaders import replace_player_underlying
 from backend.ingestion.loaders import replace_team_underlying
-from backend.services.underlying import attacking_xppg, player_underlying_rates
+from backend.services.underlying import attacking_xppg, defcon_xppg, player_underlying_rates
 from backend.services.team_strength import team_strengths
 from backend.services.price_par import blended_par_for, current_curve_points
 
@@ -51,6 +51,8 @@ class ModelTests(unittest.TestCase):
 
     def test_defcon_cap(self):
         self.assertEqual(defcon_ev(2), 2)
+        self.assertEqual(defcon_xppg("DEF", 90, 10, 0), 2)
+        self.assertEqual(defcon_xppg("MID", 30, 0, 12), 1)
 
     def test_status(self):
         self.assertEqual(player_status(0.8, 0.4, 0.9), "STRONG BUY")
@@ -282,7 +284,7 @@ class ModelTests(unittest.TestCase):
     def test_projection_breakdown_sums_to_projection(self):
         row = {"position": "MID", "expected_minutes": 90, "neutral_xppg": 5.0, "actual_ppg": 4.0, "next_6_xppg": 5.2}
         breakdown = projection_breakdown(row)
-        total = sum(breakdown[key] for key in ("appearance_ev", "attacking_ev", "clean_sheet_ev", "bonus_other_ev", "fixture_adjustment"))
+        total = sum(breakdown[key] for key in ("appearance_ev", "attacking_ev", "clean_sheet_ev", "defcon_ev", "bonus_other_ev", "fixture_adjustment"))
         self.assertAlmostEqual(total, breakdown["fixture_xpts"])
 
     def test_underlying_import_rates_and_board_usage(self):
@@ -302,7 +304,7 @@ class ModelTests(unittest.TestCase):
             count = replace_player_underlying(
                 con,
                 "2026-27",
-                pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 1.0, "xa": 0.5}]),
+                pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 1.0, "xa": 0.5, "cbirt": 12}]),
                 "test",
                 "now",
             )
@@ -311,7 +313,9 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(count, 1)
         self.assertEqual(round(attacking_xppg("FWD", 90, 1, 0.5), 2), 5.5)
         self.assertEqual(round(rates[1]["xg90"], 2), 1.0)
+        self.assertEqual(round(rates[1]["cbirt90"], 2), 12.0)
         self.assertEqual(row["xg90"], 1.0)
+        self.assertEqual(row["defcon_xppg"], 2.0)
 
     def test_role_override_boosts_board_projection(self):
         with connect(":memory:") as con:

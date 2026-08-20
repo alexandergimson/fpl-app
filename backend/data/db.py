@@ -102,6 +102,8 @@ CREATE TABLE IF NOT EXISTS player_underlying_gameweeks (
   shots INTEGER,
   shots_in_box INTEGER,
   big_chances INTEGER,
+  cbit REAL,
+  cbirt REAL,
   source TEXT NOT NULL,
   fetched_at TEXT NOT NULL,
   data_period TEXT NOT NULL,
@@ -230,4 +232,13 @@ def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
     con = sqlite3.connect(path)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
+    ensure_columns(con, "player_underlying_gameweeks", {"cbit": "REAL", "cbirt": "REAL"})
     return con
+
+
+def ensure_columns(con: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
+    existing = {row["name"] for row in con.execute(f"PRAGMA table_info({table})")}
+    for name, kind in columns.items():
+        if name not in existing:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
+    con.commit()

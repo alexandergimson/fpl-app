@@ -37,7 +37,7 @@ make dev        # run FastAPI after setup
 
 The ingestion layer uses provider classes so future xG/xA/team-strength sources can be added without rewriting the modelling layer.
 
-Optional player-underlying CSV columns: `player_id`, `gameweek`, `minutes`, `xg`, `xa`, plus optional `shots`, `shots_in_box`, `big_chances`.
+Optional player-underlying CSV columns: `player_id`, `gameweek`, `minutes`, `xg`, `xa`, plus optional `shots`, `shots_in_box`, `big_chances`, `cbit`, `cbirt`.
 
 Optional team-underlying CSV columns: `team_id`, `gameweek`, `xg`, `xga`, plus optional `is_home`.
 

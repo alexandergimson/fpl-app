@@ -213,6 +213,8 @@ def replace_player_underlying(con: sqlite3.Connection, season: str, metrics: pd.
                 int(data["shots"]) if pd.notna(data.get("shots")) else None,
                 int(data["shots_in_box"]) if pd.notna(data.get("shots_in_box")) else None,
                 int(data["big_chances"]) if pd.notna(data.get("big_chances")) else None,
+                float(data["cbit"]) if pd.notna(data.get("cbit")) else None,
+                float(data["cbirt"]) if pd.notna(data.get("cbirt")) else None,
                 source,
                 fetched_at,
                 season,
@@ -222,8 +224,8 @@ def replace_player_underlying(con: sqlite3.Connection, season: str, metrics: pd.
         """
         INSERT OR REPLACE INTO player_underlying_gameweeks (
           season, player_id, gameweek, minutes, xg, xa, shots, shots_in_box,
-          big_chances, source, fetched_at, data_period
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          big_chances, cbit, cbirt, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
     )
