@@ -21,7 +21,7 @@ make init-db    # create SQLite schema
 make ingest     # ingest 2025/26 historical players, gameweeks and Price Par prior
 make ingest-current # ingest current official FPL bootstrap and fixtures
 make price-par  # print stored Price Par curves
-make backtest   # show walk-forward backtest scaffold
+make backtest   # run walk-forward Buy Board metrics
 make test       # run stdlib unit tests
 make dev        # run FastAPI after setup
 ```

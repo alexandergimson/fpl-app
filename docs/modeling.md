@@ -45,3 +45,14 @@ Imported rows store:
 Historical `merged_gw.csv` rows are stored in `player_gameweeks`.
 
 Backtest-style board generation can pass `as_of_gw`, which aggregates only rows at or before that gameweek. This prevents using end-of-season totals when ranking a historical deadline.
+
+## Backtesting V1
+
+`make backtest` evaluates walk-forward Buy Board snapshots:
+
+- train through GW5, predict GW6-10
+- train through GW10, predict GW11-16
+- train through GW15, predict GW16-21
+- train through GW20, predict GW21-26
+
+For top 10 and top 20 ranked players it reports MAE, RMSE, Spearman rank correlation, average excess points over Value Par, the share beating Value Par and the share landing in the future top quartile.

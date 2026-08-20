@@ -7,6 +7,7 @@ from backend.services.boards import buy_board, infer_gameweeks
 from backend.data.db import connect
 from backend.services.fixtures import adjusted_horizon_ppg, upcoming_fixture_factors
 from backend.services.history import future_points, player_totals_as_of
+from backend.backtests.metrics import mae, ranks, rmse, spearman
 
 
 class ModelTests(unittest.TestCase):
@@ -142,6 +143,12 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(totals[1]["total_points"], 5)
         self.assertEqual(totals[1]["current_price"], 5.0)
         self.assertEqual(future, 9)
+
+    def test_backtest_error_metrics(self):
+        self.assertEqual(mae([2, -4]), 3)
+        self.assertAlmostEqual(rmse([3, 4]), 3.5355, places=3)
+        self.assertEqual(ranks([10, 20, 20]), [1, 2.5, 2.5])
+        self.assertAlmostEqual(spearman([1, 2, 3], [1, 2, 3]), 1)
 
 
 if __name__ == "__main__":
