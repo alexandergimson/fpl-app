@@ -176,6 +176,18 @@ function App() {
     [detail],
   );
   const snapshotTrend = useMemo(() => detail?.tracked_snapshots ?? [], [detail]);
+  const weakestSquad = useMemo(
+    () => [...squad].sort((a, b) => (b.transfer_gain ?? 0) - (a.transfer_gain ?? 0))[0],
+    [squad],
+  );
+  const overview = [
+    { label: "Top Buy", value: board[0]?.player ?? "-", detail: board[0] ? `${board[0].buy_delta_6.toFixed(2)} delta` : "" },
+    { label: "Breakout", value: breakouts[0]?.player ?? "-", detail: breakouts[0] ? `${(breakouts[0].breakout_gap ?? 0).toFixed(2)} gap` : "" },
+    { label: "Trap", value: traps[0]?.player ?? "-", detail: traps[0] ? `${(traps[0].trap_gap ?? 0).toFixed(2)} gap` : "" },
+    { label: "Weakest Squad", value: weakestSquad?.player ?? "-", detail: weakestSquad ? `${(weakestSquad.transfer_gain ?? 0).toFixed(2)} gain` : "" },
+    { label: "Alerts", value: alerts.length.toString(), detail: "open" },
+    { label: "Price Moves", value: priceMovements.length.toString(), detail: "tracked" },
+  ];
 
   function selectPlayer(row: BoardRow) {
     fetch(`http://127.0.0.1:8000/players/${row.player_id}?season=2026-27`)
@@ -260,6 +272,18 @@ function App() {
         <p>Price Par curves by position and current price.</p>
       </header>
       <section className="grid">
+        <article className="wide">
+          <h2>Overview</h2>
+          <div className="overview">
+            {overview.map((item) => (
+              <div className="overview-item" key={item.label}>
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+                <small>{item.detail}</small>
+              </div>
+            ))}
+          </div>
+        </article>
         <article className="wide">
           <h2>Alerts</h2>
           <table>
