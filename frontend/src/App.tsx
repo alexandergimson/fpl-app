@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import "./style.css";
@@ -54,6 +54,8 @@ type Alert = {
   created_at: string;
 };
 
+type SortKey = "buy_delta_6" | "opportunity_score" | "next_6_xppg" | "current_price" | "expected_minutes";
+
 function App() {
   const [points, setPoints] = useState<ParPoint[]>([]);
   const [board, setBoard] = useState<BoardRow[]>([]);
@@ -63,6 +65,10 @@ function App() {
   const [squad, setSquad] = useState<BoardRow[]>([]);
   const [detail, setDetail] = useState<PlayerDetail | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [search, setSearch] = useState("");
+  const [position, setPosition] = useState("ALL");
+  const [sortKey, setSortKey] = useState<SortKey>("buy_delta_6");
+  const [sortDirection, setSortDirection] = useState<"desc" | "asc">("desc");
 
   useEffect(() => {
     fetch("http://127.0.0.1:8000/price-par")
@@ -96,12 +102,32 @@ function App() {
   }, []);
 
   const positions = [...new Set(points.map((point) => point.position))];
+  const boardPositions = ["ALL", ...[...new Set(board.map((row) => row.position))].sort()];
+  const visibleBoard = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return board
+      .filter((row) => position === "ALL" || row.position === position)
+      .filter((row) => !query || row.player.toLowerCase().includes(query) || row.team.toLowerCase().includes(query))
+      .sort((a, b) => {
+        const direction = sortDirection === "desc" ? -1 : 1;
+        return (a[sortKey] - b[sortKey]) * direction;
+      });
+  }, [board, position, search, sortDirection, sortKey]);
 
   function selectPlayer(row: BoardRow) {
     fetch(`http://127.0.0.1:8000/players/${row.player_id}?season=2026-27`)
       .then((response) => response.json())
       .then(setDetail)
       .catch(() => setDetail(null));
+  }
+
+  function changeSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDirection(sortDirection === "desc" ? "asc" : "desc");
+    } else {
+      setSortKey(key);
+      setSortDirection("desc");
+    }
   }
 
   return (
@@ -130,12 +156,37 @@ function App() {
         </article>
         <article className="wide">
           <h2>Buy Board</h2>
+          <div className="toolbar">
+            <input
+              aria-label="Search players"
+              placeholder="Search player or team"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+            <select aria-label="Position filter" value={position} onChange={(event) => setPosition(event.target.value)}>
+              {boardPositions.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </div>
           <table>
             <thead>
-              <tr><th>Player</th><th>Pos</th><th>Price</th><th>Par</th><th>Next 6</th><th>Delta</th><th>Opp</th><th>Fix</th><th>Min</th><th>Conf</th><th>Status</th></tr>
+              <tr>
+                <th>Player</th>
+                <th>Pos</th>
+                <th><button className="sort" onClick={() => changeSort("current_price")}>Price</button></th>
+                <th>Par</th>
+                <th><button className="sort" onClick={() => changeSort("next_6_xppg")}>Next 6</button></th>
+                <th><button className="sort" onClick={() => changeSort("buy_delta_6")}>Delta</button></th>
+                <th><button className="sort" onClick={() => changeSort("opportunity_score")}>Opp</button></th>
+                <th>Fix</th>
+                <th><button className="sort" onClick={() => changeSort("expected_minutes")}>Min</button></th>
+                <th>Conf</th>
+                <th>Status</th>
+              </tr>
             </thead>
             <tbody>
-              {board.map((row) => (
+              {visibleBoard.map((row) => (
                 <tr key={`${row.player}-${row.position}`}>
                   <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td>
                   <td>{row.position}</td>
@@ -170,7 +221,7 @@ function App() {
               <tbody>
                 {Object.entries(detail.projection_breakdown).map(([key, value]) => (
                   <tr key={key}>
-                    <td>{key.replaceAll("_", " ")}</td>
+                    <td>{key.replace(/_/g, " ")}</td>
                     <td>{value.toFixed(2)}</td>
                   </tr>
                 ))}

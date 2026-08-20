@@ -83,3 +83,33 @@ th:first-child, td:first-child {
   border-radius: 6px;
   padding: 6px 8px;
 }
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.toolbar input,
+.toolbar select {
+  border: 1px solid #a1a1aa;
+  border-radius: 6px;
+  font: inherit;
+  padding: 8px 10px;
+}
+
+.toolbar input {
+  min-width: 240px;
+}
+
+.sort {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0;
+}
