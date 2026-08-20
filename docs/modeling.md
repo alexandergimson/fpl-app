@@ -21,6 +21,14 @@ points_per_team_gameweek = total_points / 38
 
 `points_per_90` remains a diagnostic, but does not drive squad valuation.
 
+## Dynamic Price Par
+
+Historical Price Par remains the prior.
+
+When a board is evaluated with `as_of_gw`, the app builds a current-season curve from player gameweek data available through that GW, annualises the sample, and blends it with the historical prior using the configured gameweek weights.
+
+If current-season samples are missing or too thin for a position/price, the historical prior remains the fallback.
+
 ## Projection V1
 
 The first Buy Board uses a deliberately plain projection:

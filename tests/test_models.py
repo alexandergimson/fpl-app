@@ -17,6 +17,7 @@ from backend.ingestion.loaders import replace_player_underlying
 from backend.ingestion.loaders import replace_team_underlying
 from backend.services.underlying import attacking_xppg, player_underlying_rates
 from backend.services.team_strength import team_strengths
+from backend.services.price_par import blended_par_for, current_curve_points
 
 
 class ModelTests(unittest.TestCase):
@@ -324,6 +325,39 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(count, 2)
         self.assertGreater(strengths[2]["defensive_weakness"], 1)
         self.assertGreater(factors[0], 1)
+
+    def test_dynamic_price_par_blends_current_curve(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES
+                ('2025-26', 1, NULL, 'A', '', '', 1, 'TST', 'MID', 5.0, 50, 900, 10.0, 'a', 'test', 'now', 'test'),
+                ('2025-26', 2, NULL, 'B', '', '', 1, 'TST', 'MID', 5.0, 40, 900, 10.0, 'a', 'test', 'now', 'test'),
+                ('2025-26', 3, NULL, 'C', '', '', 1, 'TST', 'MID', 5.0, 30, 900, 10.0, 'a', 'test', 'now', 'test')
+                """
+            )
+            for player_id, points in [(1, 50), (2, 40), (3, 30)]:
+                con.execute(
+                    """
+                    INSERT INTO player_gameweeks (
+                      season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                      total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                      goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                      value, source, fetched_at, data_period
+                    ) VALUES (?, ?, 5, ?, 2, 1, ?, 450, 1, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'test', 'now', 'test')
+                    """,
+                    ("2025-26", player_id, player_id, points),
+                )
+            current = current_curve_points(con, "2025-26", 5)
+            mean, par, confidence = blended_par_for(con, "MID", 5.0, "2026-27", "2025-26", 5)
+        self.assertTrue(current)
+        self.assertGreater(mean, 3.0)
+        self.assertGreater(par, 3.5)
+        self.assertIn(confidence, {"LOW", "MEDIUM"})
 
 
 if __name__ == "__main__":

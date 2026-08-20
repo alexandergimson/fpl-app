@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import sqlite3
 
-from backend.models.price_par import ParPoint, interpolate
+from backend.models.price_par import ParPoint
 from backend.services.fixtures import adjusted_horizon_ppg, upcoming_fixture_factors
 from backend.services.history import player_totals_as_of
+from backend.services.price_par import blended_par_for, current_curve_points
 from backend.services.underlying import attacking_xppg, player_underlying_rates
 from backend.services.valuation import player_status
 
@@ -37,7 +38,6 @@ def buy_board(
     limit: int = 50,
     as_of_gw: int | None = None,
 ):
-    par_points = load_par_points(con, par_season)
     rows = con.execute(
         """
         SELECT player_id, web_name, team_id, team, position, current_price, total_points, minutes, ownership, status
@@ -48,6 +48,7 @@ def buy_board(
     ).fetchall()
     as_of_totals = player_totals_as_of(con, season, as_of_gw) if as_of_gw is not None else {}
     underlying = player_underlying_rates(con, season, as_of_gw)
+    current_par_points = current_curve_points(con, season, as_of_gw) if as_of_gw is not None else None
     denominator = gameweeks_played or as_of_gw or infer_gameweeks(rows, season, par_season)
     board = []
     for row in rows:
@@ -57,7 +58,15 @@ def buy_board(
         price = totals.get("current_price") or row["current_price"]
         points = totals.get("total_points", row["total_points"])
         minutes = totals.get("minutes", row["minutes"])
-        market_mean, value_par, par_confidence = interpolate(par_points, row["position"], price)
+        market_mean, value_par, par_confidence = blended_par_for(
+            con,
+            row["position"],
+            price,
+            par_season,
+            season if as_of_gw is not None else None,
+            as_of_gw,
+            current_par_points,
+        )
         actual_ppg = points / max(1, denominator)
         minutes_confidence = min(1.0, minutes / max(1, denominator * 90))
         neutral_xppg = actual_ppg * (0.35 + 0.65 * minutes_confidence) + market_mean * (1 - minutes_confidence) * 0.35
