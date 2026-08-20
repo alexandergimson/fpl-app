@@ -23,6 +23,7 @@ type BoardRow = {
   neutral_xppg: number;
   next_6_xppg: number;
   buy_delta_6: number;
+  opportunity_score: number;
   expected_minutes: number;
   xg90?: number | null;
   xa90?: number | null;
@@ -131,7 +132,7 @@ function App() {
           <h2>Buy Board</h2>
           <table>
             <thead>
-              <tr><th>Player</th><th>Pos</th><th>Price</th><th>Par</th><th>Next 6</th><th>Delta</th><th>Fix</th><th>Min</th><th>Conf</th><th>Status</th></tr>
+              <tr><th>Player</th><th>Pos</th><th>Price</th><th>Par</th><th>Next 6</th><th>Delta</th><th>Opp</th><th>Fix</th><th>Min</th><th>Conf</th><th>Status</th></tr>
             </thead>
             <tbody>
               {board.map((row) => (
@@ -142,6 +143,7 @@ function App() {
                   <td>{row.value_par.toFixed(2)}</td>
                   <td>{row.next_6_xppg.toFixed(2)}</td>
                   <td className={row.buy_delta_6 >= 0 ? "positive" : "negative"}>{row.buy_delta_6.toFixed(2)}</td>
+                  <td className={row.opportunity_score >= 0 ? "positive" : "negative"}>{row.opportunity_score.toFixed(2)}</td>
                   <td>{row.fixture_factor_6.toFixed(2)}</td>
                   <td title={row.minutes_override_reason ?? ""}>{row.expected_minutes.toFixed(0)}{row.minutes_override_reason ? "*" : ""}</td>
                   <td>{row.minutes_confidence}</td>

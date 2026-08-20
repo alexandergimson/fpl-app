@@ -70,6 +70,7 @@ class ModelTests(unittest.TestCase):
             )
             row = buy_board(con, "2026-27", "2026-27", 10, 1)[0]
         self.assertEqual(row["value_par"], 4.0)
+        self.assertIn("opportunity_score", row)
 
     def test_preseason_bootstrap_totals_use_full_season_denominator(self):
         rows = [{"total_points": 240}]

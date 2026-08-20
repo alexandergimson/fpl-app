@@ -29,6 +29,16 @@ When a board is evaluated with `as_of_gw`, the app builds a current-season curve
 
 If current-season samples are missing or too thin for a position/price, the historical prior remains the fallback.
 
+## Opportunity Score
+
+Opportunity Score is a visible ranking aid:
+
+```text
+Buy Delta 6 * minutes confidence * projection confidence
+```
+
+It does not replace Buy Delta; it downweights attractive deltas when minutes or projection confidence is weak.
+
 ## Projection V1
 
 The first Buy Board uses a deliberately plain projection:

@@ -88,6 +88,7 @@ def buy_board(
         buy_delta_3 = next_3_xppg - value_par
         buy_delta_6 = next_6_xppg - value_par
         confidence = min(1.0, 0.45 + minutes_confidence * 0.55)
+        opportunity_score = buy_delta_6 * minutes_confidence * confidence
         board.append(
             {
                 "player_id": row["player_id"],
@@ -103,6 +104,7 @@ def buy_board(
                 "next_6_xppg": round(next_6_xppg, 2),
                 "buy_delta_3": round(buy_delta_3, 2),
                 "buy_delta_6": round(buy_delta_6, 2),
+                "opportunity_score": round(opportunity_score, 2),
                 "expected_minutes": round(expected_minutes, 1),
                 "xg90": round(rates["xg90"], 2) if rates else None,
                 "xa90": round(rates["xa90"], 2) if rates else None,

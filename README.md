@@ -44,6 +44,7 @@ Optional team-underlying CSV columns: `team_id`, `gameweek`, `xg`, `xga`, plus o
 ## Boards
 
 - Buy Board: ranked by Next 6 Buy Delta.
+- Opportunity Score: Buy Delta adjusted by minutes and projection confidence.
 - Breakout Board: forward xPPG above Value Par while actual PPG still lags.
 - Trap Board: actual PPG above Value Par while forward expectation falls below par.
 - Tracked Players: saved players plus current valuation and immutable snapshots.
