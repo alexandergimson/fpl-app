@@ -108,6 +108,19 @@ CREATE TABLE IF NOT EXISTS player_underlying_gameweeks (
   PRIMARY KEY (season, player_id, gameweek, source)
 );
 
+CREATE TABLE IF NOT EXISTS team_underlying_gameweeks (
+  season TEXT NOT NULL,
+  team_id INTEGER NOT NULL,
+  gameweek INTEGER NOT NULL,
+  is_home INTEGER,
+  xg REAL NOT NULL DEFAULT 0,
+  xga REAL NOT NULL DEFAULT 0,
+  source TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  data_period TEXT NOT NULL,
+  PRIMARY KEY (season, team_id, gameweek, source)
+);
+
 CREATE TABLE IF NOT EXISTS price_par_points (
   season TEXT NOT NULL,
   source_season TEXT NOT NULL,

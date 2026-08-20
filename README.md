@@ -21,6 +21,7 @@ make init-db    # create SQLite schema
 make ingest     # ingest 2025/26 historical players, gameweeks and Price Par prior
 make ingest-current # ingest current official FPL bootstrap and fixtures
 make ingest-underlying CSV=path/to/player_underlying.csv # optional xG/xA import
+make ingest-team-underlying CSV=path/to/team_underlying.csv # optional team xG/xGA import
 make price-par  # print stored Price Par curves
 make backtest   # run walk-forward Buy Board vs naive PPG metrics
 make snapshot-tracked # store immutable snapshots for tracked players
@@ -36,6 +37,8 @@ make dev        # run FastAPI after setup
 The ingestion layer uses provider classes so future xG/xA/team-strength sources can be added without rewriting the modelling layer.
 
 Optional player-underlying CSV columns: `player_id`, `gameweek`, `minutes`, `xg`, `xa`, plus optional `shots`, `shots_in_box`, `big_chances`.
+
+Optional team-underlying CSV columns: `team_id`, `gameweek`, `xg`, `xga`, plus optional `is_home`.
 
 ## Boards
 

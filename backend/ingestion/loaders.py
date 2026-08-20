@@ -229,3 +229,37 @@ def replace_player_underlying(con: sqlite3.Connection, season: str, metrics: pd.
     )
     con.commit()
     return len(rows)
+
+
+def replace_team_underlying(con: sqlite3.Connection, season: str, metrics: pd.DataFrame, source: str, fetched_at: str) -> int:
+    required = {"team_id", "gameweek", "xg", "xga"}
+    missing = required - set(metrics.columns)
+    if missing:
+        raise ValueError(f"missing columns: {', '.join(sorted(missing))}")
+    con.execute("DELETE FROM team_underlying_gameweeks WHERE season = ? AND source = ?", (season, source))
+    rows = []
+    for row in metrics.itertuples(index=False):
+        data = row._asdict()
+        rows.append(
+            (
+                season,
+                int(data["team_id"]),
+                int(data["gameweek"]),
+                None if "is_home" not in data or pd.isna(data.get("is_home")) else int(bool(data["is_home"])),
+                float(data.get("xg") or 0),
+                float(data.get("xga") or 0),
+                source,
+                fetched_at,
+                season,
+            )
+        )
+    con.executemany(
+        """
+        INSERT OR REPLACE INTO team_underlying_gameweeks (
+          season, team_id, gameweek, is_home, xg, xga, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    con.commit()
+    return len(rows)

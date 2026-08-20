@@ -14,7 +14,9 @@ from backend.services.tracking import snapshot_tracked, track_player, tracked_pl
 from backend.services.squad import remove_squad_player, squad_analysis, squad_verdict, upsert_squad_player
 from backend.services.player_detail import player_detail, recent_gameweeks
 from backend.ingestion.loaders import replace_player_underlying
+from backend.ingestion.loaders import replace_team_underlying
 from backend.services.underlying import attacking_xppg, player_underlying_rates
+from backend.services.team_strength import team_strengths
 
 
 class ModelTests(unittest.TestCase):
@@ -300,6 +302,28 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(round(attacking_xppg("FWD", 90, 1, 0.5), 2), 5.5)
         self.assertEqual(round(rates[1]["xg90"], 2), 1.0)
         self.assertEqual(row["xg90"], 1.0)
+
+    def test_team_underlying_drives_fixture_factor(self):
+        with connect(":memory:") as con:
+            con.execute("INSERT INTO app_state VALUES ('2026-27', 'current_gameweek', '1', CURRENT_TIMESTAMP)")
+            con.execute("INSERT INTO fixtures VALUES ('2026-27', 1, 2, '', 1, 2, 3, 3, 0, 'test', 'now', 'test')")
+            count = replace_team_underlying(
+                con,
+                "2026-27",
+                pd.DataFrame(
+                    [
+                        {"team_id": 1, "gameweek": 1, "xg": 1.0, "xga": 1.0},
+                        {"team_id": 2, "gameweek": 1, "xg": 1.0, "xga": 2.0},
+                    ]
+                ),
+                "test",
+                "now",
+            )
+            strengths = team_strengths(con, "2026-27", 1)
+            factors = upcoming_fixture_factors(con, "2026-27", 1, 1)
+        self.assertEqual(count, 2)
+        self.assertGreater(strengths[2]["defensive_weakness"], 1)
+        self.assertGreater(factors[0], 1)
 
 
 if __name__ == "__main__":

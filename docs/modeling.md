@@ -40,6 +40,12 @@ Optional CSV ingestion stores player gameweek xG/xA rows in `player_underlying_g
 
 When available, Buy Board neutral xPPG uses xG/90 and xA/90 to inform attacking expectation. When unavailable, it falls back to the existing minutes-shrunk actual PPG estimate.
 
+## Team Strength
+
+Optional team xG/xGA CSV ingestion stores rows in `team_underlying_gameweeks`.
+
+When available, fixture adjustment uses opponent defensive weakness from team xGA relative to league average. When unavailable, it falls back to the small FPL fixture-difficulty multiplier.
+
 ## Provenance
 
 Imported rows store:

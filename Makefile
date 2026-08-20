@@ -19,6 +19,9 @@ ingest-current:
 ingest-underlying:
 	$(PYTHON) -m scripts.ingest_underlying $(CSV)
 
+ingest-team-underlying:
+	$(PYTHON) -m scripts.ingest_team_underlying $(CSV)
+
 price-par:
 	$(PYTHON) -m scripts.show_price_par
 

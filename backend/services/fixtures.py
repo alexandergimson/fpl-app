@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from backend.services.team_strength import team_strengths
+
 
 def current_gameweek(con: sqlite3.Connection, season: str) -> int:
     row = con.execute("SELECT value FROM app_state WHERE season = ? AND key = 'current_gameweek'", (season,)).fetchone()
@@ -25,11 +27,16 @@ def upcoming_fixture_factors(con: sqlite3.Connection, season: str, team_id: int 
         """,
         (season, start, team_id, team_id, horizon),
     ).fetchall()
+    strengths = team_strengths(con, season, start)
     factors = []
     for row in rows:
-        difficulty = row["team_h_difficulty"] if row["team_h"] == team_id else row["team_a_difficulty"]
-        # ponytail: FDR fallback until xG/xGA team strength exists; replace with rolling team strength.
-        factors.append(max(0.84, min(1.16, 1 + (3 - difficulty) * 0.08)))
+        opponent_id = row["team_a"] if row["team_h"] == team_id else row["team_h"]
+        opponent = strengths.get(opponent_id)
+        if opponent:
+            factors.append(max(0.84, min(1.16, opponent["defensive_weakness"])))
+        else:
+            difficulty = row["team_h_difficulty"] if row["team_h"] == team_id else row["team_a_difficulty"]
+            factors.append(max(0.84, min(1.16, 1 + (3 - difficulty) * 0.08)))
     return factors
 
 
