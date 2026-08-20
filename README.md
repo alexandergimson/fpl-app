@@ -22,6 +22,7 @@ make ingest     # ingest 2025/26 historical players, gameweeks and Price Par pri
 make ingest-current # ingest current official FPL bootstrap and fixtures
 make price-par  # print stored Price Par curves
 make backtest   # run walk-forward Buy Board vs naive PPG metrics
+make snapshot-tracked # store immutable snapshots for tracked players
 make test       # run stdlib unit tests
 make dev        # run FastAPI after setup
 ```
@@ -38,3 +39,4 @@ The ingestion layer uses provider classes so future xG/xA/team-strength sources 
 - Buy Board: ranked by Next 6 Buy Delta.
 - Breakout Board: forward xPPG above Value Par while actual PPG still lags.
 - Trap Board: actual PPG above Value Par while forward expectation falls below par.
+- Tracked Players: saved players plus current valuation and immutable snapshots.

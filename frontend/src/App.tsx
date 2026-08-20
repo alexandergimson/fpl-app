@@ -35,6 +35,7 @@ function App() {
   const [board, setBoard] = useState<BoardRow[]>([]);
   const [breakouts, setBreakouts] = useState<BoardRow[]>([]);
   const [traps, setTraps] = useState<BoardRow[]>([]);
+  const [tracked, setTracked] = useState<BoardRow[]>([]);
 
   useEffect(() => {
     fetch("http://127.0.0.1:8000/price-par")
@@ -53,6 +54,10 @@ function App() {
       .then((response) => response.json())
       .then(setTraps)
       .catch(() => setTraps([]));
+    fetch("http://127.0.0.1:8000/tracked-players?season=2026-27")
+      .then((response) => response.json())
+      .then(setTracked)
+      .catch(() => setTracked([]));
   }, []);
 
   const positions = [...new Set(points.map((point) => point.position))];
@@ -95,6 +100,27 @@ function App() {
         <article>
           <h2>Traps</h2>
           <MiniBoard rows={traps} gapKey="trap_gap" />
+        </article>
+        <article className="wide">
+          <h2>Tracked Players</h2>
+          <table>
+            <thead>
+              <tr><th>Player</th><th>Pos</th><th>Price</th><th>Par</th><th>Next 6</th><th>Delta</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {tracked.map((row) => (
+                <tr key={`tracked-${row.player}-${row.position}`}>
+                  <td>{row.player}</td>
+                  <td>{row.position}</td>
+                  <td>£{row.current_price.toFixed(1)}</td>
+                  <td>{row.value_par.toFixed(2)}</td>
+                  <td>{row.next_6_xppg.toFixed(2)}</td>
+                  <td className={row.buy_delta_6 >= 0 ? "positive" : "negative"}>{row.buy_delta_6.toFixed(2)}</td>
+                  <td>{row.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </article>
         {positions.map((position) => {
           const rows = points.filter((point) => point.position === position);

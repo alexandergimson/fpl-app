@@ -7,6 +7,7 @@ except ImportError:  # pragma: no cover
 
 from backend.data.db import connect
 from backend.services.boards import breakout_board, buy_board, trap_board
+from backend.services.tracking import snapshot_tracked, track_player, tracked_players, tracked_snapshots, untrack_player
 
 
 if FastAPI:
@@ -77,6 +78,34 @@ if FastAPI:
     ):
         with connect() as con:
             return trap_board(con, season, par_season, gameweeks_played, limit, as_of_gw)
+
+    @app.get("/tracked-players")
+    def get_tracked_players(season: str = "2026-27", par_season: str = "2026-27"):
+        with connect() as con:
+            return tracked_players(con, season, par_season)
+
+    @app.post("/tracked-players/{player_id}")
+    def post_tracked_player(player_id: int, season: str = "2026-27", note: str | None = None):
+        with connect() as con:
+            track_player(con, season, player_id, note)
+        return {"ok": True}
+
+    @app.delete("/tracked-players/{player_id}")
+    def delete_tracked_player(player_id: int, season: str = "2026-27"):
+        with connect() as con:
+            untrack_player(con, season, player_id)
+        return {"ok": True}
+
+    @app.post("/tracked-snapshots")
+    def post_tracked_snapshots(season: str = "2026-27", par_season: str = "2026-27", gameweek: int | None = None):
+        with connect() as con:
+            count = snapshot_tracked(con, season, par_season, gameweek)
+        return {"snapshots": count}
+
+    @app.get("/tracked-players/{player_id}/snapshots")
+    def get_tracked_snapshots(player_id: int, season: str = "2026-27"):
+        with connect() as con:
+            return tracked_snapshots(con, season, player_id)
 else:
     app = None
 

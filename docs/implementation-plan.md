@@ -48,6 +48,7 @@
 - FastAPI exposes players, Price Par, boards, tracked players and squad analysis.
 - React dashboard prioritises sortable tables, deltas, sparklines and search.
 - Breakout and Trap board API/UI slices are implemented from the same valuation rows as Buy Board; Breakout uses forward expectation until true xG/xA underlying data exists.
+- Tracked player API/UI slice is implemented with immutable per-gameweek snapshots.
 - Tracked snapshots are immutable by gameweek.
 - Squad analysis separates Buy Value from Hold Value using FPL selling-price rules.
 

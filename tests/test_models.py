@@ -8,6 +8,7 @@ from backend.data.db import connect
 from backend.services.fixtures import adjusted_horizon_ppg, upcoming_fixture_factors
 from backend.services.history import future_points, player_totals_as_of
 from backend.backtests.metrics import evaluate_rows, mae, ranks, rmse, spearman
+from backend.services.tracking import snapshot_tracked, track_player, tracked_players, tracked_snapshots, untrack_player
 
 
 class ModelTests(unittest.TestCase):
@@ -185,6 +186,28 @@ class ModelTests(unittest.TestCase):
             rows = [{"player_id": 1, "actual_ppg": 5, "next_6_xppg": 4, "value_par": 3}]
             result = evaluate_rows(con, "2025-26", rows, rows, 2, 2, 1, prediction_key="actual_ppg")
         self.assertEqual(result["mae"], 1)
+
+    def test_tracking_round_trip_and_snapshot(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Track', '', '', 1, 'TST', 'MID',
+                  5.0, 38, 3420, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            track_player(con, "2026-27", 1, "watch")
+            self.assertEqual(tracked_players(con, "2026-27")[0]["player"], "Track")
+            self.assertEqual(snapshot_tracked(con, "2026-27", gameweek=1), 1)
+            self.assertEqual(snapshot_tracked(con, "2026-27", gameweek=1), 1)
+            self.assertEqual(len(tracked_snapshots(con, "2026-27", 1)), 1)
+            untrack_player(con, "2026-27", 1)
+            self.assertEqual(tracked_players(con, "2026-27"), [])
 
 
 if __name__ == "__main__":

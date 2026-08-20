@@ -21,6 +21,9 @@ price-par:
 backtest:
 	$(PYTHON) -m scripts.backtest
 
+snapshot-tracked:
+	$(PYTHON) -m scripts.snapshot_tracked
+
 test:
 	$(PYTHON) -m unittest discover -s tests
 
