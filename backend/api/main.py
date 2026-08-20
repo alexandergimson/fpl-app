@@ -11,6 +11,7 @@ from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, 
 from backend.services.boards import breakout_board, buy_board, trap_board
 from backend.services.minutes import add_minutes_override, override_history
 from backend.services.player_detail import player_detail
+from backend.services.prices import price_movements
 from backend.services.roles import add_role_override, role_history
 from backend.services.squad import remove_squad_player, squad_analysis, upsert_squad_player
 from backend.services.tracking import snapshot_tracked, track_player, tracked_players, tracked_snapshots, untrack_player
@@ -42,6 +43,11 @@ if FastAPI:
                 (season,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    @app.get("/price-movements")
+    def get_price_movements(season: str = "2026-27", limit: int = 25):
+        with connect() as con:
+            return price_movements(con, season, limit)
 
     @app.get("/players")
     def players(season: str = "2025-26", limit: int = 100):

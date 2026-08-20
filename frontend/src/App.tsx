@@ -76,6 +76,17 @@ type Alert = {
   created_at: string;
 };
 
+type PriceMovement = {
+  player_id: number;
+  player: string;
+  team: string;
+  position: string;
+  first_price: number;
+  latest_price: number;
+  price_change: number;
+  gameweek?: number | null;
+};
+
 type SortKey = "buy_delta_6" | "captain_adjusted_delta" | "opportunity_score" | "next_6_xppg" | "current_price" | "expected_minutes";
 
 function App() {
@@ -87,6 +98,7 @@ function App() {
   const [squad, setSquad] = useState<BoardRow[]>([]);
   const [detail, setDetail] = useState<PlayerDetail | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [priceMovements, setPriceMovements] = useState<PriceMovement[]>([]);
   const [search, setSearch] = useState("");
   const [position, setPosition] = useState("ALL");
   const [bank, setBank] = useState(0);
@@ -135,6 +147,10 @@ function App() {
       .then((response) => response.json())
       .then(setAlerts)
       .catch(() => setAlerts([]));
+    fetch("http://127.0.0.1:8000/price-movements?season=2026-27&limit=10")
+      .then((response) => response.json())
+      .then(setPriceMovements)
+      .catch(() => setPriceMovements([]));
   }
 
   useEffect(() => {
@@ -251,6 +267,26 @@ function App() {
                   <td>{alert.kind}</td>
                   <td>{alert.message}</td>
                   <td>{alert.created_at}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </article>
+        <article className="wide">
+          <h2>Price Movements</h2>
+          <table>
+            <thead>
+              <tr><th>Player</th><th>Pos</th><th>Start</th><th>Now</th><th>Move</th><th>GW</th></tr>
+            </thead>
+            <tbody>
+              {priceMovements.map((row) => (
+                <tr key={`price-${row.player_id}`}>
+                  <td>{row.player}</td>
+                  <td>{row.position}</td>
+                  <td>£{row.first_price.toFixed(1)}</td>
+                  <td>£{row.latest_price.toFixed(1)}</td>
+                  <td className={row.price_change >= 0 ? "positive" : "negative"}>{row.price_change.toFixed(1)}</td>
+                  <td>{row.gameweek ?? "-"}</td>
                 </tr>
               ))}
             </tbody>

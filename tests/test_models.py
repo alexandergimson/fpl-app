@@ -19,7 +19,8 @@ from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, 
 from backend.services.minutes import add_minutes_override, latest_minutes_overrides
 from backend.services.roles import add_role_override, latest_role_overrides, role_history
 from backend.ingestion.loaders import replace_player_underlying
-from backend.ingestion.loaders import replace_team_underlying
+from backend.ingestion.loaders import replace_team_underlying, snapshot_prices
+from backend.services.prices import price_movements
 from backend.services.underlying import attacking_xppg, defcon_xppg, player_underlying_rates
 from backend.services.team_strength import team_strengths
 from backend.services.price_par import blended_par_for, current_curve_points
@@ -94,6 +95,26 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(row["value_par"], 4.0)
         self.assertIn("opportunity_score", row)
         self.assertIn("captain_adjusted_delta", row)
+
+    def test_price_snapshots_report_movements(self):
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Mover', '', '', 1, 'TST', 'MID',
+                  5.1, 10, 90, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            first = pd.DataFrame([{"id": 1, "now_cost": 50}])
+            latest = pd.DataFrame([{"id": 1, "now_cost": 51}])
+            first.attrs["current_gameweek"] = 1
+            latest.attrs["current_gameweek"] = 2
+            snapshot_prices(con, "2026-27", first, "test", "2026-08-01T00:00:00")
+            snapshot_prices(con, "2026-27", latest, "test", "2026-08-08T00:00:00")
+            rows = price_movements(con, "2026-27")
+        self.assertEqual(rows[0]["player"], "Mover")
+        self.assertEqual(rows[0]["price_change"], 0.1)
 
     def test_preseason_bootstrap_totals_use_full_season_denominator(self):
         rows = [{"total_points": 240}]

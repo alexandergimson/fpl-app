@@ -51,6 +51,7 @@
 - Tracked player API/UI slice is implemented with immutable per-gameweek snapshots.
 - My Squad API/UI slice is implemented with selling price, hold delta and best affordable replacement.
 - My Squad UI can add/remove players, enter purchase price and adjust bank for replacement budgets.
+- Official current ingest stores price snapshots and the dashboard exposes recent price movements.
 - Player detail API/UI slice is implemented with valuation, recent gameweeks and tracked snapshots.
 - Dashboard alert generation is implemented for tracked-player snapshot changes.
 - Minutes override API is implemented and applied to board projections.

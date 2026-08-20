@@ -62,6 +62,35 @@ def upsert_players(con: sqlite3.Connection, season: str, players: pd.DataFrame, 
     return len(rows)
 
 
+def snapshot_prices(con: sqlite3.Connection, season: str, players: pd.DataFrame, source: str, fetched_at: str) -> int:
+    gameweek = players.attrs.get("current_gameweek")
+    rows = []
+    for row in players.itertuples(index=False):
+        data = row._asdict()
+        rows.append(
+            (
+                season,
+                int(data["id"]),
+                int(gameweek) if gameweek is not None else None,
+                fetched_at,
+                float(data["now_cost"]) / 10,
+                source,
+                fetched_at,
+                season,
+            )
+        )
+    con.executemany(
+        """
+        INSERT OR REPLACE INTO price_history (
+          season, player_id, gameweek, observed_on, price, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    con.commit()
+    return len(rows)
+
+
 def replace_price_par(
     con: sqlite3.Connection,
     season: str,
