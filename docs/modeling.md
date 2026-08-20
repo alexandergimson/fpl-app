@@ -34,6 +34,12 @@ This is not pretending to be a finished predictive model; it gives the API/UI a 
 
 Player detail includes a v1 projection breakdown. It decomposes the current `next_6_xppg` into appearance, attacking, clean-sheet, bonus/other and fixture adjustment using fields already in the board row. This is explainability scaffolding, not a substitute for xG/xA/DefCon ingestion.
 
+## Underlying Player Data
+
+Optional CSV ingestion stores player gameweek xG/xA rows in `player_underlying_gameweeks`.
+
+When available, Buy Board neutral xPPG uses xG/90 and xA/90 to inform attacking expectation. When unavailable, it falls back to the existing minutes-shrunk actual PPG estimate.
+
 ## Provenance
 
 Imported rows store:

@@ -5,6 +5,7 @@ import sqlite3
 from backend.models.price_par import ParPoint, interpolate
 from backend.services.fixtures import adjusted_horizon_ppg, upcoming_fixture_factors
 from backend.services.history import player_totals_as_of
+from backend.services.underlying import attacking_xppg, player_underlying_rates
 from backend.services.valuation import player_status
 
 
@@ -46,6 +47,7 @@ def buy_board(
         (season,),
     ).fetchall()
     as_of_totals = player_totals_as_of(con, season, as_of_gw) if as_of_gw is not None else {}
+    underlying = player_underlying_rates(con, season, as_of_gw)
     denominator = gameweeks_played or as_of_gw or infer_gameweeks(rows, season, par_season)
     board = []
     for row in rows:
@@ -59,6 +61,12 @@ def buy_board(
         actual_ppg = points / max(1, denominator)
         minutes_confidence = min(1.0, minutes / max(1, denominator * 90))
         neutral_xppg = actual_ppg * (0.35 + 0.65 * minutes_confidence) + market_mean * (1 - minutes_confidence) * 0.35
+        expected_minutes = minutes / max(1, denominator)
+        rates = underlying.get(row["player_id"])
+        if rates:
+            appearance = min(2.0, 2.0 * expected_minutes / 90)
+            attack = attacking_xppg(row["position"], expected_minutes, rates["xg90"], rates["xa90"])
+            neutral_xppg = max(neutral_xppg * 0.5, appearance + attack + max(0.0, market_mean - 2.0) * 0.35)
         fixture_factors = upcoming_fixture_factors(con, season, row["team_id"], 6)
         next_3_xppg = adjusted_horizon_ppg(neutral_xppg, fixture_factors, 3)
         next_6_xppg = adjusted_horizon_ppg(neutral_xppg, fixture_factors, 6)
@@ -80,7 +88,9 @@ def buy_board(
                 "next_6_xppg": round(next_6_xppg, 2),
                 "buy_delta_3": round(buy_delta_3, 2),
                 "buy_delta_6": round(buy_delta_6, 2),
-                "expected_minutes": round(minutes / max(1, denominator), 1),
+                "expected_minutes": round(expected_minutes, 1),
+                "xg90": round(rates["xg90"], 2) if rates else None,
+                "xa90": round(rates["xa90"], 2) if rates else None,
                 "start_probability": round(min(1.0, minutes / max(1, denominator * 60)), 2),
                 "minutes_confidence": "HIGH" if minutes_confidence >= 0.75 else "MEDIUM" if minutes_confidence >= 0.5 else "LOW",
                 "fixture_factor_3": round(sum((fixture_factors + [1.0, 1.0, 1.0])[:3]) / 3, 2),

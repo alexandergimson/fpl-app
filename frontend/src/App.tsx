@@ -24,6 +24,8 @@ type BoardRow = {
   next_6_xppg: number;
   buy_delta_6: number;
   expected_minutes: number;
+  xg90?: number | null;
+  xa90?: number | null;
   minutes_confidence: string;
   fixture_factor_6: number;
   status: string;
@@ -126,6 +128,8 @@ function App() {
               <span>£{detail.current.current_price.toFixed(1)}</span>
               <span>Par {detail.current.value_par.toFixed(2)}</span>
               <span>Next 6 {detail.current.next_6_xppg.toFixed(2)}</span>
+              {detail.current.xg90 != null && <span>xG90 {detail.current.xg90.toFixed(2)}</span>}
+              {detail.current.xa90 != null && <span>xA90 {detail.current.xa90.toFixed(2)}</span>}
               <span className={detail.current.buy_delta_6 >= 0 ? "positive" : "negative"}>Delta {detail.current.buy_delta_6.toFixed(2)}</span>
               <span>{detail.current.status}</span>
             </div>

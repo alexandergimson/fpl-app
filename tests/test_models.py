@@ -3,6 +3,7 @@ import unittest
 from backend.models.price_par import ParPoint, interpolate, pava
 from backend.models.projections import clean_sheet_ev, defcon_ev, expected_minutes
 from backend.models.projections import projection_breakdown
+import pandas as pd
 from backend.services.valuation import player_status, selling_price
 from backend.services.boards import breakout_board, buy_board, infer_gameweeks, trap_board
 from backend.data.db import connect
@@ -12,6 +13,8 @@ from backend.backtests.metrics import evaluate_rows, mae, ranks, rmse, spearman
 from backend.services.tracking import snapshot_tracked, track_player, tracked_players, tracked_snapshots, untrack_player
 from backend.services.squad import remove_squad_player, squad_analysis, squad_verdict, upsert_squad_player
 from backend.services.player_detail import player_detail, recent_gameweeks
+from backend.ingestion.loaders import replace_player_underlying
+from backend.services.underlying import attacking_xppg, player_underlying_rates
 
 
 class ModelTests(unittest.TestCase):
@@ -269,6 +272,34 @@ class ModelTests(unittest.TestCase):
         breakdown = projection_breakdown(row)
         total = sum(breakdown[key] for key in ("appearance_ev", "attacking_ev", "clean_sheet_ev", "bonus_other_ev", "fixture_adjustment"))
         self.assertAlmostEqual(total, breakdown["fixture_xpts"])
+
+    def test_underlying_import_rates_and_board_usage(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "FWD", 6.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'xG Man', '', '', 1, 'TST', 'FWD',
+                  6.0, 10, 900, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            count = replace_player_underlying(
+                con,
+                "2026-27",
+                pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 1.0, "xa": 0.5}]),
+                "test",
+                "now",
+            )
+            rates = player_underlying_rates(con, "2026-27")
+            row = buy_board(con, "2026-27", "2026-27", 10, 1)[0]
+        self.assertEqual(count, 1)
+        self.assertEqual(round(attacking_xppg("FWD", 90, 1, 0.5), 2), 5.5)
+        self.assertEqual(round(rates[1]["xg90"], 2), 1.0)
+        self.assertEqual(row["xg90"], 1.0)
 
 
 if __name__ == "__main__":

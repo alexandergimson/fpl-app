@@ -1,4 +1,5 @@
 PYTHON ?= python3
+CSV ?=
 
 .PHONY: setup init-db ingest price-par backtest test dev
 
@@ -14,6 +15,9 @@ ingest:
 
 ingest-current:
 	$(PYTHON) -m scripts.ingest_current
+
+ingest-underlying:
+	$(PYTHON) -m scripts.ingest_underlying $(CSV)
 
 price-par:
 	$(PYTHON) -m scripts.show_price_par
