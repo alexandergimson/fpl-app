@@ -7,7 +7,7 @@ import pandas as pd
 from backend.services.valuation import player_status, selling_price
 from backend.services.boards import breakout_board, buy_board, infer_gameweeks, trap_board
 from backend.data.db import connect
-from backend.services.fixtures import adjusted_horizon_ppg, upcoming_fixture_factors
+from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, upcoming_expected_opponent_goals, upcoming_fixture_factors
 from backend.services.history import future_points, player_totals_as_of
 from backend.backtests.metrics import evaluate_rows, mae, ranks, rmse, spearman
 from backend.services.tracking import snapshot_tracked, track_player, tracked_players, tracked_snapshots, untrack_player
@@ -47,6 +47,7 @@ class ModelTests(unittest.TestCase):
 
     def test_clean_sheet_poisson(self):
         self.assertAlmostEqual(clean_sheet_ev(1.0, 4, 1.0), 1.4715, places=3)
+        self.assertAlmostEqual(clean_sheet_horizon_ev([1.0], "DEF", 90, 1), 1.4715, places=3)
 
     def test_defcon_cap(self):
         self.assertEqual(defcon_ev(2), 2)
@@ -357,6 +358,45 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(count, 2)
         self.assertGreater(strengths[2]["defensive_weakness"], 1)
         self.assertGreater(factors[0], 1)
+
+    def test_expected_opponent_goals_use_team_strength(self):
+        with connect(":memory:") as con:
+            con.execute("INSERT INTO app_state VALUES ('2026-27', 'current_gameweek', '1', CURRENT_TIMESTAMP)")
+            con.execute("INSERT INTO fixtures VALUES ('2026-27', 1, 2, '', 1, 2, 3, 3, 0, 'test', 'now', 'test')")
+            replace_team_underlying(
+                con,
+                "2026-27",
+                pd.DataFrame(
+                    [
+                        {"team_id": 1, "gameweek": 1, "xg": 1.0, "xga": 0.8},
+                        {"team_id": 2, "gameweek": 1, "xg": 1.5, "xga": 1.2},
+                    ]
+                ),
+                "test",
+                "now",
+            )
+            goals = upcoming_expected_opponent_goals(con, "2026-27", 1, 1)
+        self.assertLess(goals[0], 1.35 * 1.25)
+
+    def test_buy_board_includes_clean_sheet_ev(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "DEF", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute("INSERT INTO app_state VALUES ('2026-27', 'current_gameweek', '1', CURRENT_TIMESTAMP)")
+            con.execute("INSERT INTO fixtures VALUES ('2026-27', 1, 2, '', 1, 2, 1, 5, 0, 'test', 'now', 'test')")
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Clean', '', '', 1, 'TST', 'DEF',
+                  5.0, 30, 900, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            row = buy_board(con, "2026-27", "2026-27", 10, 1)[0]
+        self.assertGreater(row["clean_sheet_xppg_6"], 0)
+        self.assertGreater(row["expected_opponent_goals_6"], 0)
 
     def test_dynamic_price_par_blends_current_curve(self):
         with connect(":memory:") as con:

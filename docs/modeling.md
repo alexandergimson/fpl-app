@@ -64,6 +64,18 @@ Optional team xG/xGA CSV ingestion stores rows in `team_underlying_gameweeks`.
 
 When available, fixture adjustment uses opponent defensive weakness from team xGA relative to league average. When unavailable, it falls back to the small FPL fixture-difficulty multiplier.
 
+## Clean Sheets
+
+GK, DEF and MID projections now estimate clean-sheet EV separately from attacking fixture adjustment.
+
+Upcoming expected opponent goals come from opponent attack strength, own defensive weakness and a 1.35 league-average goals prior. When team xG/xGA is unavailable, FPL fixture difficulty supplies a small fallback. Clean-sheet probability uses:
+
+```text
+P(clean sheet) = exp(-expected opponent goals)
+```
+
+The model then applies FPL clean-sheet points by position and expected 60-minute probability.
+
 ## Provenance
 
 Imported rows store:

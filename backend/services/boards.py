@@ -4,7 +4,7 @@ import sqlite3
 
 from backend.models.price_par import ParPoint
 from backend.models.projections import role_xppg
-from backend.services.fixtures import adjusted_horizon_ppg, upcoming_fixture_factors
+from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, upcoming_expected_opponent_goals, upcoming_fixture_factors
 from backend.services.history import player_totals_as_of
 from backend.services.minutes import latest_minutes_overrides
 from backend.services.price_par import blended_par_for, current_curve_points
@@ -89,8 +89,13 @@ def buy_board(
         role_boost = role_xppg(row["position"], expected_minutes, role)
         neutral_xppg += role_boost
         fixture_factors = upcoming_fixture_factors(con, season, row["team_id"], 6)
-        next_3_xppg = adjusted_horizon_ppg(neutral_xppg, fixture_factors, 3)
-        next_6_xppg = adjusted_horizon_ppg(neutral_xppg, fixture_factors, 6)
+        opponent_goals = upcoming_expected_opponent_goals(con, season, row["team_id"], 6)
+        neutral_clean_sheet = clean_sheet_horizon_ev([], row["position"], expected_minutes, 1)
+        clean_sheet_3 = clean_sheet_horizon_ev(opponent_goals, row["position"], expected_minutes, 3)
+        clean_sheet_6 = clean_sheet_horizon_ev(opponent_goals, row["position"], expected_minutes, 6)
+        open_play_xppg = max(0.0, neutral_xppg - neutral_clean_sheet)
+        next_3_xppg = adjusted_horizon_ppg(open_play_xppg, fixture_factors, 3) + clean_sheet_3
+        next_6_xppg = adjusted_horizon_ppg(open_play_xppg, fixture_factors, 6) + clean_sheet_6
         buy_delta_3 = next_3_xppg - value_par
         buy_delta_6 = next_6_xppg - value_par
         confidence = min(1.0, 0.45 + minutes_confidence * 0.55)
@@ -115,6 +120,9 @@ def buy_board(
                 "xg90": round(rates["xg90"], 2) if rates else None,
                 "xa90": round(rates["xa90"], 2) if rates else None,
                 "role_xppg": round(role_boost, 2),
+                "clean_sheet_xppg_3": round(clean_sheet_3, 2),
+                "clean_sheet_xppg_6": round(clean_sheet_6, 2),
+                "expected_opponent_goals_6": round(sum((opponent_goals + [1.35] * 6)[:6]) / 6, 2),
                 "role_override_reason": role["reason"] if role else None,
                 **{key: role[key] if role else 0 for key in ROLE_KEYS},
                 "start_probability": round(override["start_probability"] if override else min(1.0, minutes / max(1, denominator * 60)), 2),

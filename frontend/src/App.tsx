@@ -28,6 +28,8 @@ type BoardRow = {
   xg90?: number | null;
   xa90?: number | null;
   role_xppg: number;
+  clean_sheet_xppg_6: number;
+  expected_opponent_goals_6: number;
   penalties: number;
   direct_free_kicks: number;
   corners: number;
@@ -261,6 +263,8 @@ function App() {
               {detail.current.xg90 != null && <span>xG90 {detail.current.xg90.toFixed(2)}</span>}
               {detail.current.xa90 != null && <span>xA90 {detail.current.xa90.toFixed(2)}</span>}
               {detail.current.role_xppg > 0 && <span>Role +{detail.current.role_xppg.toFixed(2)}</span>}
+              {detail.current.clean_sheet_xppg_6 > 0 && <span>CS {detail.current.clean_sheet_xppg_6.toFixed(2)}</span>}
+              {detail.current.expected_opponent_goals_6 > 0 && <span>Opp xG {detail.current.expected_opponent_goals_6.toFixed(2)}</span>}
               <span className={detail.current.buy_delta_6 >= 0 ? "positive" : "negative"}>Delta {detail.current.buy_delta_6.toFixed(2)}</span>
               <span>{detail.current.status}</span>
             </div>

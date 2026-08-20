@@ -42,11 +42,7 @@ def confidence_label(score: float) -> str:
 def projection_breakdown(row: dict) -> dict[str, float]:
     minutes_share = max(0.0, min(1.0, row["expected_minutes"] / 90))
     appearance = min(2.0, 2.0 * minutes_share)
-    clean_sheet = 0.0
-    if row["position"] in {"GK", "DEF"}:
-        clean_sheet = max(0.0, row["neutral_xppg"] - row["actual_ppg"]) * 0.4
-    elif row["position"] == "MID":
-        clean_sheet = max(0.0, row["neutral_xppg"] - row["actual_ppg"]) * 0.1
+    clean_sheet = row.get("clean_sheet_xppg_6", 0.0)
     fixture = row["next_6_xppg"] - row["neutral_xppg"]
     remaining = row["neutral_xppg"] - appearance - clean_sheet
     attacking = max(0.0, remaining * (0.75 if row["position"] != "GK" else 0.1))
