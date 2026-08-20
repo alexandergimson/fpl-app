@@ -12,7 +12,7 @@ from backend.services.minutes import latest_minutes_overrides
 from backend.services.price_par import blended_par_for, current_curve_points
 from backend.services.roles import ROLE_KEYS, latest_role_overrides
 from backend.services.underlying import attacking_xppg, defcon_xppg, player_underlying_rates
-from backend.services.valuation import player_status
+from backend.services.valuation import captain_adjusted_delta, player_status
 
 
 def load_par_points(con: sqlite3.Connection, season: str) -> list[ParPoint]:
@@ -107,6 +107,7 @@ def buy_board(
         next_6_xppg = adjusted_horizon_ppg(open_play_xppg, fixture_factors, 6) + clean_sheet_6
         buy_delta_3 = next_3_xppg - value_par
         buy_delta_6 = next_6_xppg - value_par
+        captain_delta = captain_adjusted_delta(next_6_xppg, value_par, price)
         confidence = min(1.0, 0.45 + minutes_confidence * 0.55)
         opportunity_score = buy_delta_6 * minutes_confidence * confidence
         board.append(
@@ -124,6 +125,7 @@ def buy_board(
                 "next_6_xppg": round(next_6_xppg, 2),
                 "buy_delta_3": round(buy_delta_3, 2),
                 "buy_delta_6": round(buy_delta_6, 2),
+                "captain_adjusted_delta": round(captain_delta, 2),
                 "opportunity_score": round(opportunity_score, 2),
                 "expected_minutes": round(expected_minutes, 1),
                 "xg90": round(rates["xg90"], 2) if rates else None,

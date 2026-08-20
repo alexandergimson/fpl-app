@@ -90,6 +90,10 @@ Bonus EV uses `player_gameweeks.bonus` as a conservative bonus/90 rate regressed
 
 Goalkeeper save EV uses `player_gameweeks.saves`, regressed toward the goalkeeper average with a 900-minute prior. Projected saves convert to FPL save points at one point per three saves and appear as a separate player-detail component.
 
+## Captaincy
+
+Buy Board rows expose raw `buy_delta_6` and `captain_adjusted_delta`. The captain adjustment is deliberately simple: players priced at £10.0m+ get a partial captaincy multiplier, and players priced at £12.0m+ get a larger one. This metric is visible but does not replace the primary Buy Board ranking.
+
 ## Provenance
 
 Imported rows store:

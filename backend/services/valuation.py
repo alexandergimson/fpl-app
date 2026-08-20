@@ -29,3 +29,15 @@ def transfer_verdict(gain: float) -> str:
     if gain < 6:
         return "interesting"
     return "strong"
+
+
+def captaincy_weight(current_price: float) -> float:
+    if current_price >= 12:
+        return 0.6
+    if current_price >= 10:
+        return 0.35
+    return 0.0
+
+
+def captain_adjusted_delta(next_xppg: float, value_par: float, current_price: float) -> float:
+    return next_xppg * (1 + captaincy_weight(current_price)) - value_par

@@ -4,7 +4,7 @@ from backend.models.price_par import ParPoint, interpolate, pava
 from backend.models.projections import clean_sheet_ev, defcon_ev, expected_minutes, role_xppg
 from backend.models.projections import projection_breakdown
 import pandas as pd
-from backend.services.valuation import player_status, selling_price
+from backend.services.valuation import captain_adjusted_delta, captaincy_weight, player_status, selling_price
 from backend.services.boards import breakout_board, buy_board, infer_gameweeks, trap_board
 from backend.services.bonus import bonus_rates, bonus_xppg
 from backend.services.goalkeepers import save_rates, save_xppg
@@ -39,6 +39,11 @@ class ModelTests(unittest.TestCase):
     def test_selling_price(self):
         self.assertEqual(selling_price(5.0, 5.3), 5.1)
         self.assertEqual(selling_price(5.0, 4.8), 4.8)
+
+    def test_captain_adjusted_delta_for_premium_players(self):
+        self.assertEqual(captaincy_weight(9.5), 0.0)
+        self.assertEqual(captaincy_weight(10.0), 0.35)
+        self.assertAlmostEqual(captain_adjusted_delta(6.0, 5.0, 12.0), 4.6)
 
     def test_expected_minutes(self):
         self.assertAlmostEqual(expected_minutes(0.8, 75, 0.15, 20), 63)
@@ -88,6 +93,7 @@ class ModelTests(unittest.TestCase):
             row = buy_board(con, "2026-27", "2026-27", 10, 1)[0]
         self.assertEqual(row["value_par"], 4.0)
         self.assertIn("opportunity_score", row)
+        self.assertIn("captain_adjusted_delta", row)
 
     def test_preseason_bootstrap_totals_use_full_season_denominator(self):
         rows = [{"total_points": 240}]

@@ -23,6 +23,7 @@ type BoardRow = {
   neutral_xppg: number;
   next_6_xppg: number;
   buy_delta_6: number;
+  captain_adjusted_delta: number;
   opportunity_score: number;
   expected_minutes: number;
   xg90?: number | null;
@@ -73,7 +74,7 @@ type Alert = {
   created_at: string;
 };
 
-type SortKey = "buy_delta_6" | "opportunity_score" | "next_6_xppg" | "current_price" | "expected_minutes";
+type SortKey = "buy_delta_6" | "captain_adjusted_delta" | "opportunity_score" | "next_6_xppg" | "current_price" | "expected_minutes";
 
 function App() {
   const [points, setPoints] = useState<ParPoint[]>([]);
@@ -230,6 +231,7 @@ function App() {
                 <th>Par</th>
                 <th><button className="sort" onClick={() => changeSort("next_6_xppg")}>Next 6</button></th>
                 <th><button className="sort" onClick={() => changeSort("buy_delta_6")}>Delta</button></th>
+                <th><button className="sort" onClick={() => changeSort("captain_adjusted_delta")}>Cap</button></th>
                 <th><button className="sort" onClick={() => changeSort("opportunity_score")}>Opp</button></th>
                 <th>Fix</th>
                 <th><button className="sort" onClick={() => changeSort("expected_minutes")}>Min</button></th>
@@ -246,6 +248,7 @@ function App() {
                   <td>{row.value_par.toFixed(2)}</td>
                   <td>{row.next_6_xppg.toFixed(2)}</td>
                   <td className={row.buy_delta_6 >= 0 ? "positive" : "negative"}>{row.buy_delta_6.toFixed(2)}</td>
+                  <td className={row.captain_adjusted_delta >= 0 ? "positive" : "negative"}>{row.captain_adjusted_delta.toFixed(2)}</td>
                   <td className={row.opportunity_score >= 0 ? "positive" : "negative"}>{row.opportunity_score.toFixed(2)}</td>
                   <td>{row.fixture_factor_6.toFixed(2)}</td>
                   <td title={row.minutes_override_reason ?? ""}>{row.expected_minutes.toFixed(0)}{row.minutes_override_reason ? "*" : ""}</td>
@@ -272,6 +275,7 @@ function App() {
               {detail.current.save_xppg > 0 && <span>Saves {detail.current.save_xppg.toFixed(2)}</span>}
               {detail.current.expected_opponent_goals_6 > 0 && <span>Opp xG {detail.current.expected_opponent_goals_6.toFixed(2)}</span>}
               <span className={detail.current.buy_delta_6 >= 0 ? "positive" : "negative"}>Delta {detail.current.buy_delta_6.toFixed(2)}</span>
+              <span className={detail.current.captain_adjusted_delta >= 0 ? "positive" : "negative"}>Cap Delta {detail.current.captain_adjusted_delta.toFixed(2)}</span>
               <span>{detail.current.status}</span>
             </div>
             <h3>Attacking Roles</h3>
