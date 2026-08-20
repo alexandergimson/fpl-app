@@ -27,6 +27,7 @@ type BoardRow = {
   captain_adjusted_delta: number;
   opportunity_score: number;
   expected_minutes: number;
+  start_probability: number;
   xg90?: number | null;
   xa90?: number | null;
   role_xppg: number;
@@ -62,6 +63,14 @@ type PlayerDetail = {
   current: BoardRow;
   projection_breakdown: Record<string, number>;
   recent_gameweeks: { gameweek: number; total_points: number; minutes: number; value: number }[];
+  minutes_history: {
+    start_probability: number;
+    expected_minutes_if_starting: number;
+    substitute_probability: number;
+    expected_minutes_if_sub: number;
+    reason: string;
+    created_at: string;
+  }[];
   role_history: {
     penalties: number;
     direct_free_kicks: number;
@@ -121,6 +130,13 @@ function App() {
     direct_free_kicks: false,
     corners: false,
     indirect_free_kicks: false,
+    reason: "",
+  });
+  const [minutesForm, setMinutesForm] = useState({
+    start_probability: "0.8",
+    expected_minutes_if_starting: "75",
+    substitute_probability: "0.2",
+    expected_minutes_if_sub: "20",
     reason: "",
   });
 
@@ -229,6 +245,14 @@ function App() {
       indirect_free_kicks: detail.current.indirect_free_kicks > 0,
       reason: detail.current.role_override_reason ?? "",
     });
+    const latestMinutes = detail.minutes_history[0];
+    setMinutesForm({
+      start_probability: (latestMinutes?.start_probability ?? detail.current.start_probability ?? 0.8).toString(),
+      expected_minutes_if_starting: (latestMinutes?.expected_minutes_if_starting ?? Math.max(detail.current.expected_minutes, 60)).toString(),
+      substitute_probability: (latestMinutes?.substitute_probability ?? 0.2).toString(),
+      expected_minutes_if_sub: (latestMinutes?.expected_minutes_if_sub ?? 20).toString(),
+      reason: detail.current.minutes_override_reason ?? latestMinutes?.reason ?? "",
+    });
   }, [detail]);
 
   function changeSort(key: SortKey) {
@@ -252,6 +276,21 @@ function App() {
     });
     fetch(`http://127.0.0.1:8000/role-overrides/${detail.current.player_id}?${params}`, { method: "POST" })
       .then(() => selectPlayer(detail.current))
+      .catch(() => undefined);
+  }
+
+  function saveMinutes() {
+    if (!detail?.current) return;
+    const params = new URLSearchParams({
+      ...minutesForm,
+      reason: minutesForm.reason || "manual minutes update",
+      season: "2026-27",
+    });
+    fetch(`http://127.0.0.1:8000/minutes-overrides/${detail.current.player_id}?${params}`, { method: "POST" })
+      .then(() => {
+        selectPlayer(detail.current);
+        loadData();
+      })
       .catch(() => undefined);
   }
 
@@ -484,6 +523,18 @@ function App() {
             </div>
             {detail.role_history.length > 0 && (
               <p className="note">Latest: {detail.role_history[0].reason}</p>
+            )}
+            <h3>Minutes Override</h3>
+            <div className="role-form">
+              <input aria-label="Start probability" type="number" min="0" max="1" step="0.05" placeholder="Start prob 0-1" value={minutesForm.start_probability} onChange={(event) => setMinutesForm({ ...minutesForm, start_probability: event.target.value })} />
+              <input aria-label="Minutes if starting" type="number" min="0" max="90" step="1" placeholder="Start min" value={minutesForm.expected_minutes_if_starting} onChange={(event) => setMinutesForm({ ...minutesForm, expected_minutes_if_starting: event.target.value })} />
+              <input aria-label="Substitute probability" type="number" min="0" max="1" step="0.05" placeholder="Sub prob 0-1" value={minutesForm.substitute_probability} onChange={(event) => setMinutesForm({ ...minutesForm, substitute_probability: event.target.value })} />
+              <input aria-label="Minutes if substitute" type="number" min="0" max="90" step="1" placeholder="Sub min" value={minutesForm.expected_minutes_if_sub} onChange={(event) => setMinutesForm({ ...minutesForm, expected_minutes_if_sub: event.target.value })} />
+              <input aria-label="Minutes reason" placeholder="Reason" value={minutesForm.reason} onChange={(event) => setMinutesForm({ ...minutesForm, reason: event.target.value })} />
+              <button onClick={saveMinutes}>Save Minutes</button>
+            </div>
+            {detail.minutes_history.length > 0 && (
+              <p className="note">Latest: {detail.minutes_history[0].reason}</p>
             )}
             <div className="chart-grid">
               {recentTrend.length > 0 && (

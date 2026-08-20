@@ -58,6 +58,7 @@
 - Buy Board filters include price range, ownership, minimum delta, confidence and tracked-only.
 - Player detail API/UI slice is implemented with valuation, recent gameweeks and tracked snapshots.
 - Player detail shows recent gameweek and tracked-snapshot trend charts.
+- Player detail can save minutes overrides and shows the latest override note.
 - Dashboard alert generation is implemented for tracked-player snapshot changes.
 - Minutes override API is implemented and applied to board projections.
 - Tracked snapshots are immutable by gameweek.

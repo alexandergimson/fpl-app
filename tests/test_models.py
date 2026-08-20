@@ -366,10 +366,12 @@ class ModelTests(unittest.TestCase):
                 ('2026-27', 1, 1, 1, 2, 1, 10, 90, 1, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'test', 'now', 'test')
                 """
             )
+            add_minutes_override(con, "2026-27", 1, 0.9, 80, 0.1, 20, "starter")
         detail = player_detail(con, "2026-27", 1)
         recent = recent_gameweeks(con, "2026-27", 1)
         self.assertEqual(detail["current"]["player"], "Detail")
         self.assertIn("appearance_ev", detail["projection_breakdown"])
+        self.assertEqual(detail["minutes_history"][0]["reason"], "starter")
         self.assertEqual(recent[0]["total_points"], 10)
 
     def test_projection_breakdown_sums_to_projection(self):

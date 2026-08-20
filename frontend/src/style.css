@@ -118,6 +118,7 @@ th:first-child, td:first-child {
 
 .toolbar input,
 .toolbar select,
+.role-form input[type="number"],
 .role-form input[type="text"],
 .role-form input:not([type]) {
   border: 1px solid #a1a1aa;
