@@ -13,6 +13,7 @@ from backend.backtests.metrics import evaluate_rows, mae, ranks, rmse, spearman
 from backend.services.tracking import snapshot_tracked, track_player, tracked_players, tracked_snapshots, untrack_player
 from backend.services.squad import remove_squad_player, squad_analysis, squad_verdict, upsert_squad_player
 from backend.services.player_detail import player_detail, recent_gameweeks
+from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, list_alerts
 from backend.ingestion.loaders import replace_player_underlying
 from backend.ingestion.loaders import replace_team_underlying
 from backend.services.underlying import attacking_xppg, player_underlying_rates
@@ -358,6 +359,35 @@ class ModelTests(unittest.TestCase):
         self.assertGreater(mean, 3.0)
         self.assertGreater(par, 3.5)
         self.assertIn(confidence, {"LOW", "MEDIUM"})
+
+    def test_tracked_snapshot_alerts_are_deduped_and_acknowledgeable(self):
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Alert', '', '', 1, 'TST', 'MID',
+                  5.0, 10, 90, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO tracked_snapshots (
+                  season, player_id, gameweek, price, market_mean, value_par,
+                  actual_ppg, neutral_xppg, next_3_xppg, next_6_xppg,
+                  buy_delta, ownership, start_probability, status
+                ) VALUES
+                ('2026-27', 1, 1, 5.0, 3.0, 3.5, 3.0, 3.2, 3.2, 3.2, -0.3, 10.0, 1.0, 'WATCH'),
+                ('2026-27', 1, 2, 5.0, 3.0, 3.5, 3.0, 3.9, 3.9, 3.9, 0.2, 10.0, 1.0, 'BUY')
+                """
+            )
+            self.assertEqual(generate_tracked_alerts(con, "2026-27"), 3)
+            self.assertEqual(generate_tracked_alerts(con, "2026-27"), 0)
+            alerts = list_alerts(con, "2026-27")
+            acknowledge_alert(con, alerts[0]["id"])
+            remaining = list_alerts(con, "2026-27")
+        self.assertEqual(len(alerts), 3)
+        self.assertEqual(len(remaining), 2)
 
 
 if __name__ == "__main__":

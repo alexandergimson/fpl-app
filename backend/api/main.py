@@ -6,6 +6,7 @@ except ImportError:  # pragma: no cover
     FastAPI = None
 
 from backend.data.db import connect
+from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, list_alerts
 from backend.services.boards import breakout_board, buy_board, trap_board
 from backend.services.player_detail import player_detail
 from backend.services.squad import remove_squad_player, squad_analysis, upsert_squad_player
@@ -130,6 +131,23 @@ if FastAPI:
     def delete_squad_player(player_id: int, season: str = "2026-27"):
         with connect() as con:
             remove_squad_player(con, season, player_id)
+        return {"ok": True}
+
+    @app.get("/alerts")
+    def get_alerts(season: str = "2026-27", include_acknowledged: bool = False):
+        with connect() as con:
+            return list_alerts(con, season, include_acknowledged)
+
+    @app.post("/alerts/generate")
+    def post_generate_alerts(season: str = "2026-27"):
+        with connect() as con:
+            count = generate_tracked_alerts(con, season)
+        return {"alerts": count}
+
+    @app.post("/alerts/{alert_id}/ack")
+    def post_acknowledge_alert(alert_id: int):
+        with connect() as con:
+            acknowledge_alert(con, alert_id)
         return {"ok": True}
 else:
     app = None

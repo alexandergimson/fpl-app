@@ -25,6 +25,7 @@ make ingest-team-underlying CSV=path/to/team_underlying.csv # optional team xG/x
 make price-par  # print stored Price Par curves
 make backtest   # run walk-forward Buy Board vs naive PPG metrics
 make snapshot-tracked # store immutable snapshots for tracked players
+make generate-alerts # create dashboard alerts from tracked snapshots
 make test       # run stdlib unit tests
 make dev        # run FastAPI after setup
 ```
@@ -48,3 +49,4 @@ Optional team-underlying CSV columns: `team_id`, `gameweek`, `xg`, `xga`, plus o
 - Tracked Players: saved players plus current valuation and immutable snapshots.
 - My Squad: owned players, selling price, hold delta, best replacement and transfer gain.
 - Player Detail: current valuation, projection breakdown, recent gameweeks and tracked snapshots.
+- Alerts: generated events from tracked-player snapshot changes.

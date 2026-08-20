@@ -45,6 +45,13 @@ type PlayerDetail = {
   tracked_snapshots: { gameweek: number; buy_delta: number; price: number }[];
 };
 
+type Alert = {
+  id: number;
+  kind: string;
+  message: string;
+  created_at: string;
+};
+
 function App() {
   const [points, setPoints] = useState<ParPoint[]>([]);
   const [board, setBoard] = useState<BoardRow[]>([]);
@@ -53,6 +60,7 @@ function App() {
   const [tracked, setTracked] = useState<BoardRow[]>([]);
   const [squad, setSquad] = useState<BoardRow[]>([]);
   const [detail, setDetail] = useState<PlayerDetail | null>(null);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
 
   useEffect(() => {
     fetch("http://127.0.0.1:8000/price-par")
@@ -79,6 +87,10 @@ function App() {
       .then((response) => response.json())
       .then(setSquad)
       .catch(() => setSquad([]));
+    fetch("http://127.0.0.1:8000/alerts?season=2026-27")
+      .then((response) => response.json())
+      .then(setAlerts)
+      .catch(() => setAlerts([]));
   }, []);
 
   const positions = [...new Set(points.map((point) => point.position))];
@@ -97,6 +109,23 @@ function App() {
         <p>Price Par curves by position and current price.</p>
       </header>
       <section className="grid">
+        <article className="wide">
+          <h2>Alerts</h2>
+          <table>
+            <thead>
+              <tr><th>Type</th><th>Message</th><th>Created</th></tr>
+            </thead>
+            <tbody>
+              {alerts.map((alert) => (
+                <tr key={alert.id}>
+                  <td>{alert.kind}</td>
+                  <td>{alert.message}</td>
+                  <td>{alert.created_at}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </article>
         <article className="wide">
           <h2>Buy Board</h2>
           <table>

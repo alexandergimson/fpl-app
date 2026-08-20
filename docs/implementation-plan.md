@@ -51,6 +51,7 @@
 - Tracked player API/UI slice is implemented with immutable per-gameweek snapshots.
 - My Squad API/UI slice is implemented with selling price, hold delta and best affordable replacement.
 - Player detail API/UI slice is implemented with valuation, recent gameweeks and tracked snapshots.
+- Dashboard alert generation is implemented for tracked-player snapshot changes.
 - Tracked snapshots are immutable by gameweek.
 - Squad analysis separates Buy Value from Hold Value using FPL selling-price rules.
 

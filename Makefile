@@ -31,6 +31,9 @@ backtest:
 snapshot-tracked:
 	$(PYTHON) -m scripts.snapshot_tracked
 
+generate-alerts:
+	$(PYTHON) -m scripts.generate_alerts
+
 test:
 	$(PYTHON) -m unittest discover -s tests
 

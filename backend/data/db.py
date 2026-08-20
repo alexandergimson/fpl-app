@@ -203,6 +203,7 @@ CREATE TABLE IF NOT EXISTS alerts (
   season TEXT NOT NULL,
   player_id INTEGER,
   kind TEXT NOT NULL,
+  dedupe_key TEXT UNIQUE,
   message TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   acknowledged_at TEXT
