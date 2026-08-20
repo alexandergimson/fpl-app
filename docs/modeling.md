@@ -127,4 +127,4 @@ Backtest-style board generation can pass `as_of_gw`, which aggregates only rows 
 
 For top 10 and top 20 ranked players it reports MAE, RMSE, Spearman rank correlation, average excess points over Value Par, the share beating Value Par and the share landing in the future top quartile.
 
-The first baseline is naive PPG: rank by points per game available at the forecast deadline.
+The first baseline is naive PPG: rank by points per game available at the forecast deadline. The command also compares Buy Delta, Opportunity Score and Captain-adjusted ranking over the same walk-forward windows.

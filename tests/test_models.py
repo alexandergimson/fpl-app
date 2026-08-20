@@ -11,7 +11,7 @@ from backend.services.goalkeepers import save_rates, save_xppg
 from backend.data.db import connect
 from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, upcoming_expected_opponent_goals, upcoming_fixture_factors
 from backend.services.history import future_points, player_totals_as_of
-from backend.backtests.metrics import evaluate_rows, mae, ranks, rmse, spearman
+from backend.backtests.metrics import evaluate_model, evaluate_rows, mae, ranks, rmse, spearman
 from backend.services.tracking import snapshot_tracked, track_player, tracked_momentum, tracked_players, tracked_snapshots, tracking_status, untrack_player
 from backend.services.squad import remove_squad_player, squad_analysis, squad_verdict, upsert_squad_player
 from backend.services.player_detail import player_detail, recent_gameweeks
@@ -248,6 +248,35 @@ class ModelTests(unittest.TestCase):
             rows = [{"player_id": 1, "actual_ppg": 5, "next_6_xppg": 4, "value_par": 3}]
             result = evaluate_rows(con, "2025-26", rows, rows, 2, 2, 1, prediction_key="actual_ppg")
         self.assertEqual(result["mae"], 1)
+
+    def test_evaluate_model_can_rank_by_opportunity(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES
+                ('2025-26', 1, NULL, 'A', '', '', 1, 'TST', 'MID', 5.0, 10, 450, 10.0, 'a', 'test', 'now', 'test'),
+                ('2025-26', 2, NULL, 'B', '', '', 1, 'TST', 'MID', 5.0, 20, 900, 10.0, 'a', 'test', 'now', 'test')
+                """
+            )
+            for player_id, gw, points in [(1, 1, 5), (1, 2, 6), (2, 1, 7), (2, 2, 8)]:
+                con.execute(
+                    """
+                    INSERT INTO player_gameweeks (
+                      season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                      total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                      goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                      value, source, fetched_at, data_period
+                    ) VALUES (?, ?, ?, ?, 2, 1, ?, 90, 1, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'test', 'now', 'test')
+                    """,
+                    ("2025-26", player_id, gw, player_id * 10 + gw, points),
+                )
+            result = evaluate_model(con, "2025-26", "2026-27", 1, 2, 2, 1, "opportunity", "opportunity_score")
+        self.assertEqual(result["model"], "opportunity")
+        self.assertEqual(result["players"], 1)
 
     def test_tracking_round_trip_and_snapshot(self):
         with connect(":memory:") as con:

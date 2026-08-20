@@ -44,24 +44,23 @@ def spearman(xs: list[float], ys: list[float]) -> float:
     return numerator / (dx * dy) if dx and dy else 0.0
 
 
-def evaluate_board(con: sqlite3.Connection, season: str, par_season: str, train_end: int, test_start: int, test_end: int, top_n: int) -> dict:
+def evaluate_model(
+    con: sqlite3.Connection,
+    season: str,
+    par_season: str,
+    train_end: int,
+    test_start: int,
+    test_end: int,
+    top_n: int,
+    model: str,
+    rank_key: str,
+    prediction_key: str = "next_6_xppg",
+) -> dict:
     horizon = test_end - test_start + 1
     all_rows = buy_board(con, season, par_season, None, 2000, as_of_gw=train_end)
-    return evaluate_rows(con, season, all_rows, all_rows[:top_n], test_start, test_end, horizon) | {
-        "model": "buy_board",
-        "train_end": train_end,
-        "test_start": test_start,
-        "test_end": test_end,
-        "top_n": top_n,
-    }
-
-
-def evaluate_naive_ppg(con: sqlite3.Connection, season: str, par_season: str, train_end: int, test_start: int, test_end: int, top_n: int) -> dict:
-    horizon = test_end - test_start + 1
-    all_rows = buy_board(con, season, par_season, None, 2000, as_of_gw=train_end)
-    sorted_rows = sorted(all_rows, key=lambda row: row["actual_ppg"], reverse=True)
-    return evaluate_rows(con, season, sorted_rows, sorted_rows[:top_n], test_start, test_end, horizon, prediction_key="actual_ppg") | {
-        "model": "naive_ppg",
+    ranked_rows = sorted(all_rows, key=lambda row: row[rank_key], reverse=True)
+    return evaluate_rows(con, season, ranked_rows, ranked_rows[:top_n], test_start, test_end, horizon, prediction_key) | {
+        "model": model,
         "train_end": train_end,
         "test_start": test_start,
         "test_end": test_end,
@@ -108,6 +107,8 @@ def walk_forward(con: sqlite3.Connection, season: str = "2025-26", par_season: s
     results = []
     for _, train_end, test_start, test_end in WINDOWS:
         for top_n in (10, 20):
-            results.append(evaluate_board(con, season, par_season, train_end, test_start, test_end, top_n))
-            results.append(evaluate_naive_ppg(con, season, par_season, train_end, test_start, test_end, top_n))
+            results.append(evaluate_model(con, season, par_season, train_end, test_start, test_end, top_n, "naive_ppg", "actual_ppg", "actual_ppg"))
+            results.append(evaluate_model(con, season, par_season, train_end, test_start, test_end, top_n, "buy_delta", "buy_delta_6"))
+            results.append(evaluate_model(con, season, par_season, train_end, test_start, test_end, top_n, "opportunity", "opportunity_score"))
+            results.append(evaluate_model(con, season, par_season, train_end, test_start, test_end, top_n, "captain", "captain_adjusted_delta"))
     return results
