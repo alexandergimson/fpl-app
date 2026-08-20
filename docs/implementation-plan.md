@@ -54,6 +54,7 @@
 - My Squad shows next-3, next-6 and hit-adjusted transfer gain.
 - Official current ingest stores price snapshots and the dashboard exposes recent price movements.
 - Dashboard overview summarizes top buy, breakout, trap, weakest squad spot, alerts and price moves.
+- Alerts can be generated and acknowledged from the dashboard.
 - Buy Board filters include price range, ownership, minimum delta, confidence and tracked-only.
 - Player detail API/UI slice is implemented with valuation, recent gameweeks and tracked snapshots.
 - Player detail shows recent gameweek and tracked-snapshot trend charts.

@@ -131,6 +131,13 @@ function App() {
       .catch(() => setSquad([]));
   }
 
+  function loadAlerts() {
+    fetch("http://127.0.0.1:8000/alerts?season=2026-27")
+      .then((response) => response.json())
+      .then(setAlerts)
+      .catch(() => setAlerts([]));
+  }
+
   function loadData() {
     fetch("http://127.0.0.1:8000/price-par")
       .then((response) => response.json())
@@ -153,10 +160,7 @@ function App() {
       .then(setTracked)
       .catch(() => setTracked([]));
     loadSquad();
-    fetch("http://127.0.0.1:8000/alerts?season=2026-27")
-      .then((response) => response.json())
-      .then(setAlerts)
-      .catch(() => setAlerts([]));
+    loadAlerts();
     fetch("http://127.0.0.1:8000/price-movements?season=2026-27&limit=10")
       .then((response) => response.json())
       .then(setPriceMovements)
@@ -285,6 +289,18 @@ function App() {
       .catch(() => undefined);
   }
 
+  function generateAlerts() {
+    fetch("http://127.0.0.1:8000/alerts/generate?season=2026-27", { method: "POST" })
+      .then(loadAlerts)
+      .catch(() => undefined);
+  }
+
+  function acknowledgeAlert(alert: Alert) {
+    fetch(`http://127.0.0.1:8000/alerts/${alert.id}/ack`, { method: "POST" })
+      .then(loadAlerts)
+      .catch(() => undefined);
+  }
+
   return (
     <main>
       <header>
@@ -306,9 +322,12 @@ function App() {
         </article>
         <article className="wide">
           <h2>Alerts</h2>
+          <div className="toolbar">
+            <button className="action" onClick={generateAlerts}>Generate</button>
+          </div>
           <table>
             <thead>
-              <tr><th>Type</th><th>Message</th><th>Created</th></tr>
+              <tr><th>Type</th><th>Message</th><th>Created</th><th></th></tr>
             </thead>
             <tbody>
               {alerts.map((alert) => (
@@ -316,6 +335,7 @@ function App() {
                   <td>{alert.kind}</td>
                   <td>{alert.message}</td>
                   <td>{alert.created_at}</td>
+                  <td><button className="action" onClick={() => acknowledgeAlert(alert)}>Ack</button></td>
                 </tr>
               ))}
             </tbody>
