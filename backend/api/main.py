@@ -8,6 +8,7 @@ except ImportError:  # pragma: no cover
 from backend.data.db import connect
 from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, list_alerts
 from backend.services.boards import breakout_board, buy_board, trap_board
+from backend.services.minutes import add_minutes_override, override_history
 from backend.services.player_detail import player_detail
 from backend.services.squad import remove_squad_player, squad_analysis, upsert_squad_player
 from backend.services.tracking import snapshot_tracked, track_player, tracked_players, tracked_snapshots, untrack_player
@@ -149,6 +150,34 @@ if FastAPI:
         with connect() as con:
             acknowledge_alert(con, alert_id)
         return {"ok": True}
+
+    @app.post("/minutes-overrides/{player_id}")
+    def post_minutes_override(
+        player_id: int,
+        start_probability: float,
+        expected_minutes_if_starting: float,
+        substitute_probability: float,
+        expected_minutes_if_sub: float,
+        reason: str,
+        season: str = "2026-27",
+    ):
+        with connect() as con:
+            add_minutes_override(
+                con,
+                season,
+                player_id,
+                start_probability,
+                expected_minutes_if_starting,
+                substitute_probability,
+                expected_minutes_if_sub,
+                reason,
+            )
+        return {"ok": True}
+
+    @app.get("/minutes-overrides/{player_id}")
+    def get_minutes_overrides(player_id: int, season: str = "2026-27"):
+        with connect() as con:
+            return override_history(con, season, player_id)
 else:
     app = None
 

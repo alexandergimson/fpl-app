@@ -27,6 +27,7 @@ type BoardRow = {
   xg90?: number | null;
   xa90?: number | null;
   minutes_confidence: string;
+  minutes_override_reason?: string | null;
   fixture_factor_6: number;
   status: string;
   breakout_gap?: number;
@@ -142,7 +143,7 @@ function App() {
                   <td>{row.next_6_xppg.toFixed(2)}</td>
                   <td className={row.buy_delta_6 >= 0 ? "positive" : "negative"}>{row.buy_delta_6.toFixed(2)}</td>
                   <td>{row.fixture_factor_6.toFixed(2)}</td>
-                  <td>{row.expected_minutes.toFixed(0)}</td>
+                  <td title={row.minutes_override_reason ?? ""}>{row.expected_minutes.toFixed(0)}{row.minutes_override_reason ? "*" : ""}</td>
                   <td>{row.minutes_confidence}</td>
                   <td>{row.status}</td>
                 </tr>

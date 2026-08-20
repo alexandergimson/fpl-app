@@ -52,6 +52,7 @@
 - My Squad API/UI slice is implemented with selling price, hold delta and best affordable replacement.
 - Player detail API/UI slice is implemented with valuation, recent gameweeks and tracked snapshots.
 - Dashboard alert generation is implemented for tracked-player snapshot changes.
+- Minutes override API is implemented and applied to board projections.
 - Tracked snapshots are immutable by gameweek.
 - Squad analysis separates Buy Value from Hold Value using FPL selling-price rules.
 

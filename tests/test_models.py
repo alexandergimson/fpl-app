@@ -14,6 +14,7 @@ from backend.services.tracking import snapshot_tracked, track_player, tracked_pl
 from backend.services.squad import remove_squad_player, squad_analysis, squad_verdict, upsert_squad_player
 from backend.services.player_detail import player_detail, recent_gameweeks
 from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, list_alerts
+from backend.services.minutes import add_minutes_override, latest_minutes_overrides
 from backend.ingestion.loaders import replace_player_underlying
 from backend.ingestion.loaders import replace_team_underlying
 from backend.services.underlying import attacking_xppg, player_underlying_rates
@@ -388,6 +389,28 @@ class ModelTests(unittest.TestCase):
             remaining = list_alerts(con, "2026-27")
         self.assertEqual(len(alerts), 3)
         self.assertEqual(len(remaining), 2)
+
+    def test_minutes_override_changes_board_minutes(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "FWD", 6.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Minutes', '', '', 1, 'TST', 'FWD',
+                  6.0, 10, 300, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            before = buy_board(con, "2026-27", "2026-27", 10, 1)[0]
+            add_minutes_override(con, "2026-27", 1, 0.9, 80, 0.1, 20, "starter injured")
+            overrides = latest_minutes_overrides(con, "2026-27")
+            after = buy_board(con, "2026-27", "2026-27", 10, 1)[0]
+        self.assertEqual(round(overrides[1]["expected_minutes"], 1), 74.0)
+        self.assertGreater(after["expected_minutes"], before["expected_minutes"])
+        self.assertEqual(after["minutes_override_reason"], "starter injured")
 
 
 if __name__ == "__main__":

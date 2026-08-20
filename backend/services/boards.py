@@ -5,6 +5,7 @@ import sqlite3
 from backend.models.price_par import ParPoint
 from backend.services.fixtures import adjusted_horizon_ppg, upcoming_fixture_factors
 from backend.services.history import player_totals_as_of
+from backend.services.minutes import latest_minutes_overrides
 from backend.services.price_par import blended_par_for, current_curve_points
 from backend.services.underlying import attacking_xppg, player_underlying_rates
 from backend.services.valuation import player_status
@@ -48,6 +49,7 @@ def buy_board(
     ).fetchall()
     as_of_totals = player_totals_as_of(con, season, as_of_gw) if as_of_gw is not None else {}
     underlying = player_underlying_rates(con, season, as_of_gw)
+    overrides = latest_minutes_overrides(con, season)
     current_par_points = current_curve_points(con, season, as_of_gw) if as_of_gw is not None else None
     denominator = gameweeks_played or as_of_gw or infer_gameweeks(rows, season, par_season)
     board = []
@@ -71,6 +73,10 @@ def buy_board(
         minutes_confidence = min(1.0, minutes / max(1, denominator * 90))
         neutral_xppg = actual_ppg * (0.35 + 0.65 * minutes_confidence) + market_mean * (1 - minutes_confidence) * 0.35
         expected_minutes = minutes / max(1, denominator)
+        override = overrides.get(row["player_id"])
+        if override:
+            expected_minutes = override["expected_minutes"]
+            minutes_confidence = max(minutes_confidence, 0.75)
         rates = underlying.get(row["player_id"])
         if rates:
             appearance = min(2.0, 2.0 * expected_minutes / 90)
@@ -100,8 +106,9 @@ def buy_board(
                 "expected_minutes": round(expected_minutes, 1),
                 "xg90": round(rates["xg90"], 2) if rates else None,
                 "xa90": round(rates["xa90"], 2) if rates else None,
-                "start_probability": round(min(1.0, minutes / max(1, denominator * 60)), 2),
+                "start_probability": round(override["start_probability"] if override else min(1.0, minutes / max(1, denominator * 60)), 2),
                 "minutes_confidence": "HIGH" if minutes_confidence >= 0.75 else "MEDIUM" if minutes_confidence >= 0.5 else "LOW",
+                "minutes_override_reason": override["reason"] if override else None,
                 "fixture_factor_3": round(sum((fixture_factors + [1.0, 1.0, 1.0])[:3]) / 3, 2),
                 "fixture_factor_6": round(sum((fixture_factors + [1.0] * 6)[:6]) / 6, 2),
                 "projection_confidence": round(confidence, 2),

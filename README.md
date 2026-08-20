@@ -50,3 +50,4 @@ Optional team-underlying CSV columns: `team_id`, `gameweek`, `xg`, `xga`, plus o
 - My Squad: owned players, selling price, hold delta, best replacement and transfer gain.
 - Player Detail: current valuation, projection breakdown, recent gameweeks and tracked snapshots.
 - Alerts: generated events from tracked-player snapshot changes.
+- Minutes Overrides: manual expected-minutes adjustments with history.
