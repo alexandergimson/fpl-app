@@ -8,9 +8,10 @@ def main() -> None:
         results = walk_forward(con) if count else []
     print("walk-forward windows:", WINDOWS)
     print(f"players loaded: {count}")
-    print("train_end test_window top_n players mae rmse spear avg_excess hit_rate top_q")
+    print("model     train_end test_window top_n players mae rmse spear avg_excess hit_rate top_q")
     for row in results:
         print(
+            f"{row['model']:<9} "
             f"GW{row['train_end']:<2} "
             f"GW{row['test_start']}-{row['test_end']} "
             f"{row['top_n']:<5} "
@@ -22,7 +23,7 @@ def main() -> None:
             f"{row['beating_par_rate']:.2f} "
             f"{row['top_quartile_hit_rate']:.2f}"
         )
-    print("backtest v1: Buy Board metrics only; model comparison comes next.")
+    print("backtest v1: Buy Board vs naive PPG baseline.")
 
 
 if __name__ == "__main__":

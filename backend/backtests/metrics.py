@@ -47,7 +47,38 @@ def spearman(xs: list[float], ys: list[float]) -> float:
 def evaluate_board(con: sqlite3.Connection, season: str, par_season: str, train_end: int, test_start: int, test_end: int, top_n: int) -> dict:
     horizon = test_end - test_start + 1
     all_rows = buy_board(con, season, par_season, None, 2000, as_of_gw=train_end)
-    rows = all_rows[:top_n]
+    return evaluate_rows(con, season, all_rows, all_rows[:top_n], test_start, test_end, horizon) | {
+        "model": "buy_board",
+        "train_end": train_end,
+        "test_start": test_start,
+        "test_end": test_end,
+        "top_n": top_n,
+    }
+
+
+def evaluate_naive_ppg(con: sqlite3.Connection, season: str, par_season: str, train_end: int, test_start: int, test_end: int, top_n: int) -> dict:
+    horizon = test_end - test_start + 1
+    all_rows = buy_board(con, season, par_season, None, 2000, as_of_gw=train_end)
+    sorted_rows = sorted(all_rows, key=lambda row: row["actual_ppg"], reverse=True)
+    return evaluate_rows(con, season, sorted_rows, sorted_rows[:top_n], test_start, test_end, horizon, prediction_key="actual_ppg") | {
+        "model": "naive_ppg",
+        "train_end": train_end,
+        "test_start": test_start,
+        "test_end": test_end,
+        "top_n": top_n,
+    }
+
+
+def evaluate_rows(
+    con: sqlite3.Connection,
+    season: str,
+    all_rows: list[dict],
+    rows: list[dict],
+    test_start: int,
+    test_end: int,
+    horizon: int,
+    prediction_key: str = "next_6_xppg",
+) -> dict:
     all_actual = [future_points(con, season, row["player_id"], test_start, test_end) for row in all_rows]
     quartile_cutoff = sorted(all_actual, reverse=True)[max(0, len(all_actual) // 4 - 1)] if all_actual else 0
     errors = []
@@ -56,21 +87,17 @@ def evaluate_board(con: sqlite3.Connection, season: str, par_season: str, train_
     top_quartile_hits = 0
     for row in rows:
         actual = future_points(con, season, row["player_id"], test_start, test_end)
-        predicted = row["next_6_xppg"] * horizon
+        predicted = row[prediction_key] * horizon
         par = row["value_par"] * horizon
         errors.append(predicted - actual)
         excess.append(actual - par)
         hits += actual > par
         top_quartile_hits += actual >= quartile_cutoff
     return {
-        "train_end": train_end,
-        "test_start": test_start,
-        "test_end": test_end,
-        "top_n": top_n,
         "players": len(rows),
         "mae": round(mae(errors), 2),
         "rmse": round(rmse(errors), 2),
-        "spearman": round(spearman([row["next_6_xppg"] for row in all_rows], all_actual), 2),
+        "spearman": round(spearman([row[prediction_key] for row in all_rows], all_actual), 2),
         "avg_excess_points": round(sum(excess) / len(excess), 2) if excess else 0.0,
         "beating_par_rate": round(hits / len(rows), 2) if rows else 0.0,
         "top_quartile_hit_rate": round(top_quartile_hits / len(rows), 2) if rows else 0.0,
@@ -82,4 +109,5 @@ def walk_forward(con: sqlite3.Connection, season: str = "2025-26", par_season: s
     for _, train_end, test_start, test_end in WINDOWS:
         for top_n in (10, 20):
             results.append(evaluate_board(con, season, par_season, train_end, test_start, test_end, top_n))
+            results.append(evaluate_naive_ppg(con, season, par_season, train_end, test_start, test_end, top_n))
     return results

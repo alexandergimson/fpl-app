@@ -7,7 +7,7 @@ from backend.services.boards import buy_board, infer_gameweeks
 from backend.data.db import connect
 from backend.services.fixtures import adjusted_horizon_ppg, upcoming_fixture_factors
 from backend.services.history import future_points, player_totals_as_of
-from backend.backtests.metrics import mae, ranks, rmse, spearman
+from backend.backtests.metrics import evaluate_rows, mae, ranks, rmse, spearman
 
 
 class ModelTests(unittest.TestCase):
@@ -149,6 +149,23 @@ class ModelTests(unittest.TestCase):
         self.assertAlmostEqual(rmse([3, 4]), 3.5355, places=3)
         self.assertEqual(ranks([10, 20, 20]), [1, 2.5, 2.5])
         self.assertAlmostEqual(spearman([1, 2, 3], [1, 2, 3]), 1)
+
+    def test_evaluate_rows_can_use_naive_prediction_key(self):
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2025-26', 1, 2, 1, 2, 1, 6, 90, 1, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'test', 'now', 'test')
+                """
+            )
+            rows = [{"player_id": 1, "actual_ppg": 5, "next_6_xppg": 4, "value_par": 3}]
+            result = evaluate_rows(con, "2025-26", rows, rows, 2, 2, 1, prediction_key="actual_ppg")
+        self.assertEqual(result["mae"], 1)
 
 
 if __name__ == "__main__":
