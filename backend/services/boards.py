@@ -3,10 +3,12 @@ from __future__ import annotations
 import sqlite3
 
 from backend.models.price_par import ParPoint
+from backend.models.projections import role_xppg
 from backend.services.fixtures import adjusted_horizon_ppg, upcoming_fixture_factors
 from backend.services.history import player_totals_as_of
 from backend.services.minutes import latest_minutes_overrides
 from backend.services.price_par import blended_par_for, current_curve_points
+from backend.services.roles import ROLE_KEYS, latest_role_overrides
 from backend.services.underlying import attacking_xppg, player_underlying_rates
 from backend.services.valuation import player_status
 
@@ -50,6 +52,7 @@ def buy_board(
     as_of_totals = player_totals_as_of(con, season, as_of_gw) if as_of_gw is not None else {}
     underlying = player_underlying_rates(con, season, as_of_gw)
     overrides = latest_minutes_overrides(con, season)
+    roles = latest_role_overrides(con, season)
     current_par_points = current_curve_points(con, season, as_of_gw) if as_of_gw is not None else None
     denominator = gameweeks_played or as_of_gw or infer_gameweeks(rows, season, par_season)
     board = []
@@ -82,6 +85,9 @@ def buy_board(
             appearance = min(2.0, 2.0 * expected_minutes / 90)
             attack = attacking_xppg(row["position"], expected_minutes, rates["xg90"], rates["xa90"])
             neutral_xppg = max(neutral_xppg * 0.5, appearance + attack + max(0.0, market_mean - 2.0) * 0.35)
+        role = roles.get(row["player_id"])
+        role_boost = role_xppg(row["position"], expected_minutes, role)
+        neutral_xppg += role_boost
         fixture_factors = upcoming_fixture_factors(con, season, row["team_id"], 6)
         next_3_xppg = adjusted_horizon_ppg(neutral_xppg, fixture_factors, 3)
         next_6_xppg = adjusted_horizon_ppg(neutral_xppg, fixture_factors, 6)
@@ -108,6 +114,9 @@ def buy_board(
                 "expected_minutes": round(expected_minutes, 1),
                 "xg90": round(rates["xg90"], 2) if rates else None,
                 "xa90": round(rates["xa90"], 2) if rates else None,
+                "role_xppg": round(role_boost, 2),
+                "role_override_reason": role["reason"] if role else None,
+                **{key: role[key] if role else 0 for key in ROLE_KEYS},
                 "start_probability": round(override["start_probability"] if override else min(1.0, minutes / max(1, denominator * 60)), 2),
                 "minutes_confidence": "HIGH" if minutes_confidence >= 0.75 else "MEDIUM" if minutes_confidence >= 0.5 else "LOW",
                 "minutes_override_reason": override["reason"] if override else None,

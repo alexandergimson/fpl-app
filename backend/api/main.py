@@ -11,6 +11,7 @@ from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, 
 from backend.services.boards import breakout_board, buy_board, trap_board
 from backend.services.minutes import add_minutes_override, override_history
 from backend.services.player_detail import player_detail
+from backend.services.roles import add_role_override, role_history
 from backend.services.squad import remove_squad_player, squad_analysis, upsert_squad_player
 from backend.services.tracking import snapshot_tracked, track_player, tracked_players, tracked_snapshots, untrack_player
 
@@ -185,6 +186,25 @@ if FastAPI:
     def get_minutes_overrides(player_id: int, season: str = "2026-27"):
         with connect() as con:
             return override_history(con, season, player_id)
+
+    @app.post("/role-overrides/{player_id}")
+    def post_role_override(
+        player_id: int,
+        penalties: float = 0,
+        direct_free_kicks: float = 0,
+        corners: float = 0,
+        indirect_free_kicks: float = 0,
+        reason: str = "",
+        season: str = "2026-27",
+    ):
+        with connect() as con:
+            add_role_override(con, season, player_id, penalties, direct_free_kicks, corners, indirect_free_kicks, reason)
+        return {"ok": True}
+
+    @app.get("/role-overrides/{player_id}")
+    def get_role_overrides(player_id: int, season: str = "2026-27"):
+        with connect() as con:
+            return role_history(con, season, player_id)
 else:
     app = None
 

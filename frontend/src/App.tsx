@@ -27,6 +27,12 @@ type BoardRow = {
   expected_minutes: number;
   xg90?: number | null;
   xa90?: number | null;
+  role_xppg: number;
+  penalties: number;
+  direct_free_kicks: number;
+  corners: number;
+  indirect_free_kicks: number;
+  role_override_reason?: string | null;
   minutes_confidence: string;
   minutes_override_reason?: string | null;
   fixture_factor_6: number;
@@ -44,6 +50,14 @@ type PlayerDetail = {
   current: BoardRow;
   projection_breakdown: Record<string, number>;
   recent_gameweeks: { gameweek: number; total_points: number; minutes: number; value: number }[];
+  role_history: {
+    penalties: number;
+    direct_free_kicks: number;
+    corners: number;
+    indirect_free_kicks: number;
+    reason: string;
+    created_at: string;
+  }[];
   tracked_snapshots: { gameweek: number; buy_delta: number; price: number }[];
 };
 
@@ -69,6 +83,13 @@ function App() {
   const [position, setPosition] = useState("ALL");
   const [sortKey, setSortKey] = useState<SortKey>("buy_delta_6");
   const [sortDirection, setSortDirection] = useState<"desc" | "asc">("desc");
+  const [roleForm, setRoleForm] = useState({
+    penalties: false,
+    direct_free_kicks: false,
+    corners: false,
+    indirect_free_kicks: false,
+    reason: "",
+  });
 
   useEffect(() => {
     fetch("http://127.0.0.1:8000/price-par")
@@ -121,6 +142,17 @@ function App() {
       .catch(() => setDetail(null));
   }
 
+  useEffect(() => {
+    if (!detail?.current) return;
+    setRoleForm({
+      penalties: detail.current.penalties > 0,
+      direct_free_kicks: detail.current.direct_free_kicks > 0,
+      corners: detail.current.corners > 0,
+      indirect_free_kicks: detail.current.indirect_free_kicks > 0,
+      reason: detail.current.role_override_reason ?? "",
+    });
+  }, [detail]);
+
   function changeSort(key: SortKey) {
     if (sortKey === key) {
       setSortDirection(sortDirection === "desc" ? "asc" : "desc");
@@ -128,6 +160,21 @@ function App() {
       setSortKey(key);
       setSortDirection("desc");
     }
+  }
+
+  function saveRoles() {
+    if (!detail?.current) return;
+    const params = new URLSearchParams({
+      penalties: roleForm.penalties ? "1" : "0",
+      direct_free_kicks: roleForm.direct_free_kicks ? "1" : "0",
+      corners: roleForm.corners ? "1" : "0",
+      indirect_free_kicks: roleForm.indirect_free_kicks ? "1" : "0",
+      reason: roleForm.reason || "manual role update",
+      season: "2026-27",
+    });
+    fetch(`http://127.0.0.1:8000/role-overrides/${detail.current.player_id}?${params}`, { method: "POST" })
+      .then(() => selectPlayer(detail.current))
+      .catch(() => undefined);
   }
 
   return (
@@ -213,9 +260,33 @@ function App() {
               <span>Next 6 {detail.current.next_6_xppg.toFixed(2)}</span>
               {detail.current.xg90 != null && <span>xG90 {detail.current.xg90.toFixed(2)}</span>}
               {detail.current.xa90 != null && <span>xA90 {detail.current.xa90.toFixed(2)}</span>}
+              {detail.current.role_xppg > 0 && <span>Role +{detail.current.role_xppg.toFixed(2)}</span>}
               <span className={detail.current.buy_delta_6 >= 0 ? "positive" : "negative"}>Delta {detail.current.buy_delta_6.toFixed(2)}</span>
               <span>{detail.current.status}</span>
             </div>
+            <h3>Attacking Roles</h3>
+            <div className="role-form">
+              {(["penalties", "direct_free_kicks", "corners", "indirect_free_kicks"] as const).map((key) => (
+                <label key={key}>
+                  <input
+                    type="checkbox"
+                    checked={roleForm[key]}
+                    onChange={(event) => setRoleForm({ ...roleForm, [key]: event.target.checked })}
+                  />
+                  {key.replace(/_/g, " ")}
+                </label>
+              ))}
+              <input
+                aria-label="Role reason"
+                placeholder="Reason"
+                value={roleForm.reason}
+                onChange={(event) => setRoleForm({ ...roleForm, reason: event.target.value })}
+              />
+              <button onClick={saveRoles}>Save Roles</button>
+            </div>
+            {detail.role_history.length > 0 && (
+              <p className="note">Latest: {detail.role_history[0].reason}</p>
+            )}
             <h3>Projection Breakdown</h3>
             <table>
               <tbody>

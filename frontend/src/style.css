@@ -92,7 +92,9 @@ th:first-child, td:first-child {
 }
 
 .toolbar input,
-.toolbar select {
+.toolbar select,
+.role-form input[type="text"],
+.role-form input:not([type]) {
   border: 1px solid #a1a1aa;
   border-radius: 6px;
   font: inherit;
@@ -112,4 +114,34 @@ th:first-child, td:first-child {
   font: inherit;
   font-weight: 700;
   padding: 0;
+}
+
+.role-form {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.role-form label {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  text-transform: capitalize;
+}
+
+.role-form button {
+  border: 1px solid #18181b;
+  border-radius: 6px;
+  background: #18181b;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  padding: 8px 10px;
+}
+
+.note {
+  color: #52525b;
+  font-size: 14px;
 }

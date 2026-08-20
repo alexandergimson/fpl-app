@@ -20,6 +20,17 @@ def defcon_ev(threshold_probability: float) -> float:
     return max(0.0, min(1.0, threshold_probability)) * 2
 
 
+def role_xppg(position: str, expected_minutes: float, role: dict | None) -> float:
+    if not role:
+        return 0.0
+    minutes_share = max(0.0, min(1.0, expected_minutes / 90))
+    goal_points = 6 if position in {"GK", "DEF"} else 5 if position == "MID" else 4
+    penalty = role["penalties"] * 0.12 * goal_points
+    free_kick = role["direct_free_kicks"] * 0.03 * goal_points
+    assist = (role["corners"] + role["indirect_free_kicks"]) * 0.08 * 3
+    return minutes_share * (penalty + free_kick + assist)
+
+
 def confidence_label(score: float) -> str:
     if score >= 0.75:
         return "HIGH"

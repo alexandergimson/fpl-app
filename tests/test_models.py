@@ -1,7 +1,7 @@
 import unittest
 
 from backend.models.price_par import ParPoint, interpolate, pava
-from backend.models.projections import clean_sheet_ev, defcon_ev, expected_minutes
+from backend.models.projections import clean_sheet_ev, defcon_ev, expected_minutes, role_xppg
 from backend.models.projections import projection_breakdown
 import pandas as pd
 from backend.services.valuation import player_status, selling_price
@@ -15,6 +15,7 @@ from backend.services.squad import remove_squad_player, squad_analysis, squad_ve
 from backend.services.player_detail import player_detail, recent_gameweeks
 from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, list_alerts
 from backend.services.minutes import add_minutes_override, latest_minutes_overrides
+from backend.services.roles import add_role_override, latest_role_overrides, role_history
 from backend.ingestion.loaders import replace_player_underlying
 from backend.ingestion.loaders import replace_team_underlying
 from backend.services.underlying import attacking_xppg, player_underlying_rates
@@ -39,6 +40,10 @@ class ModelTests(unittest.TestCase):
 
     def test_expected_minutes(self):
         self.assertAlmostEqual(expected_minutes(0.8, 75, 0.15, 20), 63)
+
+    def test_role_xppg(self):
+        role = {"penalties": 1, "direct_free_kicks": 0, "corners": 1, "indirect_free_kicks": 0}
+        self.assertAlmostEqual(role_xppg("MID", 90, role), 0.84)
 
     def test_clean_sheet_poisson(self):
         self.assertAlmostEqual(clean_sheet_ev(1.0, 4, 1.0), 1.4715, places=3)
@@ -306,6 +311,30 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(round(attacking_xppg("FWD", 90, 1, 0.5), 2), 5.5)
         self.assertEqual(round(rates[1]["xg90"], 2), 1.0)
         self.assertEqual(row["xg90"], 1.0)
+
+    def test_role_override_boosts_board_projection(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Role Man', '', '', 1, 'TST', 'MID',
+                  5.0, 30, 900, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            before = buy_board(con, "2026-27", "2026-27", 10, 1)[0]
+            add_role_override(con, "2026-27", 1, 1, 0, 1, 0, "pens and corners")
+            after = buy_board(con, "2026-27", "2026-27", 10, 1)[0]
+            roles = latest_role_overrides(con, "2026-27")
+            history = role_history(con, "2026-27", 1)
+        self.assertGreater(after["neutral_xppg"], before["neutral_xppg"])
+        self.assertEqual(after["role_override_reason"], "pens and corners")
+        self.assertEqual(roles[1]["corners"], 1)
+        self.assertEqual(history[0]["reason"], "pens and corners")
 
     def test_team_underlying_drives_fixture_factor(self):
         with connect(":memory:") as con:
