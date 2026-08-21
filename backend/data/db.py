@@ -173,6 +173,13 @@ CREATE TABLE IF NOT EXISTS tracked_snapshots (
   buy_delta REAL NOT NULL,
   ownership REAL,
   start_probability REAL,
+  expected_minutes REAL,
+  projection_confidence REAL,
+  fixture_factor_6 REAL,
+  xg90 REAL,
+  xa90 REAL,
+  model_version TEXT,
+  data_cutoff TEXT,
   status TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (season, player_id, gameweek)
@@ -255,6 +262,19 @@ def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
     con.execute("PRAGMA busy_timeout = 15000")
     con.executescript(SCHEMA)
     ensure_columns(con, "player_underlying_gameweeks", {"cbit": "REAL", "cbirt": "REAL"})
+    ensure_columns(
+        con,
+        "tracked_snapshots",
+        {
+            "expected_minutes": "REAL",
+            "projection_confidence": "REAL",
+            "fixture_factor_6": "REAL",
+            "xg90": "REAL",
+            "xa90": "REAL",
+            "model_version": "TEXT",
+            "data_cutoff": "TEXT",
+        },
+    )
     return con
 
 

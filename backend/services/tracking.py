@@ -5,6 +5,8 @@ import sqlite3
 from backend.services.boards import buy_board
 from backend.services.fixtures import current_gameweek
 
+MODEL_VERSION = "v1"
+
 
 def track_player(con: sqlite3.Connection, season: str, player_id: int, note: str | None = None) -> None:
     con.execute(
@@ -44,8 +46,9 @@ def snapshot_tracked(con: sqlite3.Connection, season: str, par_season: str = "20
         INSERT OR IGNORE INTO tracked_snapshots (
           season, player_id, gameweek, price, market_mean, value_par,
           actual_ppg, neutral_xppg, next_3_xppg, next_6_xppg, buy_delta,
-          ownership, start_probability, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ownership, start_probability, expected_minutes, projection_confidence,
+          fixture_factor_6, xg90, xa90, model_version, data_cutoff, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -62,6 +65,13 @@ def snapshot_tracked(con: sqlite3.Connection, season: str, par_season: str = "20
                 row["buy_delta_6"],
                 row["ownership"],
                 row["start_probability"],
+                row["expected_minutes"],
+                row["projection_confidence"],
+                row["fixture_factor_6"],
+                row["xg90"],
+                row["xa90"],
+                MODEL_VERSION,
+                con.execute("SELECT MAX(fetched_at) AS fetched_at FROM players WHERE season = ?", (season,)).fetchone()["fetched_at"],
                 row["status"],
             )
             for row in rows

@@ -49,6 +49,7 @@
 - React dashboard prioritises sortable tables, deltas, sparklines and search.
 - Breakout and Trap board API/UI slices are implemented from the same valuation rows as Buy Board; Breakout uses forward expectation until true xG/xA underlying data exists.
 - Tracked player API/UI slice is implemented with immutable per-gameweek snapshots.
+- Tracked snapshots preserve model version, data cutoff, expected minutes, confidence and projection inputs.
 - My Squad API/UI slice is implemented with selling price, hold delta and best affordable replacement.
 - My Squad UI can add/remove players, enter purchase price and adjust bank for replacement budgets.
 - My Squad shows next-3, next-6 and hit-adjusted transfer gain.

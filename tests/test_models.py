@@ -303,7 +303,11 @@ class ModelTests(unittest.TestCase):
             self.assertEqual(tracked_players(con, "2026-27")[0]["player"], "Track")
             self.assertEqual(snapshot_tracked(con, "2026-27", gameweek=1), 1)
             self.assertEqual(snapshot_tracked(con, "2026-27", gameweek=1), 1)
-            self.assertEqual(len(tracked_snapshots(con, "2026-27", 1)), 1)
+            snapshots = tracked_snapshots(con, "2026-27", 1)
+            self.assertEqual(len(snapshots), 1)
+            self.assertEqual(snapshots[0]["model_version"], "v1")
+            self.assertEqual(snapshots[0]["data_cutoff"], "now")
+            self.assertIn("expected_minutes", snapshots[0])
             untrack_player(con, "2026-27", 1)
             self.assertEqual(tracked_players(con, "2026-27"), [])
 
