@@ -20,6 +20,7 @@
 
 - Evaluate every current player against current price, not starting price. Implemented through Buy Board interpolation.
 - Blend historical and current-season curves with configured GW weights.
+- Data Health exposes the active historical-prior/current-season blend.
 - Keep confidence low when evaluating outside observed historical price ranges.
 
 ## Phase 4: Projection Engine

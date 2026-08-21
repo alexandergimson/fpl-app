@@ -115,6 +115,8 @@ type DataStatus = {
     player_underlying_rows: number;
     team_underlying_rows: number;
     latest_ingestion_status?: string | null;
+    historical_prior_weight: number;
+    current_season_weight: number;
   };
   sources: { key: string; label: string; rows: number; fetched_at?: string | null; data_period?: string | null }[];
 };
@@ -418,6 +420,8 @@ function App() {
                 <tr><td>Fixtures expected / processed</td><td>{dataStatus.health_summary.expected_fixture_count} / {dataStatus.health_summary.processed_fixture_count}</td></tr>
                 <tr><td>Player xG/xA rows</td><td>{dataStatus.health_summary.player_underlying_rows}</td></tr>
                 <tr><td>Team xG/xGA rows</td><td>{dataStatus.health_summary.team_underlying_rows}</td></tr>
+                <tr><td>Historical prior weight</td><td>{Math.round(dataStatus.health_summary.historical_prior_weight * 100)}%</td></tr>
+                <tr><td>Current-season weight</td><td>{Math.round(dataStatus.health_summary.current_season_weight * 100)}%</td></tr>
                 <tr><td>Latest ingestion status</td><td>{dataStatus.health_summary.latest_ingestion_status ?? "-"}</td></tr>
               </tbody>
             </table>

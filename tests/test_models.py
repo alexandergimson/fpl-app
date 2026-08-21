@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from backend.models.price_par import ParPoint, interpolate, pava
+from backend.models.config import prior_weight_for_gw
 from backend.models.projections import clean_sheet_ev, defcon_ev, expected_minutes, role_xppg
 from backend.models.projections import projection_breakdown
 import pandas as pd
@@ -58,6 +59,12 @@ class ModelTests(unittest.TestCase):
         low = projection_confidence(0.2, 0, "i", False)
         self.assertGreater(high, low)
         self.assertLessEqual(high, 1.0)
+
+    def test_current_season_weight_ramps_by_gameweek(self):
+        self.assertEqual(prior_weight_for_gw(0), (1.0, 0.0))
+        self.assertEqual(prior_weight_for_gw(3), (0.75, 0.25))
+        self.assertEqual(prior_weight_for_gw(8), (0.4, 0.6))
+        self.assertEqual(prior_weight_for_gw(16), (0.15, 0.85))
 
     def test_expected_minutes(self):
         self.assertAlmostEqual(expected_minutes(0.8, 75, 0.15, 20), 63)
@@ -408,6 +415,7 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(status["latest_health_events"][0]["kind"], "missing_xg")
         self.assertEqual(status["health_summary"]["received_player_count"], 1)
         self.assertEqual(status["health_summary"]["latest_ingestion_status"], "SUCCESS")
+        self.assertEqual(status["health_summary"]["current_season_weight"], 0.25)
 
     def test_refresh_all_records_summary_without_tracked_players(self):
         players = pd.DataFrame(

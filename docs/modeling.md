@@ -27,6 +27,17 @@ Historical Price Par remains the prior.
 
 When a board is evaluated with `as_of_gw`, the app builds a current-season curve from player gameweek data available through that GW, annualises the sample, and blends it with the historical prior using the configured gameweek weights.
 
+Current-season weight ramps by gameweek:
+
+```text
+GW0:    100% prior / 0% current
+GW1-3:   75% prior / 25% current
+GW4-6:   60% prior / 40% current
+GW7-10:  40% prior / 60% current
+GW11-15: 25% prior / 75% current
+GW16+:   15% prior / 85% current
+```
+
 If current-season samples are missing or too thin for a position/price, the historical prior remains the fallback.
 
 ## Opportunity Score

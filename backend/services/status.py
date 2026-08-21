@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from backend.models.config import prior_weight_for_gw
 from backend.services.ingestion_runs import latest_health_events, latest_ingestion_runs
 
 
@@ -41,9 +42,11 @@ def data_status(con: sqlite3.Connection, season: str) -> dict:
         (by_key[key]["fetched_at"] for key in ("player_underlying_gameweeks", "team_underlying_gameweeks") if by_key[key]["fetched_at"]),
         default=None,
     )
+    current_gameweek = int(current_gw["value"]) if current_gw else None
+    historical_weight, current_weight = prior_weight_for_gw(current_gameweek or 0)
     return {
         "season": season,
-        "current_gameweek": int(current_gw["value"]) if current_gw else None,
+        "current_gameweek": current_gameweek,
         "latest_ingestion_runs": latest_runs,
         "latest_health_events": latest_health_events(con, season, 10),
         "health_summary": {
@@ -56,6 +59,8 @@ def data_status(con: sqlite3.Connection, season: str) -> dict:
             "player_underlying_rows": by_key["player_underlying_gameweeks"]["rows"],
             "team_underlying_rows": by_key["team_underlying_gameweeks"]["rows"],
             "latest_ingestion_status": latest_runs[0]["status"] if latest_runs else None,
+            "historical_prior_weight": historical_weight,
+            "current_season_weight": current_weight,
         },
         "sources": sources,
     }

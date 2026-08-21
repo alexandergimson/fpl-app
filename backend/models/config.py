@@ -21,11 +21,12 @@ class ModelConfig:
 
 
 CURRENT_BLEND_WEIGHTS = [
-    (1, 3, 0.90, 0.10),
-    (4, 6, 0.75, 0.25),
-    (7, 10, 0.55, 0.45),
-    (11, 15, 0.35, 0.65),
-    (16, 38, 0.20, 0.80),
+    (0, 0, 1.00, 0.00),
+    (1, 3, 0.75, 0.25),
+    (4, 6, 0.60, 0.40),
+    (7, 10, 0.40, 0.60),
+    (11, 15, 0.25, 0.75),
+    (16, 38, 0.15, 0.85),
 ]
 
 
@@ -33,4 +34,6 @@ def prior_weight_for_gw(gameweek: int) -> tuple[float, float]:
     for start, end, historical, current in CURRENT_BLEND_WEIGHTS:
         if start <= gameweek <= end:
             return historical, current
+    if gameweek < CURRENT_BLEND_WEIGHTS[0][0]:
+        return CURRENT_BLEND_WEIGHTS[0][2:]
     return CURRENT_BLEND_WEIGHTS[-1][2:]
