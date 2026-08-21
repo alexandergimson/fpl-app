@@ -402,6 +402,8 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(players["fetched_at"], "2026-08-21T10:00:00Z")
         self.assertEqual(status["latest_ingestion_runs"][0]["status"], "SUCCESS")
         self.assertEqual(status["latest_health_events"][0]["kind"], "missing_xg")
+        self.assertEqual(status["health_summary"]["received_player_count"], 1)
+        self.assertEqual(status["health_summary"]["latest_ingestion_status"], "SUCCESS")
 
     def test_refresh_all_records_summary_without_tracked_players(self):
         players = pd.DataFrame(

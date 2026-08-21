@@ -105,6 +105,17 @@ type DataStatus = {
   current_gameweek?: number | null;
   latest_ingestion_runs: { id: number; provider: string; kind: string; status: string; started_at: string; finished_at?: string | null; summary?: string | null }[];
   latest_health_events: { id: number; level: string; kind: string; message: string; created_at: string }[];
+  health_summary: {
+    fpl_last_updated?: string | null;
+    advanced_stats_last_updated?: string | null;
+    expected_player_count: number;
+    received_player_count: number;
+    expected_fixture_count: number;
+    processed_fixture_count: number;
+    player_underlying_rows: number;
+    team_underlying_rows: number;
+    latest_ingestion_status?: string | null;
+  };
   sources: { key: string; label: string; rows: number; fetched_at?: string | null; data_period?: string | null }[];
 };
 
@@ -398,7 +409,38 @@ function App() {
                 </div>
               ))}
             </div>
+            <h3>Health Checks</h3>
+            <table>
+              <tbody>
+                <tr><td>FPL last updated</td><td>{formatDate(dataStatus.health_summary.fpl_last_updated)}</td></tr>
+                <tr><td>Advanced stats last updated</td><td>{formatDate(dataStatus.health_summary.advanced_stats_last_updated)}</td></tr>
+                <tr><td>Players expected / received</td><td>{dataStatus.health_summary.expected_player_count} / {dataStatus.health_summary.received_player_count}</td></tr>
+                <tr><td>Fixtures expected / processed</td><td>{dataStatus.health_summary.expected_fixture_count} / {dataStatus.health_summary.processed_fixture_count}</td></tr>
+                <tr><td>Player xG/xA rows</td><td>{dataStatus.health_summary.player_underlying_rows}</td></tr>
+                <tr><td>Team xG/xGA rows</td><td>{dataStatus.health_summary.team_underlying_rows}</td></tr>
+                <tr><td>Latest ingestion status</td><td>{dataStatus.health_summary.latest_ingestion_status ?? "-"}</td></tr>
+              </tbody>
+            </table>
+            <h3>Latest Runs</h3>
+            <table>
+              <thead><tr><th>Provider</th><th>Kind</th><th>Status</th><th>Started</th><th>Finished</th><th>Summary</th></tr></thead>
+              <tbody>
+                {dataStatus.latest_ingestion_runs.map((run) => (
+                  <tr key={run.id}>
+                    <td>{run.provider}</td>
+                    <td>{run.kind}</td>
+                    <td>{run.status}</td>
+                    <td>{formatDate(run.started_at)}</td>
+                    <td>{formatDate(run.finished_at)}</td>
+                    <td>{run.summary ?? "-"}</td>
+                  </tr>
+                ))}
+                {dataStatus.latest_ingestion_runs.length === 0 && <tr><td colSpan={6}>No ingestion runs yet</td></tr>}
+              </tbody>
+            </table>
             {dataStatus.latest_health_events.length > 0 && (
+              <>
+              <h3>Health Events</h3>
               <table>
                 <thead><tr><th>Level</th><th>Type</th><th>Message</th><th>Created</th></tr></thead>
                 <tbody>
@@ -412,6 +454,7 @@ function App() {
                   ))}
                 </tbody>
               </table>
+              </>
             )}
           </article>
         )}

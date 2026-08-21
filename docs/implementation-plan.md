@@ -57,6 +57,7 @@
 - Dashboard data status shows source row counts, current gameweek and latest fetch timestamps.
 - Current FPL ingest records ingestion runs and data-health events for live pipeline visibility.
 - `make refresh` runs the local live workflow: current ingest, tracked snapshots and alert generation.
+- Data Health shows feed timestamps, expected/received counts, latest runs and warning events.
 - Alerts can be generated and acknowledged from the dashboard.
 - Buy Board filters include price range, ownership, minimum delta, confidence and tracked-only.
 - Player detail API/UI slice is implemented with valuation, recent gameweeks and tracked snapshots.
