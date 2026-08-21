@@ -36,6 +36,8 @@ def tracked_players(con: sqlite3.Connection, season: str, par_season: str = "202
 
 def snapshot_tracked(con: sqlite3.Connection, season: str, par_season: str = "2026-27", gameweek: int | None = None) -> int:
     gw = gameweek if gameweek is not None else current_gameweek(con, season)
+    if not con.execute("SELECT 1 FROM tracked_players WHERE season = ? LIMIT 1", (season,)).fetchone():
+        return 0
     rows = tracked_players(con, season, par_season)
     con.executemany(
         """

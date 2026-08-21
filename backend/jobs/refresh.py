@@ -1,0 +1,50 @@
+from __future__ import annotations
+
+from backend.data.db import connect
+from backend.ingestion.loaders import replace_fixtures, set_state, snapshot_prices, upsert_players
+from backend.ingestion.providers import OfficialFplProvider
+from backend.services.alerts import generate_tracked_alerts
+from backend.services.ingestion_runs import add_health_event, finish_ingestion_run, start_ingestion_run
+from backend.services.tracking import snapshot_tracked
+
+
+def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: str | None = None) -> dict:
+    provider = OfficialFplProvider()
+    with connect(db_path) if db_path else connect() as con:
+        run_id = start_ingestion_run(con, season, "local_refresh", "refresh")
+    try:
+        dataset = provider.bootstrap(season)
+        fixtures = provider.fixtures(season)
+        gameweek = int(dataset.frame.attrs.get("current_gameweek", 0) or 0)
+        with connect(db_path) if db_path else connect() as con:
+            players = upsert_players(con, season, dataset.frame, dataset.source, dataset.fetched_at)
+            prices = snapshot_prices(con, season, dataset.frame, dataset.source, dataset.fetched_at)
+            fixture_count = replace_fixtures(con, season, fixtures.frame, fixtures.source, fixtures.fetched_at)
+            set_state(con, season, "current_gameweek", str(gameweek))
+            snapshots = snapshot_tracked(con, season, par_season, gameweek)
+            alerts = generate_tracked_alerts(con, season)
+            if players < 500:
+                add_health_event(con, season, run_id, "WARN", "player_count", f"Only {players} players received")
+            if fixture_count < 300:
+                add_health_event(con, season, run_id, "WARN", "fixture_count", f"Only {fixture_count} fixtures received")
+            if con.execute("SELECT COUNT(*) AS n FROM player_underlying_gameweeks WHERE season = ?", (season,)).fetchone()["n"] == 0:
+                add_health_event(con, season, run_id, "WARN", "missing_player_underlying", "No player xG/xA rows loaded")
+            if con.execute("SELECT COUNT(*) AS n FROM team_underlying_gameweeks WHERE season = ?", (season,)).fetchone()["n"] == 0:
+                add_health_event(con, season, run_id, "WARN", "missing_team_underlying", "No team xG/xGA rows loaded")
+            summary = f"{players} players, {prices} prices, {fixture_count} fixtures, {snapshots} snapshots, {alerts} alerts"
+            finish_ingestion_run(con, run_id, "SUCCESS", summary)
+        return {
+            "run_id": run_id,
+            "status": "SUCCESS",
+            "gameweek": gameweek,
+            "players": players,
+            "prices": prices,
+            "fixtures": fixture_count,
+            "snapshots": snapshots,
+            "alerts": alerts,
+        }
+    except Exception as exc:
+        with connect(db_path) if db_path else connect() as con:
+            finish_ingestion_run(con, run_id, "FAILED", str(exc))
+            add_health_event(con, season, run_id, "ERROR", "refresh_failed", str(exc))
+        raise

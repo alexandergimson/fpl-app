@@ -1,9 +1,14 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from backend.models.price_par import ParPoint, interpolate, pava
 from backend.models.projections import clean_sheet_ev, defcon_ev, expected_minutes, role_xppg
 from backend.models.projections import projection_breakdown
 import pandas as pd
+from backend.ingestion.providers import Dataset
+from backend.jobs.refresh import refresh_all
 from backend.services.valuation import captain_adjusted_delta, captaincy_weight, player_status, projection_confidence, selling_price
 from backend.services.boards import breakout_board, buy_board, infer_gameweeks, trap_board
 from backend.services.bonus import bonus_rates, bonus_xppg
@@ -397,6 +402,43 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(players["fetched_at"], "2026-08-21T10:00:00Z")
         self.assertEqual(status["latest_ingestion_runs"][0]["status"], "SUCCESS")
         self.assertEqual(status["latest_health_events"][0]["kind"], "missing_xg")
+
+    def test_refresh_all_records_summary_without_tracked_players(self):
+        players = pd.DataFrame(
+            [
+                {
+                    "id": 1,
+                    "code": 1,
+                    "web_name": "Refresh",
+                    "first_name": "",
+                    "second_name": "",
+                    "team": 1,
+                    "team_code": 1,
+                    "element_type": 3,
+                    "now_cost": 50,
+                    "total_points": 0,
+                    "minutes": 0,
+                    "selected_by_percent": 10,
+                    "status": "a",
+                }
+            ]
+        )
+        players.attrs["teams"] = pd.DataFrame([{"id": 1, "name": "Team", "short_name": "TST"}])
+        players.attrs["current_gameweek"] = 1
+        fixtures = pd.DataFrame(
+            [{"id": 1, "event": 1, "kickoff_time": "", "team_h": 1, "team_a": 1, "team_h_difficulty": 3, "team_a_difficulty": 3, "finished": False}]
+        )
+        provider = type("Provider", (), {
+            "bootstrap": lambda self, season: Dataset(players, "test", "2026-08-21T10:00:00Z", season),
+            "fixtures": lambda self, season: Dataset(fixtures, "test", "2026-08-21T10:00:00Z", season),
+        })
+        with TemporaryDirectory() as tmp, patch("backend.jobs.refresh.OfficialFplProvider", provider):
+            db_path = str(Path(tmp) / "refresh.sqlite")
+            result = refresh_all("2026-27", "2026-27", db_path)
+            with connect(db_path) as con:
+                status = data_status(con, "2026-27")
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual(status["latest_ingestion_runs"][0]["kind"], "refresh")
 
     def test_projection_breakdown_sums_to_projection(self):
         row = {"position": "MID", "expected_minutes": 90, "neutral_xppg": 5.0, "actual_ppg": 4.0, "next_6_xppg": 5.2}

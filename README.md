@@ -35,9 +35,7 @@ Open `http://127.0.0.1:5173/`.
 ## Daily Workflow
 
 ```bash
-make ingest-current
-make snapshot-tracked
-make generate-alerts
+make refresh
 ```
 
 Then review Data Status, Alerts, Buy Board, Tracked Players and My Squad in the dashboard.
@@ -55,6 +53,7 @@ make price-par  # print stored Price Par curves
 make backtest   # run walk-forward Buy Board vs naive PPG metrics
 make snapshot-tracked # store immutable snapshots for tracked players
 make generate-alerts # create dashboard alerts from tracked snapshots
+make refresh    # ingest live FPL data, snapshot tracked players and generate alerts
 make test       # run stdlib unit tests
 make dev        # run FastAPI after setup
 ```
