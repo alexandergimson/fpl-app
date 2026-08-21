@@ -222,6 +222,27 @@ CREATE TABLE IF NOT EXISTS alerts (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   acknowledged_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS data_ingestion_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  season TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  status TEXT NOT NULL,
+  started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at TEXT,
+  summary TEXT
+);
+
+CREATE TABLE IF NOT EXISTS data_health_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  season TEXT NOT NULL,
+  run_id INTEGER,
+  level TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  message TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -229,8 +250,9 @@ def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
     if path != ":memory:":
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(path)
+    con = sqlite3.connect(path, timeout=15)
     con.row_factory = sqlite3.Row
+    con.execute("PRAGMA busy_timeout = 15000")
     con.executescript(SCHEMA)
     ensure_columns(con, "player_underlying_gameweeks", {"cbit": "REAL", "cbirt": "REAL"})
     return con

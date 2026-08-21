@@ -103,6 +103,8 @@ type PriceMovement = {
 type DataStatus = {
   season: string;
   current_gameweek?: number | null;
+  latest_ingestion_runs: { id: number; provider: string; kind: string; status: string; started_at: string; finished_at?: string | null; summary?: string | null }[];
+  latest_health_events: { id: number; level: string; kind: string; message: string; created_at: string }[];
   sources: { key: string; label: string; rows: number; fetched_at?: string | null; data_period?: string | null }[];
 };
 
@@ -383,6 +385,11 @@ function App() {
                 <strong>{dataStatus.season}</strong>
                 <small>GW {dataStatus.current_gameweek ?? "-"}</small>
               </div>
+              <div className="overview-item">
+                <span>Latest Ingest</span>
+                <strong>{dataStatus.latest_ingestion_runs[0]?.status ?? "-"}</strong>
+                <small>{dataStatus.latest_ingestion_runs[0]?.summary ?? "not run"}</small>
+              </div>
               {dataStatus.sources.map((source) => (
                 <div className="overview-item" key={source.key}>
                   <span>{source.label}</span>
@@ -391,6 +398,21 @@ function App() {
                 </div>
               ))}
             </div>
+            {dataStatus.latest_health_events.length > 0 && (
+              <table>
+                <thead><tr><th>Level</th><th>Type</th><th>Message</th><th>Created</th></tr></thead>
+                <tbody>
+                  {dataStatus.latest_health_events.map((event) => (
+                    <tr key={event.id}>
+                      <td>{event.level}</td>
+                      <td>{event.kind}</td>
+                      <td>{event.message}</td>
+                      <td>{formatDate(event.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </article>
         )}
         <article className="wide">

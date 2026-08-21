@@ -55,6 +55,7 @@
 - Official current ingest stores price snapshots and the dashboard exposes recent price movements.
 - Dashboard overview summarizes top buy, breakout, trap, weakest squad spot, alerts and price moves.
 - Dashboard data status shows source row counts, current gameweek and latest fetch timestamps.
+- Current FPL ingest records ingestion runs and data-health events for live pipeline visibility.
 - Alerts can be generated and acknowledged from the dashboard.
 - Buy Board filters include price range, ownership, minimum delta, confidence and tracked-only.
 - Player detail API/UI slice is implemented with valuation, recent gameweeks and tracked snapshots.

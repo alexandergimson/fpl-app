@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from backend.services.ingestion_runs import latest_health_events, latest_ingestion_runs
+
 
 SOURCES = {
     "players": "Players",
@@ -22,6 +24,8 @@ def data_status(con: sqlite3.Connection, season: str) -> dict:
     return {
         "season": season,
         "current_gameweek": int(current_gw["value"]) if current_gw else None,
+        "latest_ingestion_runs": latest_ingestion_runs(con, season, 5),
+        "latest_health_events": latest_health_events(con, season, 10),
         "sources": [
             dict(row) | {"key": table, "label": label}
             for table, label in SOURCES.items()
