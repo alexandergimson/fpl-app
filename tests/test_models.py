@@ -26,7 +26,7 @@ from backend.services.player_detail import player_detail, recent_gameweeks
 from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, list_alerts
 from backend.services.minutes import add_minutes_override, latest_minutes_overrides
 from backend.services.roles import add_role_override, latest_role_overrides, role_history
-from backend.ingestion.loaders import replace_player_underlying
+from backend.ingestion.loaders import replace_fpl_player_underlying, replace_player_underlying
 from backend.ingestion.loaders import replace_team_underlying, snapshot_prices
 from backend.services.prices import price_movements
 from backend.services.underlying import attacking_xppg, defcon_xppg, player_underlying_rates
@@ -533,6 +533,26 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(row["xg90"], 1.0)
         self.assertEqual(row["defcon_xppg"], 2.0)
         self.assertGreater(row["bonus_xppg"], 0)
+
+    def test_fpl_bootstrap_underlying_uses_canonical_player_ids_after_gw0(self):
+        players = pd.DataFrame(
+            [
+                {"id": 42, "minutes": 180, "expected_goals": "1.2", "expected_assists": "0.4"},
+                {"id": 43, "minutes": 0, "expected_goals": "0", "expected_assists": "0"},
+            ]
+        )
+        with connect(":memory:") as con:
+            players.attrs["current_gameweek"] = 0
+            self.assertEqual(replace_fpl_player_underlying(con, "2026-27", players, "now"), 0)
+            players.attrs["current_gameweek"] = 1
+            self.assertEqual(replace_fpl_player_underlying(con, "2026-27", players, "then"), 1)
+            players.attrs["current_gameweek"] = 2
+            count = replace_fpl_player_underlying(con, "2026-27", players, "now")
+            row = con.execute("SELECT player_id, gameweek, minutes, xg, xa, source FROM player_underlying_gameweeks WHERE gameweek = 2").fetchone()
+            rows = con.execute("SELECT COUNT(*) AS n FROM player_underlying_gameweeks").fetchone()["n"]
+        self.assertEqual(count, 1)
+        self.assertEqual(rows, 2)
+        self.assertEqual(dict(row), {"player_id": 42, "gameweek": 2, "minutes": 180, "xg": 1.2, "xa": 0.4, "source": "official_fpl_bootstrap"})
 
     def test_role_override_boosts_board_projection(self):
         with connect(":memory:") as con:

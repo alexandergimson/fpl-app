@@ -67,7 +67,9 @@ Manual minutes overrides set start probability, expected starter minutes, substi
 
 ## Underlying Player Data
 
-Optional CSV ingestion stores player gameweek xG/xA rows in `player_underlying_gameweeks`.
+The official FPL API is the canonical player provider and ID system. Current ingest stores FPL bootstrap xG/xA aggregates in `player_underlying_gameweeks` for GW1+ using `elements.id` as `player_id`.
+
+Optional CSV ingestion can still store player gameweek xG/xA rows in `player_underlying_gameweeks` for validation or manual enrichment.
 
 When available, Buy Board neutral xPPG uses xG/90 and xA/90 to inform attacking expectation. When unavailable, it falls back to the existing minutes-shrunk actual PPG estimate.
 
@@ -76,6 +78,8 @@ When available, Buy Board neutral xPPG uses xG/90 and xA/90 to inform attacking 
 Optional team xG/xGA CSV ingestion stores rows in `team_underlying_gameweeks`.
 
 When available, fixture adjustment uses opponent defensive weakness from team xGA relative to league average. When unavailable, it falls back to the small FPL fixture-difficulty multiplier.
+
+Understat is the intended first automated team-strength enrichment provider, but it is not wired until team xG/xGA ingestion is added.
 
 ## Clean Sheets
 

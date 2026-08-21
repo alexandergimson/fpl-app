@@ -262,6 +262,33 @@ def replace_player_underlying(con: sqlite3.Connection, season: str, metrics: pd.
     return len(rows)
 
 
+def replace_fpl_player_underlying(con: sqlite3.Connection, season: str, players: pd.DataFrame, fetched_at: str) -> int:
+    gameweek = int(players.attrs.get("current_gameweek") or 0)
+    if gameweek <= 0:
+        return 0
+    source = "official_fpl_bootstrap"
+    rows = []
+    for row in players.itertuples(index=False):
+        data = row._asdict()
+        minutes = int(data.get("minutes") or 0)
+        xg = float(data.get("expected_goals") or 0)
+        xa = float(data.get("expected_assists") or 0)
+        if minutes <= 0 or (xg == 0 and xa == 0):
+            continue
+        rows.append((season, int(data["id"]), gameweek, minutes, xg, xa, source, fetched_at, season))
+    con.execute("DELETE FROM player_underlying_gameweeks WHERE season = ? AND source = ? AND gameweek = ?", (season, source, gameweek))
+    con.executemany(
+        """
+        INSERT OR REPLACE INTO player_underlying_gameweeks (
+          season, player_id, gameweek, minutes, xg, xa, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    con.commit()
+    return len(rows)
+
+
 def replace_team_underlying(con: sqlite3.Connection, season: str, metrics: pd.DataFrame, source: str, fetched_at: str) -> int:
     required = {"team_id", "gameweek", "xg", "xga"}
     missing = required - set(metrics.columns)

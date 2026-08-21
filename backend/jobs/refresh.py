@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from backend.data.db import connect
-from backend.ingestion.loaders import replace_fixtures, set_state, snapshot_prices, upsert_players
+from backend.ingestion.loaders import replace_fixtures, replace_fpl_player_underlying, set_state, snapshot_prices, upsert_players
 from backend.ingestion.providers import OfficialFplProvider
 from backend.services.alerts import generate_tracked_alerts
 from backend.services.ingestion_runs import add_health_event, finish_ingestion_run, start_ingestion_run
@@ -19,6 +19,7 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
         with connect(db_path) if db_path else connect() as con:
             players = upsert_players(con, season, dataset.frame, dataset.source, dataset.fetched_at)
             prices = snapshot_prices(con, season, dataset.frame, dataset.source, dataset.fetched_at)
+            underlying = replace_fpl_player_underlying(con, season, dataset.frame, dataset.fetched_at)
             fixture_count = replace_fixtures(con, season, fixtures.frame, fixtures.source, fixtures.fetched_at)
             set_state(con, season, "current_gameweek", str(gameweek))
             snapshots = snapshot_tracked(con, season, par_season, gameweek)
@@ -31,7 +32,7 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
                 add_health_event(con, season, run_id, "WARN", "missing_player_underlying", "No player xG/xA rows loaded")
             if con.execute("SELECT COUNT(*) AS n FROM team_underlying_gameweeks WHERE season = ?", (season,)).fetchone()["n"] == 0:
                 add_health_event(con, season, run_id, "WARN", "missing_team_underlying", "No team xG/xGA rows loaded")
-            summary = f"{players} players, {prices} prices, {fixture_count} fixtures, {snapshots} snapshots, {alerts} alerts"
+            summary = f"{players} players, {prices} prices, {fixture_count} fixtures, {underlying} FPL xG/xA rows, {snapshots} snapshots, {alerts} alerts"
             finish_ingestion_run(con, run_id, "SUCCESS", summary)
         return {
             "run_id": run_id,
@@ -40,6 +41,7 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
             "players": players,
             "prices": prices,
             "fixtures": fixture_count,
+            "underlying": underlying,
             "snapshots": snapshots,
             "alerts": alerts,
         }

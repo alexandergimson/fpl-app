@@ -61,9 +61,9 @@ make dev        # run FastAPI after setup
 ## Data Sources
 
 - Historical data: `vaastav/Fantasy-Premier-League` raw CSV files.
-- Current data: official FPL API provider stub at `https://fantasy.premierleague.com/api/bootstrap-static/`.
+- Current player data: official FPL API at `https://fantasy.premierleague.com/api/bootstrap-static/`.
 
-The ingestion layer uses provider classes so future xG/xA/team-strength sources can be added without rewriting the modelling layer.
+The official FPL `elements.id` is the canonical player ID throughout the app. Current ingest also stores FPL bootstrap xG/xA aggregates as player-underlying rows once GW1+ data exists.
 
 Optional player-underlying CSV columns: `player_id`, `gameweek`, `minutes`, `xg`, `xa`, plus optional `shots`, `shots_in_box`, `big_chances`, `cbit`, `cbirt`.
 

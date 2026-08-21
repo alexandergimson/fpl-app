@@ -58,6 +58,7 @@
 - Dashboard overview summarizes top buy, breakout, trap, weakest squad spot, alerts and price moves.
 - Dashboard data status shows source row counts, current gameweek and latest fetch timestamps.
 - Current FPL ingest records ingestion runs and data-health events for live pipeline visibility.
+- Current FPL ingest is the canonical player provider and stores GW1+ FPL xG/xA aggregates against FPL player IDs.
 - `make refresh` runs the local live workflow: current ingest, tracked snapshots and alert generation.
 - Data Health shows feed timestamps, expected/received counts, latest runs and warning events.
 - Alerts can be generated and acknowledged from the dashboard.
@@ -79,4 +80,5 @@
 ## Optional Post-V1
 
 - Replace optional CSV xG/xA imports with an automated provider when a reliable source is chosen.
+- Add Understat as the first automated team-strength enrichment provider.
 - Add deployment packaging if the app needs to run somewhere other than local dev.
