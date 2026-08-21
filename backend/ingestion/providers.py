@@ -12,6 +12,8 @@ import pandas as pd
 RAW_BASE = "https://raw.githubusercontent.com/vaastav/Fantasy-Premier-League/master/data"
 FPL_BOOTSTRAP = "https://fantasy.premierleague.com/api/bootstrap-static/"
 FPL_FIXTURES = "https://fantasy.premierleague.com/api/fixtures/"
+FPL_ENTRY_HISTORY = "https://fantasy.premierleague.com/api/entry/{team_id}/history/"
+FPL_ENTRY_PICKS = "https://fantasy.premierleague.com/api/entry/{team_id}/event/{gameweek}/picks/"
 
 
 @dataclass(frozen=True)
@@ -84,3 +86,15 @@ class OfficialFplProvider:
     def fixtures(self, season: str = "2026-27") -> Dataset:
         payload, source, fetched_at = self._json(FPL_FIXTURES, f"{season}-fixtures.json")
         return Dataset(pd.DataFrame(payload), source, fetched_at, season)
+
+    def entry_history(self, team_id: int, season: str = "2026-27") -> Dataset:
+        url = FPL_ENTRY_HISTORY.format(team_id=team_id)
+        payload, source, fetched_at = self._json(url, f"{season}-entry-{team_id}-history.json")
+        return Dataset(pd.DataFrame(payload.get("current", [])), source, fetched_at, season)
+
+    def entry_picks(self, team_id: int, gameweek: int, season: str = "2026-27") -> Dataset:
+        url = FPL_ENTRY_PICKS.format(team_id=team_id, gameweek=gameweek)
+        payload, source, fetched_at = self._json(url, f"{season}-entry-{team_id}-gw-{gameweek}-picks.json")
+        picks = pd.DataFrame(payload.get("picks", []))
+        picks.attrs["entry_history"] = payload.get("entry_history", {})
+        return Dataset(picks, source, fetched_at, season)

@@ -19,7 +19,7 @@ from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_
 from backend.services.history import future_points, player_totals_as_of
 from backend.backtests.metrics import evaluate_model, evaluate_rows, mae, ranks, rmse, spearman
 from backend.services.tracking import snapshot_tracked, track_player, tracked_momentum, tracked_players, tracked_snapshots, tracking_status, untrack_player
-from backend.services.squad import remove_squad_player, squad_analysis, squad_verdict, upsert_squad_player
+from backend.services.squad import import_public_squad, remove_squad_player, squad_analysis, squad_health, upsert_squad_player
 from backend.services.status import data_status
 from backend.services.ingestion_runs import add_health_event, finish_ingestion_run, start_ingestion_run
 from backend.services.player_detail import player_detail, recent_gameweeks
@@ -336,7 +336,7 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(momentum[1]["tracking_status"], "IMPROVING")
         self.assertEqual(tracking_status(0.0, -0.4), "DECLINING")
 
-    def test_squad_analysis_finds_replacement(self):
+    def test_squad_analysis_reports_health_without_replacements(self):
         with connect(":memory:") as con:
             con.execute(
                 "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -353,11 +353,28 @@ class ModelTests(unittest.TestCase):
             row = squad_analysis(con, "2026-27", bank=0.1)[0]
             remove_squad_player(con, "2026-27", 1)
         self.assertEqual(row["selling_price"], 4.9)
-        self.assertEqual(row["best_replacement"], "Buy")
-        self.assertIn("transfer_gain_3", row)
-        self.assertAlmostEqual(row["hit_adjusted_gain"], row["transfer_gain"] - 4)
-        self.assertGreater(row["transfer_gain"], 0)
-        self.assertEqual(squad_verdict(0, 6), "SELL")
+        self.assertNotIn("best_replacement", row)
+        self.assertNotIn("transfer_gain", row)
+        self.assertIn(row["squad_health"], {"STRONG VALUE", "HEALTHY", "WATCH", "REVIEW"})
+        self.assertEqual(squad_health(-0.6, 80, 0.8, 0), "REVIEW")
+
+    def test_import_public_squad_replaces_squad_from_fpl_ids(self):
+        provider = type("Provider", (), {
+            "entry_history": lambda self, team_id, season: Dataset(pd.DataFrame([{"event": 1}, {"event": 2}]), "test", "now", season),
+            "entry_picks": lambda self, team_id, gameweek, season: Dataset(pd.DataFrame([{"element": 1}, {"element": 2}]), "test", "now", season),
+        })()
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO players VALUES
+                ('2026-27', 1, NULL, 'One', '', '', 1, 'TST', 'MID', 5.0, 10, 900, 10.0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 2, NULL, 'Two', '', '', 1, 'TST', 'DEF', 4.5, 10, 900, 10.0, 'a', 'test', 'now', 'test')
+                """
+            )
+            result = import_public_squad(con, "2026-27", 123, provider)
+            rows = con.execute("SELECT player_id, purchase_price FROM squad_players ORDER BY player_id").fetchall()
+        self.assertEqual(result, {"team_id": 123, "gameweek": 2, "players": 2})
+        self.assertEqual([dict(row) for row in rows], [{"player_id": 1, "purchase_price": 5.0}, {"player_id": 2, "purchase_price": 4.5}])
 
     def test_player_detail_includes_recent_history(self):
         with connect(":memory:") as con:

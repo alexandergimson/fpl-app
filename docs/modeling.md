@@ -40,19 +40,25 @@ GW16+:   15% prior / 85% current
 
 If current-season samples are missing or too thin for a position/price, the historical prior remains the fallback.
 
-## Opportunity Score
+## Core Deltas
 
-Opportunity Score is a visible ranking aid:
+Historical Delta is:
 
 ```text
-Buy Delta 6 * minutes confidence * projection confidence
+Actual PPG - Value Par
 ```
 
-It does not replace Buy Delta; it downweights attractive deltas when minutes or projection confidence is weak.
+Forward Delta is:
+
+```text
+Next-6 xPPG - Value Par
+```
+
+All Players sorts by Forward Delta by default. Emerging and Regression Risk are quick filters over the same player universe, not separate model outputs.
 
 ## Projection V1
 
-The first Buy Board uses a deliberately plain projection:
+The first market table uses a deliberately plain projection:
 
 - actual PPG supplies current production
 - minutes confidence shrinks that production toward the position/price Market Mean
@@ -71,7 +77,7 @@ The official FPL API is the canonical player provider and ID system. Current ing
 
 Optional CSV ingestion can still store player gameweek xG/xA rows in `player_underlying_gameweeks` for validation or manual enrichment.
 
-When available, Buy Board neutral xPPG uses xG/90 and xA/90 to inform attacking expectation. When unavailable, it falls back to the existing minutes-shrunk actual PPG estimate.
+When available, neutral xPPG uses xG/90 and xA/90 to inform attacking expectation. When unavailable, it falls back to the existing minutes-shrunk actual PPG estimate.
 
 ## Team Strength
 
@@ -125,9 +131,11 @@ Tracked-player momentum is `latest snapshot buy_delta - previous snapshot buy_de
 
 Alerts are generated from tracked snapshots and deduped by season, player, gameweek and alert kind. Current v1 alerts focus on large buy-delta movement and price movement.
 
-## Squad Valuation
+## Squad Health
 
-My Squad stores purchase price, current price and FPL selling price. Hold value uses the owned player's valuation against selling price, while transfer gain compares the owned player against the best affordable replacement by position. The dashboard shows next-3, next-6 and hit-adjusted gain.
+My Squad stores purchase price, current price and FPL selling price. The table diagnoses owned players with Historical Delta, Forward Delta, expected minutes, projection confidence and Value Trend. It deliberately does not choose replacements.
+
+Squad health labels are STRONG VALUE, HEALTHY, WATCH and REVIEW.
 
 ## Price Movements
 

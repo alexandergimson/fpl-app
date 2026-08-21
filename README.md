@@ -38,7 +38,7 @@ Open `http://127.0.0.1:5173/`.
 make refresh
 ```
 
-Then review Data Status, Alerts, Buy Board, Tracked Players and My Squad in the dashboard.
+Then review My Squad, All Players, Tracked Players and Data / Model in the dashboard.
 
 ## Commands
 
@@ -50,7 +50,7 @@ make ingest-current # ingest current official FPL bootstrap and fixtures
 make ingest-underlying CSV=path/to/player_underlying.csv # optional xG/xA import
 make ingest-team-underlying CSV=path/to/team_underlying.csv # optional team xG/xGA import
 make price-par  # print stored Price Par curves
-make backtest   # run walk-forward Buy Board vs naive PPG metrics
+make backtest   # run walk-forward valuation vs naive PPG metrics
 make snapshot-tracked # store immutable snapshots for tracked players
 make generate-alerts # create dashboard alerts from tracked snapshots
 make refresh    # ingest live FPL data, snapshot tracked players and generate alerts
@@ -69,16 +69,17 @@ Optional player-underlying CSV columns: `player_id`, `gameweek`, `minutes`, `xg`
 
 Optional team-underlying CSV columns: `team_id`, `gameweek`, `xg`, `xga`, plus optional `is_home`.
 
-## Boards
+## Core Tables
 
-- Buy Board: ranked by Next 6 Buy Delta.
-- Opportunity Score: Buy Delta adjusted by minutes and projection confidence.
-- Breakout Board: forward xPPG above Value Par while actual PPG still lags.
-- Trap Board: actual PPG above Value Par while forward expectation falls below par.
+- My Squad: squad health using Historical Delta, Forward Delta, confidence, minutes and value trend.
+- All Players: full market table sorted by Forward Delta by default, with position, price, team, ownership, confidence and tracked filters.
+- Emerging: All Players quick filter for negative Historical Delta and positive Forward Delta.
+- Regression Risk: All Players quick filter for positive Historical Delta and negative Forward Delta.
 - Tracked Players: saved players plus current valuation and immutable snapshots.
-- My Squad: owned players, selling price, hold delta, best replacement, next-3/next-6 transfer gain and hit-adjusted gain.
 - Player Detail: current valuation, projection breakdown, recent gameweeks and tracked snapshots.
 - Price Movements: latest stored price changes from official ingest snapshots.
 - Alerts: generated events from tracked-player snapshot changes.
 - Minutes Overrides: manual expected-minutes adjustments with history.
 - Data Status: row counts and latest fetch timestamps for the core datasets.
+
+My Squad can import the latest public 15-player squad from an FPL Team ID. Public import reflects the latest available Gameweek picks, not unsubmitted/private transfer drafts.

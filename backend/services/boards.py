@@ -59,6 +59,35 @@ def buy_board(
     roles = latest_role_overrides(con, season)
     current_par_points = current_curve_points(con, season, as_of_gw) if as_of_gw is not None else None
     denominator = gameweeks_played or as_of_gw or infer_gameweeks(rows, season, par_season)
+    previous_deltas = {
+        row["player_id"]: row["buy_delta"]
+        for row in con.execute(
+            """
+            SELECT s.player_id, s.buy_delta
+            FROM tracked_snapshots s
+            JOIN (
+              SELECT player_id, MAX(gameweek) AS gameweek
+              FROM tracked_snapshots
+              WHERE season = ?
+              GROUP BY player_id
+            ) latest ON latest.player_id = s.player_id AND latest.gameweek = s.gameweek
+            WHERE s.season = ?
+            """,
+            (season, season),
+        )
+    }
+    price_trends = {
+        row["player_id"]: row["price_trend"]
+        for row in con.execute(
+            """
+            SELECT player_id, MAX(price) - MIN(price) AS price_trend
+            FROM price_history
+            WHERE season = ?
+            GROUP BY player_id
+            """,
+            (season,),
+        )
+    }
     board = []
     for row in rows:
         if as_of_gw is not None and row["player_id"] not in as_of_totals:
@@ -107,6 +136,8 @@ def buy_board(
         next_6_xppg = adjusted_horizon_ppg(open_play_xppg, fixture_factors, 6) + clean_sheet_6
         buy_delta_3 = next_3_xppg - value_par
         buy_delta_6 = next_6_xppg - value_par
+        historical_delta = actual_ppg - value_par
+        value_trend = buy_delta_6 - previous_deltas.get(row["player_id"], buy_delta_6)
         captain_delta = captain_adjusted_delta(next_6_xppg, value_par, price)
         confidence = projection_confidence(minutes_confidence, rates["underlying_minutes"] if rates else 0, row["status"], role is not None)
         opportunity_score = buy_delta_6 * minutes_confidence * confidence
@@ -125,6 +156,12 @@ def buy_board(
                 "next_6_xppg": round(next_6_xppg, 2),
                 "buy_delta_3": round(buy_delta_3, 2),
                 "buy_delta_6": round(buy_delta_6, 2),
+                "historical_delta": round(historical_delta, 2),
+                "forward_delta": round(buy_delta_6, 2),
+                "value_trend": round(value_trend, 2),
+                "price_trend": round(price_trends.get(row["player_id"], 0.0) or 0.0, 2),
+                "is_emerging": historical_delta < 0 and buy_delta_6 > 0,
+                "is_regression_risk": historical_delta > 0 and buy_delta_6 < 0,
                 "captain_adjusted_delta": round(captain_delta, 2),
                 "opportunity_score": round(opportunity_score, 2),
                 "expected_minutes": round(expected_minutes, 1),

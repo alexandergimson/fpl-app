@@ -3,7 +3,15 @@ from __future__ import annotations
 import sqlite3
 
 from backend.services.boards import buy_board
-from backend.services.valuation import selling_price, transfer_verdict
+from backend.services.valuation import selling_price
+
+
+SQUAD_HEALTH = {
+    "strong": "STRONG VALUE",
+    "healthy": "HEALTHY",
+    "watch": "WATCH",
+    "review": "REVIEW",
+}
 
 
 def upsert_squad_player(
@@ -39,48 +47,65 @@ def squad_analysis(con: sqlite3.Connection, season: str, par_season: str = "2026
     by_id = {row["player_id"]: row for row in board}
     owned = con.execute("SELECT * FROM squad_players WHERE season = ?", (season,)).fetchall()
     result = []
-    owned_ids = {row["player_id"] for row in owned}
     for row in owned:
         player = by_id.get(row["player_id"])
         if not player:
             continue
-        budget = row["selling_price"] + bank
-        replacements = [
-            candidate
-            for candidate in board
-            if candidate["player_id"] not in owned_ids
-            and candidate["position"] == player["position"]
-            and candidate["current_price"] <= budget
-        ]
-        replacement = replacements[0] if replacements else None
-        gain_3 = (replacement["next_3_xppg"] - player["next_3_xppg"]) * 3 if replacement else 0.0
-        gain = (replacement["next_6_xppg"] - player["next_6_xppg"]) * 6 if replacement else 0.0
-        hold_delta = player["next_6_xppg"] - player["market_mean"]
         result.append(
             player
             | {
                 "purchase_price": row["purchase_price"],
                 "selling_price": row["selling_price"],
-                "hold_delta": round(hold_delta, 2),
-                "best_replacement": replacement["player"] if replacement else None,
-                "best_replacement_id": replacement["player_id"] if replacement else None,
-                "transfer_gain_3": round(gain_3, 2),
-                "transfer_gain": round(gain, 2),
-                "hit_adjusted_gain": round(gain - 4, 2),
-                "transfer_verdict": transfer_verdict(gain),
-                "squad_verdict": squad_verdict(hold_delta, gain),
+                "squad_health": squad_health(player["forward_delta"], player["expected_minutes"], player["projection_confidence"], player["value_trend"]),
             }
         )
-    return sorted(result, key=lambda item: item["transfer_gain"], reverse=True)
+    return sorted(result, key=lambda item: item["forward_delta"])
 
 
-def squad_verdict(hold_delta: float, transfer_gain: float) -> str:
-    if transfer_gain >= 6:
-        return "SELL"
-    if transfer_gain >= 4:
-        return "WATCH"
-    if hold_delta >= 0:
-        return "HOLD"
-    if transfer_gain >= 2:
-        return "WATCH"
-    return "HOLD"
+def squad_health(forward_delta: float, expected_minutes: float, confidence: float, value_trend: float) -> str:
+    if forward_delta <= -0.5 and confidence >= 0.55:
+        return SQUAD_HEALTH["review"]
+    if forward_delta < -0.15 or expected_minutes < 55 or confidence < 0.45 or value_trend < -0.25:
+        return SQUAD_HEALTH["watch"]
+    if forward_delta >= 0.5 and expected_minutes >= 60 and confidence >= 0.55:
+        return SQUAD_HEALTH["strong"]
+    return SQUAD_HEALTH["healthy"]
+
+
+def latest_public_gameweek(history_frame) -> int:
+    if history_frame.empty or "event" not in history_frame:
+        return 0
+    return int(history_frame["event"].max())
+
+
+def save_team_id(con: sqlite3.Connection, season: str, team_id: int) -> None:
+    con.execute(
+        """
+        INSERT OR REPLACE INTO app_state (season, key, value)
+        VALUES (?, 'fpl_team_id', ?)
+        """,
+        (season, str(team_id)),
+    )
+    con.commit()
+
+
+def get_team_id(con: sqlite3.Connection, season: str) -> int | None:
+    row = con.execute("SELECT value FROM app_state WHERE season = ? AND key = 'fpl_team_id'", (season,)).fetchone()
+    return int(row["value"]) if row else None
+
+
+def import_public_squad(con: sqlite3.Connection, season: str, team_id: int, provider) -> dict:
+    history = provider.entry_history(team_id, season)
+    gameweek = latest_public_gameweek(history.frame)
+    if gameweek <= 0:
+        save_team_id(con, season, team_id)
+        return {"team_id": team_id, "gameweek": 0, "players": 0}
+    picks = provider.entry_picks(team_id, gameweek, season)
+    con.execute("DELETE FROM squad_players WHERE season = ?", (season,))
+    for row in picks.frame.itertuples(index=False):
+        player_id = int(row.element)
+        price_row = con.execute("SELECT current_price FROM players WHERE season = ? AND player_id = ?", (season, player_id)).fetchone()
+        price = float(price_row["current_price"]) if price_row else 0.0
+        upsert_squad_player(con, season, player_id, price, price)
+    save_team_id(con, season, team_id)
+    return {"team_id": team_id, "gameweek": gameweek, "players": len(picks.frame)}

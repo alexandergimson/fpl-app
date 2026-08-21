@@ -3,14 +3,7 @@ import { createRoot } from "react-dom/client";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import "./style.css";
 
-type ParPoint = {
-  position: string;
-  price: number;
-  market_mean: number;
-  value_par: number;
-  sample_size: number;
-  confidence: string;
-};
+type ParPoint = { position: string; price: number; market_mean: number; value_par: number; sample_size: number; confidence: string };
 
 type BoardRow = {
   player_id: number;
@@ -18,16 +11,29 @@ type BoardRow = {
   team: string;
   position: string;
   current_price: number;
+  market_mean: number;
   value_par: number;
   actual_ppg: number;
+  historical_delta: number;
   neutral_xppg: number;
   next_3_xppg: number;
   next_6_xppg: number;
   buy_delta_6: number;
-  captain_adjusted_delta: number;
-  opportunity_score: number;
+  forward_delta: number;
   expected_minutes: number;
   start_probability: number;
+  projection_confidence: number;
+  minutes_confidence: string;
+  value_trend: number;
+  price_trend: number;
+  ownership?: number | null;
+  is_emerging: boolean;
+  is_regression_risk: boolean;
+  status: string;
+  squad_health?: string;
+  selling_price?: number;
+  delta_momentum?: number;
+  tracking_status?: string;
   xg90?: number | null;
   xa90?: number | null;
   role_xppg: number;
@@ -41,65 +47,20 @@ type BoardRow = {
   corners: number;
   indirect_free_kicks: number;
   role_override_reason?: string | null;
-  minutes_confidence: string;
   minutes_override_reason?: string | null;
-  fixture_factor_6: number;
-  ownership?: number | null;
-  status: string;
-  breakout_gap?: number;
-  trap_gap?: number;
-  selling_price?: number;
-  hold_delta?: number;
-  best_replacement?: string;
-  transfer_gain_3?: number;
-  transfer_gain?: number;
-  hit_adjusted_gain?: number;
-  squad_verdict?: string;
-  delta_momentum?: number;
-  tracking_status?: string;
 };
 
 type PlayerDetail = {
   current: BoardRow;
   projection_breakdown: Record<string, number>;
   recent_gameweeks: { gameweek: number; total_points: number; minutes: number; value: number }[];
-  minutes_history: {
-    start_probability: number;
-    expected_minutes_if_starting: number;
-    substitute_probability: number;
-    expected_minutes_if_sub: number;
-    reason: string;
-    created_at: string;
-  }[];
-  role_history: {
-    penalties: number;
-    direct_free_kicks: number;
-    corners: number;
-    indirect_free_kicks: number;
-    reason: string;
-    created_at: string;
-  }[];
+  minutes_history: { start_probability: number; expected_minutes_if_starting: number; substitute_probability: number; expected_minutes_if_sub: number; reason: string; created_at: string }[];
+  role_history: { penalties: number; direct_free_kicks: number; corners: number; indirect_free_kicks: number; reason: string; created_at: string }[];
   tracked_snapshots: { gameweek: number; buy_delta: number; price: number }[];
 };
 
-type Alert = {
-  id: number;
-  kind: string;
-  message: string;
-  created_at: string;
-};
-
-type PriceMovement = {
-  player_id: number;
-  player: string;
-  team: string;
-  position: string;
-  first_price: number;
-  latest_price: number;
-  price_change: number;
-  gameweek?: number | null;
-};
-
+type Alert = { id: number; kind: string; message: string; created_at: string };
+type PriceMovement = { player_id: number; player: string; team: string; position: string; first_price: number; latest_price: number; price_change: number; gameweek?: number | null };
 type DataStatus = {
   season: string;
   current_gameweek?: number | null;
@@ -121,150 +82,106 @@ type DataStatus = {
   sources: { key: string; label: string; rows: number; fetched_at?: string | null; data_period?: string | null }[];
 };
 
-type SortKey = "buy_delta_6" | "captain_adjusted_delta" | "opportunity_score" | "next_6_xppg" | "current_price" | "expected_minutes";
+type SortKey =
+  | "current_price"
+  | "actual_ppg"
+  | "historical_delta"
+  | "value_par"
+  | "neutral_xppg"
+  | "next_3_xppg"
+  | "next_6_xppg"
+  | "forward_delta"
+  | "expected_minutes"
+  | "projection_confidence"
+  | "ownership"
+  | "value_trend"
+  | "price_trend";
+
+const API = "http://127.0.0.1:8000";
+const tooltipText = {
+  historical_delta: "Actual PPG minus Value Par. Shows delivered value versus the benchmark for this price and position.",
+  forward_delta: "Next-6 projected PPG minus Value Par. Shows expected future value from this point forward.",
+  value_par: "Benchmark for a good FPL asset at this price and position.",
+  neutral_xppg: "Projection before future fixture adjustment.",
+  next_3_xppg: "Projected PPG across the next 3 fixtures.",
+  next_6_xppg: "Projected PPG across the next 6 fixtures.",
+  expected_minutes: "Expected minutes per match used by the projection.",
+  confidence: "Projection confidence from minutes security, data sample, role and availability.",
+  value_trend: "Current Forward Delta minus the previous tracked snapshot delta when available.",
+};
 
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" }) : "not loaded";
 }
 
+function trendLabel(value: number) {
+  if (value > 0.15) return "↑ improving";
+  if (value < -0.15) return "↓ deteriorating";
+  return "→ stable";
+}
+
+function confidenceLabel(value: number) {
+  if (value >= 0.7) return "HIGH";
+  if (value >= 0.45) return "MEDIUM";
+  return "LOW";
+}
+
+function SortButton({ label, sortKey, active, direction, onSort, title }: { label: string; sortKey: SortKey; active: boolean; direction: "asc" | "desc"; onSort: (key: SortKey) => void; title?: string }) {
+  return (
+    <button className="sort" title={title} onClick={() => onSort(sortKey)}>
+      {label}{active ? (direction === "desc" ? " ↓" : " ↑") : ""}
+    </button>
+  );
+}
+
 function App() {
   const [points, setPoints] = useState<ParPoint[]>([]);
-  const [board, setBoard] = useState<BoardRow[]>([]);
-  const [breakouts, setBreakouts] = useState<BoardRow[]>([]);
-  const [traps, setTraps] = useState<BoardRow[]>([]);
+  const [players, setPlayers] = useState<BoardRow[]>([]);
   const [tracked, setTracked] = useState<BoardRow[]>([]);
   const [squad, setSquad] = useState<BoardRow[]>([]);
   const [detail, setDetail] = useState<PlayerDetail | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [priceMovements, setPriceMovements] = useState<PriceMovement[]>([]);
   const [dataStatus, setDataStatus] = useState<DataStatus | null>(null);
+  const [teamId, setTeamId] = useState("");
+  const [teamMessage, setTeamMessage] = useState("");
   const [search, setSearch] = useState("");
   const [position, setPosition] = useState("ALL");
+  const [team, setTeam] = useState("ALL");
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
+  const [minMinutes, setMinMinutes] = useState("");
+  const [minOwnership, setMinOwnership] = useState("");
   const [maxOwnership, setMaxOwnership] = useState("");
-  const [minBuyDelta, setMinBuyDelta] = useState("");
   const [confidence, setConfidence] = useState("ALL");
   const [trackedOnly, setTrackedOnly] = useState(false);
-  const [bank, setBank] = useState(0);
+  const [quickFilter, setQuickFilter] = useState("ALL");
   const [squadPlayerId, setSquadPlayerId] = useState("");
   const [purchasePrice, setPurchasePrice] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("buy_delta_6");
+  const [sortKey, setSortKey] = useState<SortKey>("forward_delta");
   const [sortDirection, setSortDirection] = useState<"desc" | "asc">("desc");
-  const [roleForm, setRoleForm] = useState({
-    penalties: false,
-    direct_free_kicks: false,
-    corners: false,
-    indirect_free_kicks: false,
-    reason: "",
-  });
-  const [minutesForm, setMinutesForm] = useState({
-    start_probability: "0.8",
-    expected_minutes_if_starting: "75",
-    substitute_probability: "0.2",
-    expected_minutes_if_sub: "20",
-    reason: "",
-  });
+  const [roleForm, setRoleForm] = useState({ penalties: false, direct_free_kicks: false, corners: false, indirect_free_kicks: false, reason: "" });
+  const [minutesForm, setMinutesForm] = useState({ start_probability: "0.8", expected_minutes_if_starting: "75", substitute_probability: "0.2", expected_minutes_if_sub: "20", reason: "" });
 
-  function loadSquad(bankValue = bank) {
-    fetch(`http://127.0.0.1:8000/squad?season=2026-27&bank=${bankValue}`)
+  function loadSquad() {
+    fetch(`${API}/squad?season=2026-27`)
       .then((response) => response.json())
       .then(setSquad)
       .catch(() => setSquad([]));
   }
 
-  function loadAlerts() {
-    fetch("http://127.0.0.1:8000/alerts?season=2026-27")
-      .then((response) => response.json())
-      .then(setAlerts)
-      .catch(() => setAlerts([]));
-  }
-
   function loadData() {
-    fetch("http://127.0.0.1:8000/price-par")
-      .then((response) => response.json())
-      .then(setPoints)
-      .catch(() => setPoints([]));
-    fetch("http://127.0.0.1:8000/buy-board?season=2026-27&limit=25")
-      .then((response) => response.json())
-      .then(setBoard)
-      .catch(() => setBoard([]));
-    fetch("http://127.0.0.1:8000/breakout-board?season=2026-27&limit=10")
-      .then((response) => response.json())
-      .then(setBreakouts)
-      .catch(() => setBreakouts([]));
-    fetch("http://127.0.0.1:8000/trap-board?season=2026-27&limit=10")
-      .then((response) => response.json())
-      .then(setTraps)
-      .catch(() => setTraps([]));
-    fetch("http://127.0.0.1:8000/tracked-players?season=2026-27")
-      .then((response) => response.json())
-      .then(setTracked)
-      .catch(() => setTracked([]));
+    fetch(`${API}/price-par`).then((response) => response.json()).then(setPoints).catch(() => setPoints([]));
+    fetch(`${API}/all-players?season=2026-27&limit=2000`).then((response) => response.json()).then(setPlayers).catch(() => setPlayers([]));
+    fetch(`${API}/tracked-players?season=2026-27`).then((response) => response.json()).then(setTracked).catch(() => setTracked([]));
+    fetch(`${API}/alerts?season=2026-27`).then((response) => response.json()).then(setAlerts).catch(() => setAlerts([]));
+    fetch(`${API}/price-movements?season=2026-27&limit=10`).then((response) => response.json()).then(setPriceMovements).catch(() => setPriceMovements([]));
+    fetch(`${API}/data-status?season=2026-27`).then((response) => response.json()).then(setDataStatus).catch(() => setDataStatus(null));
+    fetch(`${API}/settings?season=2026-27`).then((response) => response.json()).then((settings) => setTeamId(settings.fpl_team_id?.toString() ?? "")).catch(() => undefined);
     loadSquad();
-    loadAlerts();
-    fetch("http://127.0.0.1:8000/price-movements?season=2026-27&limit=10")
-      .then((response) => response.json())
-      .then(setPriceMovements)
-      .catch(() => setPriceMovements([]));
-    fetch("http://127.0.0.1:8000/data-status?season=2026-27")
-      .then((response) => response.json())
-      .then(setDataStatus)
-      .catch(() => setDataStatus(null));
   }
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const positions = [...new Set(points.map((point) => point.position))];
-  const trackedIds = useMemo(() => new Set(tracked.map((row) => row.player_id)), [tracked]);
-  const squadIds = useMemo(() => new Set(squad.map((row) => row.player_id)), [squad]);
-  const boardPositions = ["ALL", ...[...new Set(board.map((row) => row.position))].sort()];
-  const visibleBoard = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    const min = Number(minPrice);
-    const max = Number(maxPrice);
-    const ownership = Number(maxOwnership);
-    const delta = Number(minBuyDelta);
-    return board
-      .filter((row) => position === "ALL" || row.position === position)
-      .filter((row) => !trackedOnly || trackedIds.has(row.player_id))
-      .filter((row) => !minPrice || row.current_price >= min)
-      .filter((row) => !maxPrice || row.current_price <= max)
-      .filter((row) => !maxOwnership || (row.ownership ?? 0) <= ownership)
-      .filter((row) => !minBuyDelta || row.buy_delta_6 >= delta)
-      .filter((row) => confidence === "ALL" || row.minutes_confidence === confidence)
-      .filter((row) => !query || row.player.toLowerCase().includes(query) || row.team.toLowerCase().includes(query))
-      .sort((a, b) => {
-        const direction = sortDirection === "desc" ? -1 : 1;
-        return (a[sortKey] - b[sortKey]) * direction;
-      });
-  }, [board, confidence, maxOwnership, maxPrice, minBuyDelta, minPrice, position, search, sortDirection, sortKey, trackedIds, trackedOnly]);
-  const recentTrend = useMemo(
-    () => detail?.recent_gameweeks.map((row) => ({ ...row, price: row.value })) ?? [],
-    [detail],
-  );
-  const snapshotTrend = useMemo(() => detail?.tracked_snapshots ?? [], [detail]);
-  const weakestSquad = useMemo(
-    () => [...squad].sort((a, b) => (b.transfer_gain ?? 0) - (a.transfer_gain ?? 0))[0],
-    [squad],
-  );
-  const overview = [
-    { label: "Top Buy", value: board[0]?.player ?? "-", detail: board[0] ? `${board[0].buy_delta_6.toFixed(2)} delta` : "" },
-    { label: "Breakout", value: breakouts[0]?.player ?? "-", detail: breakouts[0] ? `${(breakouts[0].breakout_gap ?? 0).toFixed(2)} gap` : "" },
-    { label: "Trap", value: traps[0]?.player ?? "-", detail: traps[0] ? `${(traps[0].trap_gap ?? 0).toFixed(2)} gap` : "" },
-    { label: "Weakest Squad", value: weakestSquad?.player ?? "-", detail: weakestSquad ? `${(weakestSquad.transfer_gain ?? 0).toFixed(2)} gain` : "" },
-    { label: "Alerts", value: alerts.length.toString(), detail: "open" },
-    { label: "Price Moves", value: priceMovements.length.toString(), detail: "tracked" },
-  ];
-
-  function selectPlayer(row: BoardRow) {
-    fetch(`http://127.0.0.1:8000/players/${row.player_id}?season=2026-27`)
-      .then((response) => response.json())
-      .then(setDetail)
-      .catch(() => setDetail(null));
-  }
+  useEffect(loadData, []);
 
   useEffect(() => {
     if (!detail?.current) return;
@@ -285,13 +202,101 @@ function App() {
     });
   }, [detail]);
 
+  const trackedIds = useMemo(() => new Set(tracked.map((row) => row.player_id)), [tracked]);
+  const squadIds = useMemo(() => new Set(squad.map((row) => row.player_id)), [squad]);
+  const positions = ["ALL", ...[...new Set(players.map((row) => row.position))].sort()];
+  const teams = ["ALL", ...[...new Set(players.map((row) => row.team))].sort()];
+  const squadSummary = useMemo(() => {
+    const counts = { "STRONG VALUE": 0, HEALTHY: 0, WATCH: 0, REVIEW: 0 };
+    squad.forEach((row) => counts[row.squad_health as keyof typeof counts]++);
+    return {
+      counts,
+      averageForwardDelta: squad.length ? squad.reduce((sum, row) => sum + row.forward_delta, 0) / squad.length : 0,
+      belowPar: squad.filter((row) => row.historical_delta < 0).length,
+      lowConfidence: squad.filter((row) => confidenceLabel(row.projection_confidence) === "LOW").length,
+      tracked: squad.filter((row) => trackedIds.has(row.player_id)).length,
+    };
+  }, [squad, trackedIds]);
+
+  const visiblePlayers = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const min = Number(minPrice);
+    const max = Number(maxPrice);
+    const minMin = Number(minMinutes);
+    const ownMin = Number(minOwnership);
+    const ownMax = Number(maxOwnership);
+    return players
+      .filter((row) => position === "ALL" || row.position === position)
+      .filter((row) => team === "ALL" || row.team === team)
+      .filter((row) => !trackedOnly || trackedIds.has(row.player_id))
+      .filter((row) => !minPrice || row.current_price >= min)
+      .filter((row) => !maxPrice || row.current_price <= max)
+      .filter((row) => !minMinutes || row.expected_minutes >= minMin)
+      .filter((row) => !minOwnership || (row.ownership ?? 0) >= ownMin)
+      .filter((row) => !maxOwnership || (row.ownership ?? 0) <= ownMax)
+      .filter((row) => confidence === "ALL" || confidenceLabel(row.projection_confidence) === confidence)
+      .filter((row) => quickFilter === "ALL" || (quickFilter === "ABOVE_PAR" && row.forward_delta >= 0) || (quickFilter === "BELOW_PAR" && row.forward_delta < 0) || (quickFilter === "EMERGING" && row.is_emerging) || (quickFilter === "REGRESSION_RISK" && row.is_regression_risk) || (quickFilter === "TRACKED" && trackedIds.has(row.player_id)))
+      .filter((row) => !query || row.player.toLowerCase().includes(query) || row.team.toLowerCase().includes(query))
+      .sort((a, b) => {
+        const av = a[sortKey] ?? 0;
+        const bv = b[sortKey] ?? 0;
+        return (av - bv) * (sortDirection === "desc" ? -1 : 1);
+      });
+  }, [players, position, team, trackedOnly, minPrice, maxPrice, minMinutes, minOwnership, maxOwnership, confidence, quickFilter, trackedIds, search, sortKey, sortDirection]);
+
+  const recentTrend = detail?.recent_gameweeks.map((row) => ({ ...row, price: row.value })) ?? [];
+  const snapshotTrend = detail?.tracked_snapshots ?? [];
+
   function changeSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDirection(sortDirection === "desc" ? "asc" : "desc");
-    } else {
+    if (sortKey === key) setSortDirection(sortDirection === "desc" ? "asc" : "desc");
+    else {
       setSortKey(key);
       setSortDirection("desc");
     }
+  }
+
+  function selectPlayer(row: BoardRow) {
+    fetch(`${API}/players/${row.player_id}?season=2026-27`).then((response) => response.json()).then(setDetail).catch(() => setDetail(null));
+  }
+
+  function track(row: BoardRow) {
+    fetch(`${API}/tracked-players/${row.player_id}?season=2026-27`, { method: "POST" }).then(loadData).catch(() => undefined);
+  }
+
+  function untrack(row: BoardRow) {
+    fetch(`${API}/tracked-players/${row.player_id}?season=2026-27`, { method: "DELETE" }).then(loadData).catch(() => undefined);
+  }
+
+  function addSquadPlayer(playerId: number, price: number) {
+    fetch(`${API}/squad/${playerId}?${new URLSearchParams({ season: "2026-27", purchase_price: price.toString() })}`, { method: "POST" }).then(loadSquad).catch(() => undefined);
+  }
+
+  function addSelectedSquadPlayer() {
+    const player = players.find((row) => row.player_id === Number(squadPlayerId));
+    if (player) addSquadPlayer(player.player_id, Number(purchasePrice || player.current_price));
+  }
+
+  function removeSquadPlayer(row: BoardRow) {
+    fetch(`${API}/squad/${row.player_id}?season=2026-27`, { method: "DELETE" }).then(loadSquad).catch(() => undefined);
+  }
+
+  function saveTeamId() {
+    if (!teamId) return;
+    setTeamMessage("Importing latest public squad...");
+    fetch(`${API}/settings/fpl-team?${new URLSearchParams({ season: "2026-27", team_id: teamId })}`, { method: "POST" })
+      .then((response) => response.json())
+      .then((result) => {
+        setTeamMessage(`Imported ${result.players} players from public GW${result.gameweek || "-"} picks.`);
+        loadData();
+      })
+      .catch(() => setTeamMessage("Could not import that public FPL team."));
+  }
+
+  function viewMarket(row: BoardRow) {
+    setPosition(row.position);
+    setMaxPrice(row.current_price.toFixed(1));
+    setQuickFilter("ALL");
+    window.location.hash = "all-players";
   }
 
   function saveRoles() {
@@ -304,332 +309,147 @@ function App() {
       reason: roleForm.reason || "manual role update",
       season: "2026-27",
     });
-    fetch(`http://127.0.0.1:8000/role-overrides/${detail.current.player_id}?${params}`, { method: "POST" })
-      .then(() => selectPlayer(detail.current))
-      .catch(() => undefined);
+    fetch(`${API}/role-overrides/${detail.current.player_id}?${params}`, { method: "POST" }).then(() => selectPlayer(detail.current)).catch(() => undefined);
   }
 
   function saveMinutes() {
     if (!detail?.current) return;
-    const params = new URLSearchParams({
-      ...minutesForm,
-      reason: minutesForm.reason || "manual minutes update",
-      season: "2026-27",
-    });
-    fetch(`http://127.0.0.1:8000/minutes-overrides/${detail.current.player_id}?${params}`, { method: "POST" })
-      .then(() => {
-        selectPlayer(detail.current);
-        loadData();
-      })
-      .catch(() => undefined);
-  }
-
-  function track(row: BoardRow) {
-    fetch(`http://127.0.0.1:8000/tracked-players/${row.player_id}?season=2026-27`, { method: "POST" })
-      .then(loadData)
-      .catch(() => undefined);
-  }
-
-  function untrack(row: BoardRow) {
-    fetch(`http://127.0.0.1:8000/tracked-players/${row.player_id}?season=2026-27`, { method: "DELETE" })
-      .then(loadData)
-      .catch(() => undefined);
-  }
-
-  function addSquadPlayer(playerId: number, price: number) {
-    const params = new URLSearchParams({
-      season: "2026-27",
-      purchase_price: price.toString(),
-    });
-    fetch(`http://127.0.0.1:8000/squad/${playerId}?${params}`, { method: "POST" })
-      .then(() => loadSquad())
-      .catch(() => undefined);
-  }
-
-  function addSelectedSquadPlayer() {
-    const player = board.find((row) => row.player_id === Number(squadPlayerId));
-    if (!player) return;
-    addSquadPlayer(player.player_id, Number(purchasePrice || player.current_price));
-  }
-
-  function removeSquadPlayer(row: BoardRow) {
-    fetch(`http://127.0.0.1:8000/squad/${row.player_id}?season=2026-27`, { method: "DELETE" })
-      .then(() => loadSquad())
-      .catch(() => undefined);
-  }
-
-  function generateAlerts() {
-    fetch("http://127.0.0.1:8000/alerts/generate?season=2026-27", { method: "POST" })
-      .then(loadAlerts)
-      .catch(() => undefined);
-  }
-
-  function acknowledgeAlert(alert: Alert) {
-    fetch(`http://127.0.0.1:8000/alerts/${alert.id}/ack`, { method: "POST" })
-      .then(loadAlerts)
-      .catch(() => undefined);
+    const params = new URLSearchParams({ ...minutesForm, reason: minutesForm.reason || "manual minutes update", season: "2026-27" });
+    fetch(`${API}/minutes-overrides/${detail.current.player_id}?${params}`, { method: "POST" }).then(() => { selectPlayer(detail.current); loadData(); }).catch(() => undefined);
   }
 
   return (
     <main>
       <header>
         <h1>FPL Analytics</h1>
-        <p>Price Par curves by position and current price.</p>
+        <p>Diagnose your squad, discover market value, then investigate the players that matter.</p>
+        <nav>
+          <a href="#my-squad">My Squad</a>
+          <a href="#all-players">All Players</a>
+          <a href="#tracked">Tracked Players</a>
+          <a href="#data-model">Data / Model</a>
+        </nav>
       </header>
+
       <section className="grid">
-        <article className="wide">
-          <h2>Overview</h2>
+        <article id="my-squad" className="wide">
+          <h2>My Squad</h2>
+          <div className="toolbar">
+            <input aria-label="FPL Team ID" type="number" placeholder="FPL Team ID" value={teamId} onChange={(event) => setTeamId(event.target.value)} />
+            <button className="action primary" onClick={saveTeamId}>Import Public Squad</button>
+            <select aria-label="Squad player" value={squadPlayerId} onChange={(event) => {
+              const id = event.target.value;
+              const player = players.find((row) => row.player_id === Number(id));
+              setSquadPlayerId(id);
+              setPurchasePrice(player ? player.current_price.toFixed(1) : "");
+            }}>
+              <option value="">Add player manually</option>
+              {players.filter((row) => !squadIds.has(row.player_id)).map((row) => <option key={row.player_id} value={row.player_id}>{row.player} {row.position} £{row.current_price.toFixed(1)}</option>)}
+            </select>
+            <input aria-label="Purchase price" type="number" step="0.1" placeholder="Purchase price" value={purchasePrice} onChange={(event) => setPurchasePrice(event.target.value)} />
+            <button className="action" onClick={addSelectedSquadPlayer}>Add</button>
+          </div>
+          <p className="note">{teamMessage || "Public import uses the latest available FPL Gameweek picks, not private transfer drafts."}</p>
           <div className="overview">
-            {overview.map((item) => (
-              <div className="overview-item" key={item.label}>
-                <span>{item.label}</span>
-                <strong>{item.value}</strong>
-                <small>{item.detail}</small>
-              </div>
-            ))}
-          </div>
-        </article>
-        {dataStatus && (
-          <article className="wide">
-            <h2>Data Status</h2>
-            <div className="status-grid">
-              <div className="overview-item">
-                <span>Season</span>
-                <strong>{dataStatus.season}</strong>
-                <small>GW {dataStatus.current_gameweek ?? "-"}</small>
-              </div>
-              <div className="overview-item">
-                <span>Latest Ingest</span>
-                <strong>{dataStatus.latest_ingestion_runs[0]?.status ?? "-"}</strong>
-                <small>{dataStatus.latest_ingestion_runs[0]?.summary ?? "not run"}</small>
-              </div>
-              {dataStatus.sources.map((source) => (
-                <div className="overview-item" key={source.key}>
-                  <span>{source.label}</span>
-                  <strong>{source.rows}</strong>
-                  <small>{formatDate(source.fetched_at)}</small>
-                </div>
-              ))}
-            </div>
-            <h3>Health Checks</h3>
-            <table>
-              <tbody>
-                <tr><td>FPL last updated</td><td>{formatDate(dataStatus.health_summary.fpl_last_updated)}</td></tr>
-                <tr><td>Advanced stats last updated</td><td>{formatDate(dataStatus.health_summary.advanced_stats_last_updated)}</td></tr>
-                <tr><td>Players expected / received</td><td>{dataStatus.health_summary.expected_player_count} / {dataStatus.health_summary.received_player_count}</td></tr>
-                <tr><td>Fixtures expected / processed</td><td>{dataStatus.health_summary.expected_fixture_count} / {dataStatus.health_summary.processed_fixture_count}</td></tr>
-                <tr><td>Player xG/xA rows</td><td>{dataStatus.health_summary.player_underlying_rows}</td></tr>
-                <tr><td>Team xG/xGA rows</td><td>{dataStatus.health_summary.team_underlying_rows}</td></tr>
-                <tr><td>Historical prior weight</td><td>{Math.round(dataStatus.health_summary.historical_prior_weight * 100)}%</td></tr>
-                <tr><td>Current-season weight</td><td>{Math.round(dataStatus.health_summary.current_season_weight * 100)}%</td></tr>
-                <tr><td>Latest ingestion status</td><td>{dataStatus.health_summary.latest_ingestion_status ?? "-"}</td></tr>
-              </tbody>
-            </table>
-            <h3>Latest Runs</h3>
-            <table>
-              <thead><tr><th>Provider</th><th>Kind</th><th>Status</th><th>Started</th><th>Finished</th><th>Summary</th></tr></thead>
-              <tbody>
-                {dataStatus.latest_ingestion_runs.map((run) => (
-                  <tr key={run.id}>
-                    <td>{run.provider}</td>
-                    <td>{run.kind}</td>
-                    <td>{run.status}</td>
-                    <td>{formatDate(run.started_at)}</td>
-                    <td>{formatDate(run.finished_at)}</td>
-                    <td>{run.summary ?? "-"}</td>
-                  </tr>
-                ))}
-                {dataStatus.latest_ingestion_runs.length === 0 && <tr><td colSpan={6}>No ingestion runs yet</td></tr>}
-              </tbody>
-            </table>
-            {dataStatus.latest_health_events.length > 0 && (
-              <>
-              <h3>Health Events</h3>
-              <table>
-                <thead><tr><th>Level</th><th>Type</th><th>Message</th><th>Created</th></tr></thead>
-                <tbody>
-                  {dataStatus.latest_health_events.map((event) => (
-                    <tr key={event.id}>
-                      <td>{event.level}</td>
-                      <td>{event.kind}</td>
-                      <td>{event.message}</td>
-                      <td>{formatDate(event.created_at)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              </>
-            )}
-          </article>
-        )}
-        <article className="wide">
-          <h2>Alerts</h2>
-          <div className="toolbar">
-            <button className="action" onClick={generateAlerts}>Generate</button>
-          </div>
-          <table>
-            <thead>
-              <tr><th>Type</th><th>Message</th><th>Created</th><th></th></tr>
-            </thead>
-            <tbody>
-              {alerts.map((alert) => (
-                <tr key={alert.id}>
-                  <td>{alert.kind}</td>
-                  <td>{alert.message}</td>
-                  <td>{formatDate(alert.created_at)}</td>
-                  <td><button className="action" onClick={() => acknowledgeAlert(alert)}>Ack</button></td>
-                </tr>
-              ))}
-              {alerts.length === 0 && <tr><td colSpan={4}>No open alerts</td></tr>}
-            </tbody>
-          </table>
-        </article>
-        <article className="wide">
-          <h2>Price Movements</h2>
-          <table>
-            <thead>
-              <tr><th>Player</th><th>Pos</th><th>Start</th><th>Now</th><th>Move</th><th>GW</th></tr>
-            </thead>
-            <tbody>
-              {priceMovements.map((row) => (
-                <tr key={`price-${row.player_id}`}>
-                  <td>{row.player}</td>
-                  <td>{row.position}</td>
-                  <td>£{row.first_price.toFixed(1)}</td>
-                  <td>£{row.latest_price.toFixed(1)}</td>
-                  <td className={row.price_change >= 0 ? "positive" : "negative"}>{row.price_change.toFixed(1)}</td>
-                  <td>{row.gameweek ?? "-"}</td>
-                </tr>
-              ))}
-              {priceMovements.length === 0 && <tr><td colSpan={6}>No price movements yet</td></tr>}
-            </tbody>
-          </table>
-        </article>
-        <article className="wide">
-          <h2>Buy Board</h2>
-          <div className="toolbar">
-            <input
-              aria-label="Search players"
-              placeholder="Search player or team"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            <select aria-label="Position filter" value={position} onChange={(event) => setPosition(event.target.value)}>
-              {boardPositions.map((option) => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-            <input aria-label="Minimum price" type="number" step="0.1" placeholder="Min £" value={minPrice} onChange={(event) => setMinPrice(event.target.value)} />
-            <input aria-label="Maximum price" type="number" step="0.1" placeholder="Max £" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} />
-            <input aria-label="Maximum ownership" type="number" step="0.1" placeholder="Max own %" value={maxOwnership} onChange={(event) => setMaxOwnership(event.target.value)} />
-            <input aria-label="Minimum buy delta" type="number" step="0.1" placeholder="Min delta" value={minBuyDelta} onChange={(event) => setMinBuyDelta(event.target.value)} />
-            <select aria-label="Minutes confidence filter" value={confidence} onChange={(event) => setConfidence(event.target.value)}>
-              <option value="ALL">All confidence</option>
-              <option value="HIGH">High</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="LOW">Low</option>
-            </select>
-            <label className="check">
-              <input type="checkbox" checked={trackedOnly} onChange={(event) => setTrackedOnly(event.target.checked)} />
-              Tracked
-            </label>
+            {Object.entries(squadSummary.counts).map(([label, value]) => <div className="overview-item" key={label}><span>{label}</span><strong>{value}</strong><small>players</small></div>)}
+            <div className="overview-item"><span>Avg Forward Delta</span><strong className={squadSummary.averageForwardDelta >= 0 ? "positive" : "negative"}>{squadSummary.averageForwardDelta.toFixed(2)}</strong><small>Next-6 vs Par</small></div>
+            <div className="overview-item"><span>Below Par</span><strong>{squadSummary.belowPar}</strong><small>historical</small></div>
+            <div className="overview-item"><span>Low Confidence</span><strong>{squadSummary.lowConfidence}</strong><small>players</small></div>
+            <div className="overview-item"><span>Tracked</span><strong>{squadSummary.tracked}</strong><small>squad players</small></div>
           </div>
           <table>
             <thead>
               <tr>
-                <th>Player</th>
-                <th></th>
-                <th></th>
-                <th>Pos</th>
-                <th><button className="sort" onClick={() => changeSort("current_price")}>Price</button></th>
-                <th>Par</th>
-                <th><button className="sort" onClick={() => changeSort("next_6_xppg")}>Next 6</button></th>
-                <th><button className="sort" onClick={() => changeSort("buy_delta_6")}>Delta</button></th>
-                <th><button className="sort" onClick={() => changeSort("captain_adjusted_delta")}>Cap</button></th>
-                <th><button className="sort" onClick={() => changeSort("opportunity_score")}>Opp</button></th>
-                <th>Fix</th>
-                <th><button className="sort" onClick={() => changeSort("expected_minutes")}>Min</button></th>
-                <th>Conf</th>
-                <th>Status</th>
+                <th>Player</th><th>Team</th><th>Position</th><th>Current Price</th><th>Actual PPG</th>
+                <th title={tooltipText.value_par}>Value Par</th><th title={tooltipText.historical_delta}>Historical Delta</th><th title={tooltipText.neutral_xppg}>Neutral xPPG</th>
+                <th title={tooltipText.next_3_xppg}>Next-3 xPPG</th><th title={tooltipText.next_6_xppg}>Next-6 xPPG</th><th title={tooltipText.forward_delta}>Forward Delta</th>
+                <th title={tooltipText.expected_minutes}>Expected Minutes</th><th title={tooltipText.confidence}>Confidence</th><th title={tooltipText.value_trend}>Value Trend</th><th>Status</th><th>Track</th><th></th>
               </tr>
             </thead>
             <tbody>
-              {visibleBoard.map((row) => (
-                <tr key={`${row.player}-${row.position}`}>
+              {squad.map((row) => (
+                <tr key={`squad-${row.player_id}`}>
                   <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td>
-                  <td>
-                    {trackedIds.has(row.player_id) ? (
-                      <button className="action" onClick={() => untrack(row)}>Untrack</button>
-                    ) : (
-                      <button className="action" onClick={() => track(row)}>Track</button>
-                    )}
-                  </td>
-                  <td>
-                    {squadIds.has(row.player_id) ? (
-                      <button className="action" onClick={() => removeSquadPlayer(row)}>Remove</button>
-                    ) : (
-                      <button className="action" onClick={() => addSquadPlayer(row.player_id, row.current_price)}>Squad</button>
-                    )}
-                  </td>
-                  <td>{row.position}</td>
-                  <td>£{row.current_price.toFixed(1)}</td>
-                  <td>{row.value_par.toFixed(2)}</td>
-                  <td>{row.next_6_xppg.toFixed(2)}</td>
-                  <td className={row.buy_delta_6 >= 0 ? "positive" : "negative"}>{row.buy_delta_6.toFixed(2)}</td>
-                  <td className={row.captain_adjusted_delta >= 0 ? "positive" : "negative"}>{row.captain_adjusted_delta.toFixed(2)}</td>
-                  <td className={row.opportunity_score >= 0 ? "positive" : "negative"}>{row.opportunity_score.toFixed(2)}</td>
-                  <td>{row.fixture_factor_6.toFixed(2)}</td>
-                  <td title={row.minutes_override_reason ?? ""}>{row.expected_minutes.toFixed(0)}{row.minutes_override_reason ? "*" : ""}</td>
-                  <td>{row.minutes_confidence}</td>
-                  <td>{row.status}</td>
+                  <td>{row.team}</td><td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td><td>{row.actual_ppg.toFixed(2)}</td><td>{row.value_par.toFixed(2)}</td>
+                  <td className={row.historical_delta >= 0 ? "positive" : "negative"}>{row.historical_delta.toFixed(2)}</td><td>{row.neutral_xppg.toFixed(2)}</td><td>{row.next_3_xppg.toFixed(2)}</td><td>{row.next_6_xppg.toFixed(2)}</td>
+                  <td className={row.forward_delta >= 0 ? "positive" : "negative"}>{row.forward_delta.toFixed(2)}</td><td>{row.expected_minutes.toFixed(0)}</td><td>{confidenceLabel(row.projection_confidence)}</td>
+                  <td title={row.value_trend.toFixed(2)}>{trendLabel(row.value_trend)}</td><td>{row.squad_health}</td>
+                  <td>{trackedIds.has(row.player_id) ? <button className="action" onClick={() => untrack(row)}>Untrack</button> : <button className="action" onClick={() => track(row)}>Track</button>}</td>
+                  <td><button className="action" onClick={() => viewMarket(row)}>View Market</button> <button className="action" onClick={() => removeSquadPlayer(row)}>Remove</button></td>
                 </tr>
               ))}
-              {visibleBoard.length === 0 && <tr><td colSpan={14}>No players match these filters</td></tr>}
+              {squad.length === 0 && <tr><td colSpan={17}>Import your public FPL team or add players manually.</td></tr>}
             </tbody>
           </table>
         </article>
+
+        <article id="all-players" className="wide">
+          <h2>All Players</h2>
+          <div className="toolbar chips">
+            {[
+              ["ALL", "All"],
+              ["ABOVE_PAR", "Above Par"],
+              ["BELOW_PAR", "Below Par"],
+              ["EMERGING", "Emerging"],
+              ["REGRESSION_RISK", "Regression Risk"],
+              ["TRACKED", "Tracked"],
+            ].map(([value, label]) => <button key={value} className={quickFilter === value ? "action primary" : "action"} onClick={() => setQuickFilter(value)}>{label}</button>)}
+          </div>
+          <div className="toolbar">
+            <input aria-label="Search players" placeholder="Search player or team" value={search} onChange={(event) => setSearch(event.target.value)} />
+            <select aria-label="Position filter" value={position} onChange={(event) => setPosition(event.target.value)}>{positions.map((option) => <option key={option} value={option}>{option}</option>)}</select>
+            <select aria-label="Team filter" value={team} onChange={(event) => setTeam(event.target.value)}>{teams.map((option) => <option key={option} value={option}>{option}</option>)}</select>
+            <input aria-label="Minimum price" type="number" step="0.1" placeholder="Min £" value={minPrice} onChange={(event) => setMinPrice(event.target.value)} />
+            <input aria-label="Maximum price" type="number" step="0.1" placeholder="Max £" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} />
+            <input aria-label="Minimum expected minutes" type="number" step="1" placeholder="Min mins" value={minMinutes} onChange={(event) => setMinMinutes(event.target.value)} />
+            <input aria-label="Minimum ownership" type="number" step="0.1" placeholder="Min own %" value={minOwnership} onChange={(event) => setMinOwnership(event.target.value)} />
+            <input aria-label="Maximum ownership" type="number" step="0.1" placeholder="Max own %" value={maxOwnership} onChange={(event) => setMaxOwnership(event.target.value)} />
+            <select aria-label="Confidence filter" value={confidence} onChange={(event) => setConfidence(event.target.value)}><option value="ALL">All confidence</option><option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option></select>
+            <label className="check"><input type="checkbox" checked={trackedOnly} onChange={(event) => setTrackedOnly(event.target.checked)} /> Tracked only</label>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Player</th><th>Team</th><th>Position</th><th><SortButton label="Current Price" sortKey="current_price" active={sortKey === "current_price"} direction={sortDirection} onSort={changeSort} /></th>
+                <th><SortButton label="Market Mean" sortKey="value_par" active={false} direction={sortDirection} onSort={changeSort} /></th><th title={tooltipText.value_par}><SortButton label="Value Par" sortKey="value_par" active={sortKey === "value_par"} direction={sortDirection} onSort={changeSort} /></th>
+                <th><SortButton label="Actual PPG" sortKey="actual_ppg" active={sortKey === "actual_ppg"} direction={sortDirection} onSort={changeSort} /></th><th title={tooltipText.historical_delta}><SortButton label="Historical Delta" sortKey="historical_delta" active={sortKey === "historical_delta"} direction={sortDirection} onSort={changeSort} /></th>
+                <th title={tooltipText.neutral_xppg}><SortButton label="Neutral xPPG" sortKey="neutral_xppg" active={sortKey === "neutral_xppg"} direction={sortDirection} onSort={changeSort} /></th><th title={tooltipText.next_3_xppg}><SortButton label="Next-3 xPPG" sortKey="next_3_xppg" active={sortKey === "next_3_xppg"} direction={sortDirection} onSort={changeSort} /></th>
+                <th title={tooltipText.next_6_xppg}><SortButton label="Next-6 xPPG" sortKey="next_6_xppg" active={sortKey === "next_6_xppg"} direction={sortDirection} onSort={changeSort} /></th><th title={tooltipText.forward_delta}><SortButton label="Forward Delta" sortKey="forward_delta" active={sortKey === "forward_delta"} direction={sortDirection} onSort={changeSort} /></th>
+                <th title={tooltipText.expected_minutes}><SortButton label="Expected Minutes" sortKey="expected_minutes" active={sortKey === "expected_minutes"} direction={sortDirection} onSort={changeSort} /></th><th>Start Probability</th><th title={tooltipText.confidence}><SortButton label="Confidence" sortKey="projection_confidence" active={sortKey === "projection_confidence"} direction={sortDirection} onSort={changeSort} /></th>
+                <th title={tooltipText.value_trend}><SortButton label="Value Trend" sortKey="value_trend" active={sortKey === "value_trend"} direction={sortDirection} onSort={changeSort} /></th><th><SortButton label="Ownership" sortKey="ownership" active={sortKey === "ownership"} direction={sortDirection} onSort={changeSort} /></th><th><SortButton label="Price Trend" sortKey="price_trend" active={sortKey === "price_trend"} direction={sortDirection} onSort={changeSort} /></th><th>Track</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visiblePlayers.map((row) => (
+                <tr key={`player-${row.player_id}`}>
+                  <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td><td>{row.team}</td><td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td><td>{row.market_mean.toFixed(2)}</td><td>{row.value_par.toFixed(2)}</td><td>{row.actual_ppg.toFixed(2)}</td>
+                  <td className={row.historical_delta >= 0 ? "positive" : "negative"}>{row.historical_delta.toFixed(2)}</td><td>{row.neutral_xppg.toFixed(2)}</td><td>{row.next_3_xppg.toFixed(2)}</td><td>{row.next_6_xppg.toFixed(2)}</td>
+                  <td className={row.forward_delta >= 0 ? "positive" : "negative"}>{row.forward_delta.toFixed(2)}</td><td>{row.expected_minutes.toFixed(0)}</td><td>{Math.round(row.start_probability * 100)}%</td><td>{confidenceLabel(row.projection_confidence)}</td>
+                  <td title={row.value_trend.toFixed(2)}>{trendLabel(row.value_trend)}</td><td>{row.ownership?.toFixed(1) ?? "-"}</td><td className={row.price_trend >= 0 ? "positive" : "negative"}>{row.price_trend.toFixed(1)}</td>
+                  <td>{trackedIds.has(row.player_id) ? <button className="action" onClick={() => untrack(row)}>Untrack</button> : <button className="action" onClick={() => track(row)}>Track</button>}</td>
+                </tr>
+              ))}
+              {visiblePlayers.length === 0 && <tr><td colSpan={19}>No players match these filters.</td></tr>}
+            </tbody>
+          </table>
+        </article>
+
         {detail?.current && (
           <article className="wide">
             <h2>{detail.current.player}</h2>
             <div className="metrics">
-              <span>£{detail.current.current_price.toFixed(1)}</span>
-              <span>Par {detail.current.value_par.toFixed(2)}</span>
-              <span>Next 6 {detail.current.next_6_xppg.toFixed(2)}</span>
-              {detail.current.xg90 != null && <span>xG90 {detail.current.xg90.toFixed(2)}</span>}
-              {detail.current.xa90 != null && <span>xA90 {detail.current.xa90.toFixed(2)}</span>}
-              {detail.current.role_xppg > 0 && <span>Role +{detail.current.role_xppg.toFixed(2)}</span>}
-              {detail.current.clean_sheet_xppg_6 > 0 && <span>CS {detail.current.clean_sheet_xppg_6.toFixed(2)}</span>}
-              {detail.current.defcon_xppg > 0 && <span>DefCon {detail.current.defcon_xppg.toFixed(2)}</span>}
-              {detail.current.bonus_xppg > 0 && <span>Bonus {detail.current.bonus_xppg.toFixed(2)}</span>}
-              {detail.current.save_xppg > 0 && <span>Saves {detail.current.save_xppg.toFixed(2)}</span>}
-              {detail.current.expected_opponent_goals_6 > 0 && <span>Opp xG {detail.current.expected_opponent_goals_6.toFixed(2)}</span>}
-              <span className={detail.current.buy_delta_6 >= 0 ? "positive" : "negative"}>Delta {detail.current.buy_delta_6.toFixed(2)}</span>
-              <span className={detail.current.captain_adjusted_delta >= 0 ? "positive" : "negative"}>Cap Delta {detail.current.captain_adjusted_delta.toFixed(2)}</span>
-              <span>{detail.current.status}</span>
+              <span>£{detail.current.current_price.toFixed(1)}</span><span>Mean {detail.current.market_mean.toFixed(2)}</span><span>Par {detail.current.value_par.toFixed(2)}</span><span>Actual {detail.current.actual_ppg.toFixed(2)}</span>
+              <span className={detail.current.historical_delta >= 0 ? "positive" : "negative"}>Historical {detail.current.historical_delta.toFixed(2)}</span><span>Neutral {detail.current.neutral_xppg.toFixed(2)}</span><span>Next 3 {detail.current.next_3_xppg.toFixed(2)}</span><span>Next 6 {detail.current.next_6_xppg.toFixed(2)}</span>
+              <span className={detail.current.forward_delta >= 0 ? "positive" : "negative"}>Forward {detail.current.forward_delta.toFixed(2)}</span><span>{trendLabel(detail.current.value_trend)}</span><span>Conf {confidenceLabel(detail.current.projection_confidence)}</span><span>Own {detail.current.ownership?.toFixed(1) ?? "-"}%</span>
+              {detail.current.xg90 != null && <span>xG90 {detail.current.xg90.toFixed(2)}</span>}{detail.current.xa90 != null && <span>xA90 {detail.current.xa90.toFixed(2)}</span>}{detail.current.role_xppg > 0 && <span>Role +{detail.current.role_xppg.toFixed(2)}</span>}{detail.current.clean_sheet_xppg_6 > 0 && <span>CS {detail.current.clean_sheet_xppg_6.toFixed(2)}</span>}{detail.current.defcon_xppg > 0 && <span>DefCon {detail.current.defcon_xppg.toFixed(2)}</span>}{detail.current.bonus_xppg > 0 && <span>Bonus {detail.current.bonus_xppg.toFixed(2)}</span>}{detail.current.save_xppg > 0 && <span>Saves {detail.current.save_xppg.toFixed(2)}</span>}
             </div>
             <h3>Attacking Roles</h3>
             <div className="role-form">
-              {(["penalties", "direct_free_kicks", "corners", "indirect_free_kicks"] as const).map((key) => (
-                <label key={key}>
-                  <input
-                    type="checkbox"
-                    checked={roleForm[key]}
-                    onChange={(event) => setRoleForm({ ...roleForm, [key]: event.target.checked })}
-                  />
-                  {key.replace(/_/g, " ")}
-                </label>
-              ))}
-              <input
-                aria-label="Role reason"
-                placeholder="Reason"
-                value={roleForm.reason}
-                onChange={(event) => setRoleForm({ ...roleForm, reason: event.target.value })}
-              />
+              {(["penalties", "direct_free_kicks", "corners", "indirect_free_kicks"] as const).map((key) => <label key={key}><input type="checkbox" checked={roleForm[key]} onChange={(event) => setRoleForm({ ...roleForm, [key]: event.target.checked })} />{key.replace(/_/g, " ")}</label>)}
+              <input aria-label="Role reason" placeholder="Reason" value={roleForm.reason} onChange={(event) => setRoleForm({ ...roleForm, reason: event.target.value })} />
               <button onClick={saveRoles}>Save Roles</button>
+              {trackedIds.has(detail.current.player_id) ? <button className="action" onClick={() => untrack(detail.current)}>Untrack</button> : <button className="action" onClick={() => track(detail.current)}>Track</button>}
             </div>
-            {detail.role_history.length > 0 && (
-              <p className="note">Latest: {detail.role_history[0].reason}</p>
-            )}
             <h3>Minutes Override</h3>
             <div className="role-form">
               <input aria-label="Start probability" type="number" min="0" max="1" step="0.05" placeholder="Start prob 0-1" value={minutesForm.start_probability} onChange={(event) => setMinutesForm({ ...minutesForm, start_probability: event.target.value })} />
@@ -639,230 +459,47 @@ function App() {
               <input aria-label="Minutes reason" placeholder="Reason" value={minutesForm.reason} onChange={(event) => setMinutesForm({ ...minutesForm, reason: event.target.value })} />
               <button onClick={saveMinutes}>Save Minutes</button>
             </div>
-            {detail.minutes_history.length > 0 && (
-              <p className="note">Latest: {detail.minutes_history[0].reason}</p>
-            )}
             <div className="chart-grid">
-              {recentTrend.length > 0 && (
-                <div>
-                  <h3>Recent Points And Minutes</h3>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <LineChart data={recentTrend}>
-                      <XAxis dataKey="gameweek" />
-                      <YAxis />
-                      <Tooltip />
-                      <Legend />
-                      <Line type="monotone" dataKey="total_points" name="Points" stroke="#2563eb" />
-                      <Line type="monotone" dataKey="minutes" name="Minutes" stroke="#16a34a" />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-              {snapshotTrend.length > 0 && (
-                <div>
-                  <h3>Tracked Delta And Price</h3>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <LineChart data={snapshotTrend}>
-                      <XAxis dataKey="gameweek" />
-                      <YAxis />
-                      <Tooltip />
-                      <Legend />
-                      <Line type="monotone" dataKey="buy_delta" name="Buy Delta" stroke="#b91c1c" />
-                      <Line type="monotone" dataKey="price" name="Price" stroke="#7c3aed" />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
+              {recentTrend.length > 0 && <div><h3>Recent Points And Minutes</h3><ResponsiveContainer width="100%" height={220}><LineChart data={recentTrend}><XAxis dataKey="gameweek" /><YAxis /><Tooltip /><Legend /><Line type="monotone" dataKey="total_points" name="Points" stroke="#2563eb" /><Line type="monotone" dataKey="minutes" name="Minutes" stroke="#16a34a" /></LineChart></ResponsiveContainer></div>}
+              {snapshotTrend.length > 0 && <div><h3>Tracked Forward Delta And Price</h3><ResponsiveContainer width="100%" height={220}><LineChart data={snapshotTrend}><XAxis dataKey="gameweek" /><YAxis /><Tooltip /><Legend /><Line type="monotone" dataKey="buy_delta" name="Forward Delta" stroke="#b91c1c" /><Line type="monotone" dataKey="price" name="Price" stroke="#7c3aed" /></LineChart></ResponsiveContainer></div>}
             </div>
             <h3>Projection Breakdown</h3>
-            <table>
-              <tbody>
-                {Object.entries(detail.projection_breakdown).map(([key, value]) => (
-                  <tr key={key}>
-                    <td>{key.replace(/_/g, " ")}</td>
-                    <td>{value.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <table><tbody>{Object.entries(detail.projection_breakdown).map(([key, value]) => <tr key={key}><td>{key.replace(/_/g, " ")}</td><td>{value.toFixed(2)}</td></tr>)}</tbody></table>
             <h3>Recent Gameweeks</h3>
-            <table>
-              <thead>
-                <tr><th>GW</th><th>Pts</th><th>Min</th><th>Price</th></tr>
-              </thead>
-              <tbody>
-                {detail.recent_gameweeks.map((row) => (
-                  <tr key={`gw-${row.gameweek}`}>
-                    <td>{row.gameweek}</td>
-                    <td>{row.total_points}</td>
-                    <td>{row.minutes}</td>
-                    <td>{row.value ? `£${row.value.toFixed(1)}` : "-"}</td>
-                  </tr>
-                ))}
-                {detail.recent_gameweeks.length === 0 && <tr><td colSpan={4}>No gameweek history yet</td></tr>}
-              </tbody>
-            </table>
+            <table><thead><tr><th>GW</th><th>Pts</th><th>Min</th><th>Price</th></tr></thead><tbody>{detail.recent_gameweeks.map((row) => <tr key={row.gameweek}><td>{row.gameweek}</td><td>{row.total_points}</td><td>{row.minutes}</td><td>{row.value ? `£${row.value.toFixed(1)}` : "-"}</td></tr>)}{detail.recent_gameweeks.length === 0 && <tr><td colSpan={4}>No gameweek history yet</td></tr>}</tbody></table>
           </article>
         )}
-        <article>
-          <h2>Breakouts</h2>
-          <MiniBoard rows={breakouts} gapKey="breakout_gap" />
-        </article>
-        <article>
-          <h2>Traps</h2>
-          <MiniBoard rows={traps} gapKey="trap_gap" />
-        </article>
-        <article className="wide">
+
+        <article id="tracked" className="wide">
           <h2>Tracked Players</h2>
-          <table>
-            <thead>
-              <tr><th>Player</th><th></th><th>Pos</th><th>Price</th><th>Par</th><th>Next 6</th><th>Delta</th><th>Mom</th><th>Trend</th><th>Status</th></tr>
-            </thead>
-            <tbody>
-              {tracked.map((row) => (
-                <tr key={`tracked-${row.player}-${row.position}`}>
-                  <td>{row.player}</td>
-                  <td><button className="action" onClick={() => untrack(row)}>Untrack</button></td>
-                  <td>{row.position}</td>
-                  <td>£{row.current_price.toFixed(1)}</td>
-                  <td>{row.value_par.toFixed(2)}</td>
-                  <td>{row.next_6_xppg.toFixed(2)}</td>
-                  <td className={row.buy_delta_6 >= 0 ? "positive" : "negative"}>{row.buy_delta_6.toFixed(2)}</td>
-                  <td className={(row.delta_momentum ?? 0) >= 0 ? "positive" : "negative"}>{(row.delta_momentum ?? 0).toFixed(2)}</td>
-                  <td>{row.tracking_status ?? "WATCH"}</td>
-                  <td>{row.status}</td>
-                </tr>
-              ))}
-              {tracked.length === 0 && <tr><td colSpan={10}>No tracked players yet</td></tr>}
-            </tbody>
-          </table>
+          <table><thead><tr><th>Player</th><th>Pos</th><th>Price</th><th>Par</th><th>Next 6</th><th>Forward Delta</th><th>Momentum</th><th>Trend</th><th></th></tr></thead><tbody>{tracked.map((row) => <tr key={row.player_id}><td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td><td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td><td>{row.value_par.toFixed(2)}</td><td>{row.next_6_xppg.toFixed(2)}</td><td className={row.forward_delta >= 0 ? "positive" : "negative"}>{row.forward_delta.toFixed(2)}</td><td className={(row.delta_momentum ?? 0) >= 0 ? "positive" : "negative"}>{(row.delta_momentum ?? 0).toFixed(2)}</td><td>{row.tracking_status ?? trendLabel(row.value_trend)}</td><td><button className="action" onClick={() => untrack(row)}>Untrack</button></td></tr>)}{tracked.length === 0 && <tr><td colSpan={9}>No tracked players yet.</td></tr>}</tbody></table>
         </article>
-        <article className="wide">
-          <h2>My Squad</h2>
-          <div className="toolbar">
-            <select
-              aria-label="Squad player"
-              value={squadPlayerId}
-              onChange={(event) => {
-                const id = event.target.value;
-                const player = board.find((row) => row.player_id === Number(id));
-                setSquadPlayerId(id);
-                setPurchasePrice(player ? player.current_price.toFixed(1) : "");
-              }}
-            >
-              <option value="">Add player</option>
-              {board
-                .filter((row) => !squadIds.has(row.player_id))
-                .map((row) => (
-                  <option key={`squad-option-${row.player_id}`} value={row.player_id}>
-                    {row.player} {row.position} £{row.current_price.toFixed(1)}
-                  </option>
-                ))}
-            </select>
-            <input
-              aria-label="Purchase price"
-              type="number"
-              min="3.5"
-              step="0.1"
-              placeholder="Purchase price"
-              value={purchasePrice}
-              onChange={(event) => setPurchasePrice(event.target.value)}
-            />
-            <button className="action" onClick={addSelectedSquadPlayer}>Add</button>
-            <input
-              aria-label="Bank"
-              type="number"
-              min="0"
-              step="0.1"
-              value={bank}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                setBank(value);
-                loadSquad(value);
-              }}
-            />
+
+        <article id="data-model" className="wide">
+          <h2>Data / Model</h2>
+          {dataStatus && <div className="status-grid">
+            <div className="overview-item"><span>Season</span><strong>{dataStatus.season}</strong><small>GW {dataStatus.current_gameweek ?? "-"}</small></div>
+            <div className="overview-item"><span>Latest Ingest</span><strong>{dataStatus.latest_ingestion_runs[0]?.status ?? "-"}</strong><small>{dataStatus.latest_ingestion_runs[0]?.summary ?? "not run"}</small></div>
+            {dataStatus.sources.map((source) => <div className="overview-item" key={source.key}><span>{source.label}</span><strong>{source.rows}</strong><small>{formatDate(source.fetched_at)}</small></div>)}
+          </div>}
+          <div className="chart-grid">
+            <div>
+              <h3>Price Movements</h3>
+              <table><thead><tr><th>Player</th><th>Pos</th><th>Start</th><th>Now</th><th>Move</th><th>GW</th></tr></thead><tbody>{priceMovements.map((row) => <tr key={row.player_id}><td>{row.player}</td><td>{row.position}</td><td>£{row.first_price.toFixed(1)}</td><td>£{row.latest_price.toFixed(1)}</td><td className={row.price_change >= 0 ? "positive" : "negative"}>{row.price_change.toFixed(1)}</td><td>{row.gameweek ?? "-"}</td></tr>)}{priceMovements.length === 0 && <tr><td colSpan={6}>No price movements yet</td></tr>}</tbody></table>
+            </div>
+            <div>
+              <h3>Alerts</h3>
+              <table><thead><tr><th>Type</th><th>Message</th><th>Created</th></tr></thead><tbody>{alerts.map((alert) => <tr key={alert.id}><td>{alert.kind}</td><td>{alert.message}</td><td>{formatDate(alert.created_at)}</td></tr>)}{alerts.length === 0 && <tr><td colSpan={3}>No open alerts</td></tr>}</tbody></table>
+            </div>
           </div>
-          <table>
-            <thead>
-              <tr><th>Player</th><th></th><th>Pos</th><th>Sell</th><th>Next 3</th><th>Next 6</th><th>Hold</th><th>Replacement</th><th>Gain 3</th><th>Gain 6</th><th>Hit</th><th>Verdict</th></tr>
-            </thead>
-            <tbody>
-              {squad.map((row) => (
-                <tr key={`squad-${row.player}-${row.position}`}>
-                  <td>{row.player}</td>
-                  <td><button className="action" onClick={() => removeSquadPlayer(row)}>Remove</button></td>
-                  <td>{row.position}</td>
-                  <td>£{(row.selling_price ?? row.current_price).toFixed(1)}</td>
-                  <td>{row.next_3_xppg.toFixed(2)}</td>
-                  <td>{row.next_6_xppg.toFixed(2)}</td>
-                  <td className={(row.hold_delta ?? 0) >= 0 ? "positive" : "negative"}>{(row.hold_delta ?? 0).toFixed(2)}</td>
-                  <td>{row.best_replacement ?? "-"}</td>
-                  <td className={(row.transfer_gain_3 ?? 0) >= 0 ? "positive" : "negative"}>{(row.transfer_gain_3 ?? 0).toFixed(2)}</td>
-                  <td className={(row.transfer_gain ?? 0) >= 0 ? "positive" : "negative"}>{(row.transfer_gain ?? 0).toFixed(2)}</td>
-                  <td className={(row.hit_adjusted_gain ?? 0) >= 0 ? "positive" : "negative"}>{(row.hit_adjusted_gain ?? 0).toFixed(2)}</td>
-                  <td>{row.squad_verdict}</td>
-                </tr>
-              ))}
-              {squad.length === 0 && <tr><td colSpan={12}>No squad players yet</td></tr>}
-            </tbody>
-          </table>
         </article>
-        {positions.map((position) => {
+
+        {points.map((point, index) => point.position).filter((position, index, list) => list.indexOf(position) === index).map((position) => {
           const rows = points.filter((point) => point.position === position);
-          return (
-            <article key={position}>
-              <h2>{position}</h2>
-              <ResponsiveContainer width="100%" height={180}>
-                <LineChart data={rows}>
-                  <XAxis dataKey="price" />
-                  <YAxis domain={["dataMin", "dataMax"]} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="market_mean" stroke="#2563eb" dot={false} />
-                  <Line type="monotone" dataKey="value_par" stroke="#16a34a" dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-              <table>
-                <thead>
-                  <tr><th>Price</th><th>Mean</th><th>Par</th><th>n</th><th>Conf</th></tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={`${row.position}-${row.price}`}>
-                      <td>£{row.price.toFixed(1)}</td>
-                      <td>{row.market_mean.toFixed(2)}</td>
-                      <td>{row.value_par.toFixed(2)}</td>
-                      <td>{row.sample_size}</td>
-                      <td>{row.confidence}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </article>
-          );
+          return <article key={position}><h2>{position}</h2><ResponsiveContainer width="100%" height={180}><LineChart data={rows}><XAxis dataKey="price" /><YAxis domain={["dataMin", "dataMax"]} /><Tooltip /><Line type="monotone" dataKey="market_mean" stroke="#2563eb" dot={false} /><Line type="monotone" dataKey="value_par" stroke="#16a34a" dot={false} /></LineChart></ResponsiveContainer></article>;
         })}
       </section>
     </main>
-  );
-}
-
-function MiniBoard({ rows, gapKey }: { rows: BoardRow[]; gapKey: "breakout_gap" | "trap_gap" }) {
-  return (
-    <table>
-      <thead>
-        <tr><th>Player</th><th>Pos</th><th>Actual</th><th>xPPG</th><th>Gap</th></tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={`${gapKey}-${row.player}-${row.position}`}>
-            <td>{row.player}</td>
-            <td>{row.position}</td>
-            <td>{row.actual_ppg?.toFixed(2)}</td>
-            <td>{row.neutral_xppg?.toFixed(2)}</td>
-            <td className={gapKey === "breakout_gap" ? "positive" : "negative"}>{(row[gapKey] ?? 0).toFixed(2)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }
 

@@ -16,6 +16,7 @@ def main() -> None:
         f"prices={result['prices']}, "
         f"fixtures={result['fixtures']}, "
         f"fpl_xg_xa={result['underlying']}, "
+        f"squad={result['squad']}, "
         f"snapshots={result['snapshots']}, "
         f"alerts={result['alerts']}"
     )

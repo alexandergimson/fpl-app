@@ -26,6 +26,18 @@ header p {
   color: #c9eadc;
 }
 
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+nav a {
+  color: #f6fff9;
+  font-weight: 700;
+  text-decoration: none;
+}
+
 h2 {
   color: #12382f;
 }
@@ -41,6 +53,7 @@ article {
   border: 1px solid #cad8d1;
   border-radius: 6px;
   box-shadow: 0 10px 24px rgba(23, 32, 29, 0.06);
+  overflow-x: auto;
   padding: 16px;
 }
 
@@ -203,6 +216,15 @@ tbody tr:hover {
 .action:hover,
 .link:hover {
   background: #e3f5ee;
+}
+
+.primary {
+  background: #12382f;
+  color: #ffffff;
+}
+
+.chips {
+  margin-bottom: 8px;
 }
 
 .role-form {

@@ -7,13 +7,14 @@ except ImportError:  # pragma: no cover
     FastAPI = None
 
 from backend.data.db import connect
+from backend.ingestion.providers import OfficialFplProvider
 from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, list_alerts
 from backend.services.boards import breakout_board, buy_board, trap_board
 from backend.services.minutes import add_minutes_override, override_history
 from backend.services.player_detail import player_detail
 from backend.services.prices import price_movements
 from backend.services.roles import add_role_override, role_history
-from backend.services.squad import remove_squad_player, squad_analysis, upsert_squad_player
+from backend.services.squad import get_team_id, import_public_squad, remove_squad_player, squad_analysis, upsert_squad_player
 from backend.services.status import data_status
 from backend.services.tracking import snapshot_tracked, track_player, tracked_players, tracked_snapshots, untrack_player
 
@@ -87,6 +88,17 @@ if FastAPI:
         with connect() as con:
             return buy_board(con, season, par_season, gameweeks_played, limit, as_of_gw)
 
+    @app.get("/all-players")
+    def get_all_players(
+        season: str = "2026-27",
+        par_season: str = "2026-27",
+        gameweeks_played: int | None = None,
+        limit: int = 2000,
+        as_of_gw: int | None = None,
+    ):
+        with connect() as con:
+            return buy_board(con, season, par_season, gameweeks_played, limit, as_of_gw)
+
     @app.get("/breakout-board")
     def get_breakout_board(
         season: str = "2026-27",
@@ -141,6 +153,17 @@ if FastAPI:
     def get_squad(season: str = "2026-27", par_season: str = "2026-27", bank: float = 0.0):
         with connect() as con:
             return squad_analysis(con, season, par_season, bank)
+
+    @app.get("/settings")
+    def get_settings(season: str = "2026-27"):
+        with connect() as con:
+            return {"fpl_team_id": get_team_id(con, season)}
+
+    @app.post("/settings/fpl-team")
+    def post_fpl_team(team_id: int, season: str = "2026-27"):
+        provider = OfficialFplProvider()
+        with connect() as con:
+            return import_public_squad(con, season, team_id, provider)
 
     @app.post("/squad/{player_id}")
     def post_squad_player(player_id: int, purchase_price: float, season: str = "2026-27", current_price: float | None = None):

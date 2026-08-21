@@ -18,7 +18,7 @@
 
 ## Phase 3: Dynamic Current-Price Par
 
-- Evaluate every current player against current price, not starting price. Implemented through Buy Board interpolation.
+- Evaluate every current player against current price, not starting price. Implemented through All Players interpolation.
 - Blend historical and current-season curves with configured GW weights.
 - Data Health exposes the active historical-prior/current-season blend.
 - Keep confidence low when evaluating outside observed historical price ranges.
@@ -42,27 +42,27 @@
 
 - Walk-forward windows only use data available before the prediction deadline.
 - Compare naive PPG, neutral model, fixture-adjusted model and later versions.
-- Track MAE, RMSE, Spearman, top-quartile hit rate and Buy Board precision.
+- Track MAE, RMSE, Spearman, top-quartile hit rate and market-table precision.
 
 ## Phase 7-10: API, Dashboard, Tracking, Squad
 
-- FastAPI exposes players, Price Par, boards, tracked players and squad analysis.
+- FastAPI exposes players, Price Par, All Players, tracked players and squad analysis.
 - React dashboard prioritises sortable tables, deltas, sparklines and search.
-- Breakout and Trap board API/UI slices are implemented from the same valuation rows as Buy Board; Breakout uses forward expectation until true xG/xA underlying data exists.
+- Emerging and Regression Risk are quick filters on the same All Players valuation rows.
 - Tracked player API/UI slice is implemented with immutable per-gameweek snapshots.
 - Tracked snapshots preserve model version, data cutoff, expected minutes, confidence and projection inputs.
-- My Squad API/UI slice is implemented with selling price, hold delta and best affordable replacement.
+- My Squad API/UI slice is implemented with selling price, Historical Delta, Forward Delta and health status.
 - My Squad UI can add/remove players, enter purchase price and adjust bank for replacement budgets.
-- My Squad shows next-3, next-6 and hit-adjusted transfer gain.
+- My Squad shows next-3, next-6, expected minutes, confidence and value trend.
 - Official current ingest stores price snapshots and the dashboard exposes recent price movements.
-- Dashboard overview summarizes top buy, breakout, trap, weakest squad spot, alerts and price moves.
+- Dashboard workflow is centered on My Squad, All Players, Tracked Players and Data / Model.
 - Dashboard data status shows source row counts, current gameweek and latest fetch timestamps.
 - Current FPL ingest records ingestion runs and data-health events for live pipeline visibility.
 - Current FPL ingest is the canonical player provider and stores GW1+ FPL xG/xA aggregates against FPL player IDs.
 - `make refresh` runs the local live workflow: current ingest, tracked snapshots and alert generation.
 - Data Health shows feed timestamps, expected/received counts, latest runs and warning events.
 - Alerts can be generated and acknowledged from the dashboard.
-- Buy Board filters include price range, ownership, minimum delta, confidence and tracked-only.
+- All Players filters include position, team, price range, ownership, expected minutes, confidence and tracked-only.
 - Player detail API/UI slice is implemented with valuation, recent gameweeks and tracked snapshots.
 - Player detail shows recent gameweek and tracked-snapshot trend charts.
 - Player detail can save minutes overrides and shows the latest override note.
