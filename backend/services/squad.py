@@ -7,7 +7,7 @@ from backend.services.valuation import selling_price
 
 
 SQUAD_HEALTH = {
-    "strong": "STRONG VALUE",
+    "strong": "STRONG",
     "healthy": "HEALTHY",
     "watch": "WATCH",
     "review": "REVIEW",

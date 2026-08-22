@@ -98,6 +98,40 @@ tbody tr:hover {
   font-weight: 700;
 }
 
+.delta {
+  font-size: 15px;
+}
+
+.health {
+  border-radius: 4px;
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 800;
+  min-width: 70px;
+  padding: 4px 6px;
+  text-align: center;
+}
+
+.health-strong {
+  background: #d9fbe8;
+  color: #06603f;
+}
+
+.health-healthy {
+  background: #edf8df;
+  color: #48620b;
+}
+
+.health-watch {
+  background: #fff4cc;
+  color: #8a5a00;
+}
+
+.health-review {
+  background: #ffe4dc;
+  color: #a33a18;
+}
+
 .link {
   appearance: none;
   background: transparent;
@@ -262,4 +296,27 @@ tbody tr:hover {
 .note {
   color: #5b6b64;
   font-size: 14px;
+}
+
+@media (max-width: 860px) {
+  main {
+    padding: 14px;
+  }
+
+  th, td {
+    padding: 7px 6px;
+  }
+
+  #players th:nth-child(2),
+  #players td:nth-child(2),
+  #players th:nth-child(5),
+  #players td:nth-child(5),
+  #players th:nth-child(8),
+  #players td:nth-child(8),
+  #my-squad th:nth-child(4),
+  #my-squad td:nth-child(4),
+  #my-squad th:nth-child(5),
+  #my-squad td:nth-child(5) {
+    display: none;
+  }
 }

@@ -38,7 +38,7 @@ Open `http://127.0.0.1:5173/`.
 make refresh
 ```
 
-Then review My Squad, All Players, Tracked Players and Data / Model in the dashboard.
+Then review Squad, Players and Data / Model in the dashboard.
 
 ## Commands
 
@@ -69,14 +69,14 @@ Optional player-underlying CSV columns: `player_id`, `gameweek`, `minutes`, `xg`
 
 Optional team-underlying CSV columns: `team_id`, `gameweek`, `xg`, `xga`, plus optional `is_home`.
 
-## Core Tables
+## Core Workflow
 
-- My Squad: squad health using Historical Delta, Forward Delta, confidence, minutes and value trend.
-- All Players: full market table sorted by Forward Delta by default, with position, price, team, ownership, confidence and tracked filters.
-- Emerging: All Players quick filter for negative Historical Delta and positive Forward Delta.
-- Regression Risk: All Players quick filter for positive Historical Delta and negative Forward Delta.
+- Squad: diagnose owned players with Actual PPG, Value Par, Forward Delta, trend and health.
+- Players: market scanner sorted by Best Value by default, with search, position, price, confidence and tracked filters.
+- Emerging: Players quick filter for negative Historical Delta and positive Forward Delta.
+- Regression Risk: Players quick filter for positive Historical Delta and negative Forward Delta.
 - Tracked Players: saved players plus current valuation and immutable snapshots.
-- Player Detail: current valuation, projection breakdown, recent gameweeks and tracked snapshots.
+- Player Detail: full model context, projection breakdown, recent gameweeks and tracked snapshots.
 - Price Movements: latest stored price changes from official ingest snapshots.
 - Alerts: generated events from tracked-player snapshot changes.
 - Minutes Overrides: manual expected-minutes adjustments with history.

@@ -56,7 +56,9 @@ Forward Delta is:
 Next-6 xPPG - Value Par
 ```
 
-All Players sorts by Forward Delta by default. Emerging and Regression Risk are quick filters over the same player universe, not separate model outputs.
+Players sorts by Forward Delta by default using the label Best Value. Emerging and Regression Risk are quick filters over the same player universe, not separate model outputs.
+
+The main UI uses progressive disclosure: Squad and Players show only Actual PPG, Value Par, Forward Delta, trend, health/confidence and tracking actions. Market Mean, Historical Delta, Neutral xPPG, expected minutes, start probability, ownership and projection components stay in Player Detail or Data / Model.
 
 ## Projection V1
 
