@@ -210,15 +210,54 @@ class ModelTests(unittest.TestCase):
             con.execute(
                 """
                 INSERT INTO players VALUES
-                ('2026-27', 1, NULL, 'Break', '', '', 1, 'TST', 'MID', 5.0, 35, 900, 10.0, 'a', 'test', 'now', 'test'),
-                ('2026-27', 2, NULL, 'Trap', '', '', 1, 'TST', 'MID', 5.0, 50, 90, 10.0, 'a', 'test', 'now', 'test')
+                ('2026-27', 1, NULL, 'Break', '', '', 1, 'TST', 'MID', 5.0, 1, 900, 10.0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 2, NULL, 'Trap', '', '', 1, 'TST', 'MID', 5.0, 5, 90, 10.0, 'a', 'test', 'now', 'test')
                 """
             )
-            con.execute("INSERT INTO fixtures VALUES ('2026-27', 1, 1, '', 1, 2, 1, 5, 0, 'test', 'now', 'test')")
+            con.execute("INSERT INTO fixtures VALUES ('2026-27', 1, 1, '', 1, 2, 1, 5, 1, 'test', 'now', 'test')")
+            replace_player_underlying(
+                con,
+                "2026-27",
+                pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 1.0, "xa": 0.0}]),
+                "test",
+                "now",
+            )
             breakouts = breakout_board(con, "2026-27", "2026-27", 10, 10)
             traps = trap_board(con, "2026-27", "2026-27", 10, 10)
         self.assertEqual([row["player"] for row in breakouts], ["Break"])
         self.assertEqual([row["player"] for row in traps], ["Trap"])
+
+    def test_actual_ppg_uses_team_completed_fixtures_only(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO fixtures VALUES
+                ('2026-27', 1, 1, '', 2, 9, 3, 3, 1, 'test', 'now', 'test'),
+                ('2026-27', 2, 1, '', 3, 9, 3, 3, 1, 'test', 'now', 'test'),
+                ('2026-27', 3, 2, '', 9, 3, 3, 3, 1, 'test', 'now', 'test')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES
+                ('2026-27', 1, NULL, 'NotPlayedYet', '', '', 1, 'ONE', 'MID', 5.0, 80, 900, 10.0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 2, NULL, 'DNP', '', '', 2, 'TWO', 'MID', 5.0, 0, 0, 10.0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 3, NULL, 'Six', '', '', 2, 'TWO', 'MID', 5.0, 6, 90, 10.0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 4, NULL, 'Four', '', '', 3, 'THR', 'MID', 5.0, 8, 180, 10.0, 'a', 'test', 'now', 'test')
+                """
+            )
+            rows = {row["player"]: row for row in buy_board(con, "2026-27", "2026-27", 10, 10)}
+        self.assertIsNone(rows["NotPlayedYet"]["actual_ppg"])
+        self.assertIsNone(rows["NotPlayedYet"]["historical_delta"])
+        self.assertGreater(rows["NotPlayedYet"]["neutral_xppg"], 0)
+        self.assertEqual(rows["DNP"]["actual_ppg"], 0.0)
+        self.assertEqual(rows["Six"]["actual_ppg"], 6.0)
+        self.assertEqual(rows["Four"]["actual_ppg"], 4.0)
+        self.assertEqual(rows["Four"]["historical_delta"], 0.5)
 
     def test_history_as_of_prevents_future_leakage(self):
         with connect(":memory:") as con:

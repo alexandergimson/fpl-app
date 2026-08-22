@@ -13,8 +13,8 @@ type BoardRow = {
   current_price: number;
   market_mean: number;
   value_par: number;
-  actual_ppg: number;
-  historical_delta: number;
+  actual_ppg: number | null;
+  historical_delta: number | null;
   neutral_xppg: number;
   next_3_xppg: number;
   next_6_xppg: number;
@@ -126,6 +126,10 @@ function confidenceLabel(value: number) {
   return "LOW";
 }
 
+function metric(value: number | null | undefined, digits = 2) {
+  return value == null ? "—" : value.toFixed(digits);
+}
+
 function SortButton({ label, sortKey, active, direction, onSort, title }: { label: string; sortKey: SortKey; active: boolean; direction: "asc" | "desc"; onSort: (key: SortKey) => void; title?: string }) {
   return (
     <button className="sort" title={title} onClick={() => onSort(sortKey)}>
@@ -212,7 +216,7 @@ function App() {
     return {
       counts,
       averageForwardDelta: squad.length ? squad.reduce((sum, row) => sum + row.forward_delta, 0) / squad.length : 0,
-      belowPar: squad.filter((row) => row.historical_delta < 0).length,
+      belowPar: squad.filter((row) => row.historical_delta != null && row.historical_delta < 0).length,
       lowConfidence: squad.filter((row) => confidenceLabel(row.projection_confidence) === "LOW").length,
       tracked: squad.filter((row) => trackedIds.has(row.player_id)).length,
     };
@@ -238,8 +242,8 @@ function App() {
       .filter((row) => quickFilter === "ALL" || (quickFilter === "ABOVE_PAR" && row.forward_delta >= 0) || (quickFilter === "BELOW_PAR" && row.forward_delta < 0) || (quickFilter === "EMERGING" && row.is_emerging) || (quickFilter === "REGRESSION_RISK" && row.is_regression_risk) || (quickFilter === "TRACKED" && trackedIds.has(row.player_id)))
       .filter((row) => !query || row.player.toLowerCase().includes(query) || row.team.toLowerCase().includes(query))
       .sort((a, b) => {
-        const av = a[sortKey] ?? 0;
-        const bv = b[sortKey] ?? 0;
+        const av = a[sortKey] ?? (sortDirection === "desc" ? -Infinity : Infinity);
+        const bv = b[sortKey] ?? (sortDirection === "desc" ? -Infinity : Infinity);
         return (av - bv) * (sortDirection === "desc" ? -1 : 1);
       });
   }, [players, position, team, trackedOnly, minPrice, maxPrice, minMinutes, minOwnership, maxOwnership, confidence, quickFilter, trackedIds, search, sortKey, sortDirection]);
@@ -370,8 +374,8 @@ function App() {
               {squad.map((row) => (
                 <tr key={`squad-${row.player_id}`}>
                   <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td>
-                  <td>{row.team}</td><td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td><td>{row.actual_ppg.toFixed(2)}</td><td>{row.value_par.toFixed(2)}</td>
-                  <td className={row.historical_delta >= 0 ? "positive" : "negative"}>{row.historical_delta.toFixed(2)}</td><td>{row.neutral_xppg.toFixed(2)}</td><td>{row.next_3_xppg.toFixed(2)}</td><td>{row.next_6_xppg.toFixed(2)}</td>
+                  <td>{row.team}</td><td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td><td>{metric(row.actual_ppg)}</td><td>{row.value_par.toFixed(2)}</td>
+                  <td className={row.historical_delta == null ? "" : row.historical_delta >= 0 ? "positive" : "negative"}>{metric(row.historical_delta)}</td><td>{row.neutral_xppg.toFixed(2)}</td><td>{row.next_3_xppg.toFixed(2)}</td><td>{row.next_6_xppg.toFixed(2)}</td>
                   <td className={row.forward_delta >= 0 ? "positive" : "negative"}>{row.forward_delta.toFixed(2)}</td><td>{row.expected_minutes.toFixed(0)}</td><td>{confidenceLabel(row.projection_confidence)}</td>
                   <td title={row.value_trend.toFixed(2)}>{trendLabel(row.value_trend)}</td><td>{row.squad_health}</td>
                   <td>{trackedIds.has(row.player_id) ? <button className="action" onClick={() => untrack(row)}>Untrack</button> : <button className="action" onClick={() => track(row)}>Track</button>}</td>
@@ -422,8 +426,8 @@ function App() {
             <tbody>
               {visiblePlayers.map((row) => (
                 <tr key={`player-${row.player_id}`}>
-                  <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td><td>{row.team}</td><td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td><td>{row.market_mean.toFixed(2)}</td><td>{row.value_par.toFixed(2)}</td><td>{row.actual_ppg.toFixed(2)}</td>
-                  <td className={row.historical_delta >= 0 ? "positive" : "negative"}>{row.historical_delta.toFixed(2)}</td><td>{row.neutral_xppg.toFixed(2)}</td><td>{row.next_3_xppg.toFixed(2)}</td><td>{row.next_6_xppg.toFixed(2)}</td>
+                  <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td><td>{row.team}</td><td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td><td>{row.market_mean.toFixed(2)}</td><td>{row.value_par.toFixed(2)}</td><td>{metric(row.actual_ppg)}</td>
+                  <td className={row.historical_delta == null ? "" : row.historical_delta >= 0 ? "positive" : "negative"}>{metric(row.historical_delta)}</td><td>{row.neutral_xppg.toFixed(2)}</td><td>{row.next_3_xppg.toFixed(2)}</td><td>{row.next_6_xppg.toFixed(2)}</td>
                   <td className={row.forward_delta >= 0 ? "positive" : "negative"}>{row.forward_delta.toFixed(2)}</td><td>{row.expected_minutes.toFixed(0)}</td><td>{Math.round(row.start_probability * 100)}%</td><td>{confidenceLabel(row.projection_confidence)}</td>
                   <td title={row.value_trend.toFixed(2)}>{trendLabel(row.value_trend)}</td><td>{row.ownership?.toFixed(1) ?? "-"}</td><td className={row.price_trend >= 0 ? "positive" : "negative"}>{row.price_trend.toFixed(1)}</td>
                   <td>{trackedIds.has(row.player_id) ? <button className="action" onClick={() => untrack(row)}>Untrack</button> : <button className="action" onClick={() => track(row)}>Track</button>}</td>
@@ -438,8 +442,8 @@ function App() {
           <article className="wide">
             <h2>{detail.current.player}</h2>
             <div className="metrics">
-              <span>£{detail.current.current_price.toFixed(1)}</span><span>Mean {detail.current.market_mean.toFixed(2)}</span><span>Par {detail.current.value_par.toFixed(2)}</span><span>Actual {detail.current.actual_ppg.toFixed(2)}</span>
-              <span className={detail.current.historical_delta >= 0 ? "positive" : "negative"}>Historical {detail.current.historical_delta.toFixed(2)}</span><span>Neutral {detail.current.neutral_xppg.toFixed(2)}</span><span>Next 3 {detail.current.next_3_xppg.toFixed(2)}</span><span>Next 6 {detail.current.next_6_xppg.toFixed(2)}</span>
+              <span>£{detail.current.current_price.toFixed(1)}</span><span>Mean {detail.current.market_mean.toFixed(2)}</span><span>Par {detail.current.value_par.toFixed(2)}</span><span>Actual {metric(detail.current.actual_ppg)}</span>
+              <span className={detail.current.historical_delta == null ? "" : detail.current.historical_delta >= 0 ? "positive" : "negative"}>Historical {metric(detail.current.historical_delta)}</span><span>Neutral {detail.current.neutral_xppg.toFixed(2)}</span><span>Next 3 {detail.current.next_3_xppg.toFixed(2)}</span><span>Next 6 {detail.current.next_6_xppg.toFixed(2)}</span>
               <span className={detail.current.forward_delta >= 0 ? "positive" : "negative"}>Forward {detail.current.forward_delta.toFixed(2)}</span><span>{trendLabel(detail.current.value_trend)}</span><span>Conf {confidenceLabel(detail.current.projection_confidence)}</span><span>Own {detail.current.ownership?.toFixed(1) ?? "-"}%</span>
               {detail.current.xg90 != null && <span>xG90 {detail.current.xg90.toFixed(2)}</span>}{detail.current.xa90 != null && <span>xA90 {detail.current.xa90.toFixed(2)}</span>}{detail.current.role_xppg > 0 && <span>Role +{detail.current.role_xppg.toFixed(2)}</span>}{detail.current.clean_sheet_xppg_6 > 0 && <span>CS {detail.current.clean_sheet_xppg_6.toFixed(2)}</span>}{detail.current.defcon_xppg > 0 && <span>DefCon {detail.current.defcon_xppg.toFixed(2)}</span>}{detail.current.bonus_xppg > 0 && <span>Bonus {detail.current.bonus_xppg.toFixed(2)}</span>}{detail.current.save_xppg > 0 && <span>Saves {detail.current.save_xppg.toFixed(2)}</span>}
             </div>

@@ -48,6 +48,8 @@ Historical Delta is:
 Actual PPG - Value Par
 ```
 
+Actual PPG is realised current-season FPL points divided by that player's team fixtures completed. If the team has not completed a league fixture yet, Actual PPG and Historical Delta are null and the UI displays `-`.
+
 Forward Delta is:
 
 ```text
@@ -60,7 +62,7 @@ All Players sorts by Forward Delta by default. Emerging and Regression Risk are 
 
 The first market table uses a deliberately plain projection:
 
-- actual PPG supplies current production
+- Actual PPG supplies realised current-season production once the player's team has completed fixtures
 - minutes confidence shrinks that production toward the position/price Market Mean
 - official fixtures supply Next 3 and Next 6 horizons
 - FPL fixture difficulty applies a small temporary multiplier until rolling xG/xGA team strength lands

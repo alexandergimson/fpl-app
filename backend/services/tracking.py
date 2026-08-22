@@ -58,7 +58,7 @@ def snapshot_tracked(con: sqlite3.Connection, season: str, par_season: str = "20
                 row["current_price"],
                 row["market_mean"],
                 row["value_par"],
-                row["actual_ppg"],
+                row["actual_ppg"] or 0.0,
                 row["neutral_xppg"],
                 row["next_3_xppg"],
                 row["next_6_xppg"],

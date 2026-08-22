@@ -35,6 +35,33 @@ def infer_gameweeks(rows, season: str, par_season: str) -> int:
     return 38 if max_points > 50 else 1
 
 
+def team_completed_fixtures(con: sqlite3.Connection, season: str, as_of_gw: int | None = None) -> dict[int, int]:
+    clause = "AND gameweek <= ?" if as_of_gw is not None else ""
+    params = (season, as_of_gw, season, as_of_gw) if as_of_gw is not None else (season, season)
+    rows = con.execute(
+        f"""
+        SELECT team_id, COUNT(*) AS played
+        FROM (
+          SELECT team_h AS team_id FROM fixtures WHERE season = ? AND finished = 1 {clause}
+          UNION ALL
+          SELECT team_a AS team_id FROM fixtures WHERE season = ? AND finished = 1 {clause}
+        )
+        GROUP BY team_id
+        """,
+        params,
+    ).fetchall()
+    return {row["team_id"]: row["played"] for row in rows}
+
+
+def actual_ppg(points: int, team_id: int | None, completed_by_team: dict[int, int], fallback_denominator: int | None = None) -> float | None:
+    played = completed_by_team.get(team_id) if team_id is not None else None
+    if played:
+        return points / played
+    if fallback_denominator:
+        return points / fallback_denominator
+    return None
+
+
 def buy_board(
     con: sqlite3.Connection,
     season: str,
@@ -59,6 +86,8 @@ def buy_board(
     roles = latest_role_overrides(con, season)
     current_par_points = current_curve_points(con, season, as_of_gw) if as_of_gw is not None else None
     denominator = gameweeks_played or as_of_gw or infer_gameweeks(rows, season, par_season)
+    completed_by_team = team_completed_fixtures(con, season, as_of_gw)
+    actual_fallback = denominator if season < par_season and not completed_by_team else None
     previous_deltas = {
         row["player_id"]: row["buy_delta"]
         for row in con.execute(
@@ -105,9 +134,10 @@ def buy_board(
             as_of_gw,
             current_par_points,
         )
-        actual_ppg = points / max(1, denominator)
+        actual = actual_ppg(points, row["team_id"], completed_by_team, actual_fallback)
+        projection_ppg = actual if actual is not None else market_mean
         minutes_confidence = min(1.0, minutes / max(1, denominator * 90))
-        neutral_xppg = actual_ppg * (0.35 + 0.65 * minutes_confidence) + market_mean * (1 - minutes_confidence) * 0.35
+        neutral_xppg = projection_ppg * (0.35 + 0.65 * minutes_confidence) + market_mean * (1 - minutes_confidence) * 0.35
         expected_minutes = minutes / max(1, denominator)
         override = overrides.get(row["player_id"])
         if override:
@@ -136,7 +166,7 @@ def buy_board(
         next_6_xppg = adjusted_horizon_ppg(open_play_xppg, fixture_factors, 6) + clean_sheet_6
         buy_delta_3 = next_3_xppg - value_par
         buy_delta_6 = next_6_xppg - value_par
-        historical_delta = actual_ppg - value_par
+        historical_delta = actual - value_par if actual is not None else None
         value_trend = buy_delta_6 - previous_deltas.get(row["player_id"], buy_delta_6)
         captain_delta = captain_adjusted_delta(next_6_xppg, value_par, price)
         confidence = projection_confidence(minutes_confidence, rates["underlying_minutes"] if rates else 0, row["status"], role is not None)
@@ -150,18 +180,18 @@ def buy_board(
                 "current_price": price,
                 "market_mean": round(market_mean, 2),
                 "value_par": round(value_par, 2),
-                "actual_ppg": round(actual_ppg, 2),
+                "actual_ppg": round(actual, 2) if actual is not None else None,
                 "neutral_xppg": round(neutral_xppg, 2),
                 "next_3_xppg": round(next_3_xppg, 2),
                 "next_6_xppg": round(next_6_xppg, 2),
                 "buy_delta_3": round(buy_delta_3, 2),
                 "buy_delta_6": round(buy_delta_6, 2),
-                "historical_delta": round(historical_delta, 2),
+                "historical_delta": round(historical_delta, 2) if historical_delta is not None else None,
                 "forward_delta": round(buy_delta_6, 2),
                 "value_trend": round(value_trend, 2),
                 "price_trend": round(price_trends.get(row["player_id"], 0.0) or 0.0, 2),
-                "is_emerging": historical_delta < 0 and buy_delta_6 > 0,
-                "is_regression_risk": historical_delta > 0 and buy_delta_6 < 0,
+                "is_emerging": historical_delta is not None and historical_delta < 0 and buy_delta_6 > 0,
+                "is_regression_risk": historical_delta is not None and historical_delta > 0 and buy_delta_6 < 0,
                 "captain_adjusted_delta": round(captain_delta, 2),
                 "opportunity_score": round(opportunity_score, 2),
                 "expected_minutes": round(expected_minutes, 1),
@@ -184,7 +214,7 @@ def buy_board(
                 "projection_confidence": round(confidence, 2),
                 "par_confidence": par_confidence,
                 "ownership": row["ownership"],
-                "status": player_status(buy_delta_6, buy_delta_3, confidence, actual_ppg - market_mean),
+                "status": player_status(buy_delta_6, buy_delta_3, confidence, (actual - market_mean) if actual is not None else 0),
             }
         )
     return sorted(board, key=lambda item: item["buy_delta_6"], reverse=True)[:limit]
@@ -202,7 +232,7 @@ def breakout_board(
     breakouts = [
         row | {"breakout_gap": round(row["next_6_xppg"] - row["actual_ppg"], 2)}
         for row in rows
-        if row["next_6_xppg"] > row["value_par"] and row["actual_ppg"] < row["next_6_xppg"]
+        if row["actual_ppg"] is not None and row["next_6_xppg"] > row["value_par"] and row["actual_ppg"] < row["next_6_xppg"]
     ]
     return sorted(breakouts, key=lambda row: (row["breakout_gap"], row["buy_delta_6"]), reverse=True)[:limit]
 
@@ -219,6 +249,6 @@ def trap_board(
     traps = [
         row | {"trap_gap": round(row["actual_ppg"] - row["next_6_xppg"], 2)}
         for row in rows
-        if row["actual_ppg"] > row["value_par"] and row["next_6_xppg"] < row["value_par"]
+        if row["actual_ppg"] is not None and row["actual_ppg"] > row["value_par"] and row["next_6_xppg"] < row["value_par"]
     ]
     return sorted(traps, key=lambda row: (row["trap_gap"], -row["buy_delta_6"]), reverse=True)[:limit]
