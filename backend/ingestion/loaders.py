@@ -145,7 +145,7 @@ def replace_fixtures(con: sqlite3.Connection, season: str, fixtures: pd.DataFram
                 int(data["team_a"]),
                 int(data["team_h_difficulty"]),
                 int(data["team_a_difficulty"]),
-                1 if data.get("finished") else 0,
+                1 if data.get("finished") or data.get("finished_provisional") else 0,
                 source,
                 fetched_at,
                 season,

@@ -26,7 +26,7 @@ from backend.services.player_detail import player_detail, recent_gameweeks
 from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, list_alerts
 from backend.services.minutes import add_minutes_override, latest_minutes_overrides
 from backend.services.roles import add_role_override, latest_role_overrides, role_history
-from backend.ingestion.loaders import replace_fpl_player_underlying, replace_player_underlying
+from backend.ingestion.loaders import replace_fixtures, replace_fpl_player_underlying, replace_player_underlying
 from backend.ingestion.loaders import replace_team_underlying, snapshot_prices
 from backend.services.prices import price_movements
 from backend.services.underlying import attacking_xppg, defcon_xppg, player_underlying_rates
@@ -509,6 +509,15 @@ class ModelTests(unittest.TestCase):
                 status = data_status(con, "2026-27")
         self.assertEqual(result["status"], "SUCCESS")
         self.assertEqual(status["latest_ingestion_runs"][0]["kind"], "refresh")
+
+    def test_provisional_finished_fixture_counts_as_completed(self):
+        fixtures = pd.DataFrame(
+            [{"id": 1, "event": 1, "kickoff_time": "", "team_h": 1, "team_a": 7, "team_h_difficulty": 2, "team_a_difficulty": 5, "finished": False, "finished_provisional": True}]
+        )
+        with connect(":memory:") as con:
+            replace_fixtures(con, "2026-27", fixtures, "test", "now")
+            finished = con.execute("SELECT finished FROM fixtures WHERE fixture_id = 1").fetchone()["finished"]
+        self.assertEqual(finished, 1)
 
     def test_projection_breakdown_sums_to_projection(self):
         row = {"position": "MID", "expected_minutes": 90, "neutral_xppg": 5.0, "actual_ppg": 4.0, "next_6_xppg": 5.2}
