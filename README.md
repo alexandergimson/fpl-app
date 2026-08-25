@@ -71,10 +71,10 @@ Optional team-underlying CSV columns: `team_id`, `gameweek`, `xg`, `xga`, plus o
 
 ## Core Workflow
 
-- Squad: diagnose owned players with Actual PPG, Value Par, Forward Delta, trend and health.
-- Players: market scanner sorted by Best Value by default, with search, position, price, confidence and tracked filters.
-- Emerging: Players quick filter for negative Historical Delta and positive Forward Delta.
-- Regression Risk: Players quick filter for positive Historical Delta and negative Forward Delta.
+- Squad: diagnose owned players with Return Delta, Performance Delta and Forward Delta.
+- Players: market scanner sorted by Best Value, the user-facing label for Forward Delta descending.
+- Emerging: Players quick filter for negative Return Delta and positive Forward Delta.
+- Regression Risk: Players quick filter for positive Return Delta and negative Forward Delta.
 - Tracked Players: saved players plus current valuation and immutable snapshots.
 - Player Detail: full model context, projection breakdown, recent gameweeks and tracked snapshots.
 - Price Movements: latest stored price changes from official ingest snapshots.

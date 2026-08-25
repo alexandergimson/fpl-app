@@ -40,15 +40,33 @@ GW16+:   15% prior / 85% current
 
 If current-season samples are missing or too thin for a position/price, the historical prior remains the fallback.
 
-## Core Deltas
+## Canonical Value Metrics
 
-Historical Delta is:
+Value Par is the hurdle rate for a good FPL player at the same position and current price.
+
+Frozen GW Par is the Value Par that applied to a player for an already-completed Gameweek. It is stored immutably in `frozen_player_gameweek_par` when gameweek rows exist.
+
+Value Balance is:
 
 ```text
-Actual PPG - Value Par
+actual FPL points - sum(frozen GW Pars)
 ```
 
-Actual PPG is realised current-season FPL points divided by that player's team fixtures completed. If the team has not completed a league fixture yet, Actual PPG and Historical Delta are null and the UI displays `-`.
+If frozen Pars are not available yet, the board falls back to today's Value Par multiplied by team completed fixtures. That fallback keeps the live app usable, but frozen Pars are the authoritative source once populated.
+
+Return Delta is:
+
+```text
+Value Balance / completed team fixtures
+```
+
+If the team has not completed a league fixture yet, Actual PPG, Value Balance and Return Delta are null and the UI displays `-`. If the team has played and the player did not appear, actual points are zero and Return Delta is negative against Par.
+
+Performance Delta is:
+
+```text
+Underlying xPPG - current Value Par
+```
 
 Forward Delta is:
 
@@ -58,7 +76,7 @@ Next-6 xPPG - Value Par
 
 Players sorts by Forward Delta by default using the label Best Value. Emerging and Regression Risk are quick filters over the same player universe, not separate model outputs.
 
-The main UI uses progressive disclosure: Squad and Players show only Actual PPG, Value Par, Forward Delta, trend, health/confidence and tracking actions. Market Mean, Historical Delta, Neutral xPPG, expected minutes, start probability, ownership and projection components stay in Player Detail or Data / Model.
+The main UI uses progressive disclosure: Squad shows Player, Position, Price, Return Delta, Performance Delta and Forward Delta. Players shows Player, Team, Position, Price, Performance Delta, Forward Delta and Track. Market Mean, Actual PPG, Value Par, Underlying xPPG, expected minutes, start probability, ownership and projection components stay in Player Detail or Data / Model.
 
 ## Projection V1
 
@@ -119,7 +137,7 @@ Goalkeeper save EV uses `player_gameweeks.saves`, regressed toward the goalkeepe
 
 ## Captaincy
 
-Buy Board rows expose raw `buy_delta_6` and `captain_adjusted_delta`. The captain adjustment is deliberately simple: players priced at £10.0m+ get a partial captaincy multiplier, and players priced at £12.0m+ get a larger one. This metric is visible but does not replace the primary Buy Board ranking.
+Board rows expose `forward_delta` as the canonical market ranking metric. Legacy `buy_delta_6` remains as a compatibility alias. The captain adjustment is deliberately simple and separate: players priced at £10.0m+ get a partial captaincy multiplier, and players priced at £12.0m+ get a larger one. It does not replace the primary ranking.
 
 ## Role Overrides
 
@@ -131,15 +149,13 @@ Projection confidence combines minutes security, available underlying-data sampl
 
 ## Tracking Momentum
 
-Tracked-player momentum is `latest snapshot buy_delta - previous snapshot buy_delta`. The dashboard labels tracked players as improving, declining, fully priced, buy or watch from the latest delta and that one-step momentum.
+Tracked-player momentum is `latest snapshot buy_delta - previous snapshot buy_delta`, where `buy_delta` stores the Forward Delta compatibility value. Snapshots also store Return Delta, Performance Delta and Value Balance.
 
 Alerts are generated from tracked snapshots and deduped by season, player, gameweek and alert kind. Current v1 alerts focus on large buy-delta movement and price movement.
 
-## Squad Health
+## Squad Diagnostics
 
-My Squad stores purchase price, current price and FPL selling price. The table diagnoses owned players with Historical Delta, Forward Delta, expected minutes, projection confidence and Value Trend. It deliberately does not choose replacements.
-
-Squad health labels are STRONG VALUE, HEALTHY, WATCH and REVIEW.
+My Squad stores purchase price, current price and FPL selling price. The table diagnoses owned players with Return Delta, Performance Delta and Forward Delta. It deliberately does not choose replacements.
 
 ## Price Movements
 

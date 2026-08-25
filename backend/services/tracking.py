@@ -45,10 +45,11 @@ def snapshot_tracked(con: sqlite3.Connection, season: str, par_season: str = "20
         """
         INSERT OR IGNORE INTO tracked_snapshots (
           season, player_id, gameweek, price, market_mean, value_par,
+          value_balance, return_delta, performance_delta,
           actual_ppg, neutral_xppg, next_3_xppg, next_6_xppg, buy_delta,
           ownership, start_probability, expected_minutes, projection_confidence,
           fixture_factor_6, xg90, xa90, model_version, data_cutoff, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -58,6 +59,9 @@ def snapshot_tracked(con: sqlite3.Connection, season: str, par_season: str = "20
                 row["current_price"],
                 row["market_mean"],
                 row["value_par"],
+                row["value_balance"],
+                row["return_delta"],
+                row["performance_delta"],
                 row["actual_ppg"] or 0.0,
                 row["neutral_xppg"],
                 row["next_3_xppg"],

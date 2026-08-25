@@ -166,6 +166,9 @@ CREATE TABLE IF NOT EXISTS tracked_snapshots (
   price REAL NOT NULL,
   market_mean REAL NOT NULL,
   value_par REAL NOT NULL,
+  value_balance REAL,
+  return_delta REAL,
+  performance_delta REAL,
   actual_ppg REAL NOT NULL,
   neutral_xppg REAL NOT NULL,
   next_3_xppg REAL NOT NULL,
@@ -183,6 +186,22 @@ CREATE TABLE IF NOT EXISTS tracked_snapshots (
   status TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (season, player_id, gameweek)
+);
+
+CREATE TABLE IF NOT EXISTS frozen_player_gameweek_par (
+  season TEXT NOT NULL,
+  player_id INTEGER NOT NULL,
+  gameweek INTEGER NOT NULL,
+  fixture_id INTEGER NOT NULL DEFAULT 0,
+  price REAL NOT NULL,
+  position TEXT NOT NULL,
+  value_par REAL NOT NULL,
+  par_model_version TEXT NOT NULL,
+  source TEXT NOT NULL,
+  source_version TEXT,
+  data_cutoff TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (season, player_id, gameweek, fixture_id)
 );
 
 CREATE TABLE IF NOT EXISTS squad_players (
@@ -266,6 +285,9 @@ def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
         con,
         "tracked_snapshots",
         {
+            "value_balance": "REAL",
+            "return_delta": "REAL",
+            "performance_delta": "REAL",
             "expected_minutes": "REAL",
             "projection_confidence": "REAL",
             "fixture_factor_6": "REAL",

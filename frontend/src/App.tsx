@@ -13,9 +13,13 @@ type BoardRow = {
   current_price: number;
   market_mean: number;
   value_par: number;
+  value_balance: number | null;
   actual_ppg: number | null;
   historical_delta: number | null;
+  return_delta: number | null;
   neutral_xppg: number;
+  underlying_xppg: number;
+  performance_delta: number;
   next_3_xppg: number;
   next_6_xppg: number;
   buy_delta_6: number;
@@ -56,7 +60,7 @@ type PlayerDetail = {
   recent_gameweeks: { gameweek: number; total_points: number; minutes: number; value: number }[];
   minutes_history: { start_probability: number; expected_minutes_if_starting: number; substitute_probability: number; expected_minutes_if_sub: number; reason: string; created_at: string }[];
   role_history: { penalties: number; direct_free_kicks: number; corners: number; indirect_free_kicks: number; reason: string; created_at: string }[];
-  tracked_snapshots: { gameweek: number; buy_delta: number; price: number }[];
+  tracked_snapshots: { gameweek: number; buy_delta: number; price: number; return_delta?: number | null; performance_delta?: number | null; forward_delta?: number | null; value_balance?: number | null }[];
 };
 
 type Alert = { id: number; kind: string; message: string; created_at: string };
@@ -86,8 +90,10 @@ type SortKey =
   | "current_price"
   | "actual_ppg"
   | "historical_delta"
+  | "return_delta"
   | "value_par"
   | "neutral_xppg"
+  | "performance_delta"
   | "next_3_xppg"
   | "next_6_xppg"
   | "forward_delta"
@@ -97,14 +103,16 @@ type SortKey =
   | "value_trend"
   | "price_trend";
 
-type SortOption = "BEST_VALUE" | "NEXT_6" | "ACTUAL" | "CHEAPEST" | "IMPROVING" | "OWNERSHIP";
+type SortOption = "BEST_VALUE" | "PERFORMANCE" | "CHEAPEST";
 
 const API = "http://127.0.0.1:8000";
 const tooltipText = {
-  historical_delta: "Actual PPG minus Value Par. Shows delivered value versus the benchmark for this price and position.",
-  forward_delta: "Next-6 projected PPG minus Value Par. Shows expected future value from this point forward.",
+  return_delta: "Average FPL points per completed team Gameweek above or below the frozen Par that applied at the time.",
+  performance_delta: "Estimated fixture-neutral underlying PPG minus today's Value Par.",
+  forward_delta: "Projected average PPG over the next six FPL Gameweeks minus today's Value Par.",
+  value_balance: "Total actual FPL points gained or lost versus the frozen Par from each completed Gameweek.",
   value_par: "Benchmark for a good FPL asset at this price and position.",
-  neutral_xppg: "Projection before future fixture adjustment.",
+  neutral_xppg: "Fixture-neutral underlying PPG before future fixture adjustment.",
   next_3_xppg: "Projected PPG across the next 3 fixtures.",
   next_6_xppg: "Projected PPG across the next 6 fixtures.",
   expected_minutes: "Expected minutes per match used by the projection.",
@@ -214,7 +222,7 @@ function App() {
     return {
       counts,
       averageForwardDelta: squad.length ? squad.reduce((sum, row) => sum + row.forward_delta, 0) / squad.length : 0,
-      belowPar: squad.filter((row) => row.historical_delta != null && row.historical_delta < 0).length,
+      belowPar: squad.filter((row) => row.return_delta != null && row.return_delta < 0).length,
       lowConfidence: squad.filter((row) => confidenceLabel(row.projection_confidence) === "LOW").length,
       tracked: squad.filter((row) => trackedIds.has(row.player_id)).length,
     };
@@ -256,7 +264,7 @@ function App() {
       setSortKey("current_price");
       setSortDirection("asc");
     } else {
-      const keys: Record<Exclude<SortOption, "CHEAPEST">, SortKey> = { BEST_VALUE: "forward_delta", NEXT_6: "next_6_xppg", ACTUAL: "actual_ppg", IMPROVING: "value_trend", OWNERSHIP: "ownership" };
+      const keys: Record<Exclude<SortOption, "CHEAPEST">, SortKey> = { BEST_VALUE: "forward_delta", PERFORMANCE: "performance_delta" };
       setSortKey(keys[option]);
       setSortDirection("desc");
     }
@@ -357,7 +365,6 @@ function App() {
           </div>
           <p className="note">{teamMessage || "Public import uses the latest available FPL Gameweek picks, not private transfer drafts."}</p>
           <div className="overview">
-            {Object.entries(squadSummary.counts).map(([label, value]) => <div className="overview-item" key={label}><span>{label}</span><strong>{value}</strong><small>players</small></div>)}
             <div className="overview-item"><span>Avg Forward Delta</span><strong className={squadSummary.averageForwardDelta >= 0 ? "positive" : "negative"}>{squadSummary.averageForwardDelta.toFixed(2)}</strong><small>Next-6 vs Par</small></div>
             <div className="overview-item"><span>Below Par</span><strong>{squadSummary.belowPar}</strong><small>historical</small></div>
             <div className="overview-item"><span>Low Confidence</span><strong>{squadSummary.lowConfidence}</strong><small>players</small></div>
@@ -366,23 +373,24 @@ function App() {
           <table>
             <thead>
               <tr>
-                <th>Player</th><th>Pos</th><th>Price</th><th>Actual PPG</th>
-                <th title={tooltipText.value_par}>Par</th><th title={tooltipText.forward_delta}>Forward Δ</th>
-                <th title={tooltipText.value_trend}>Trend</th><th>Health</th><th>Track</th><th></th>
+                <th>Player</th><th>Pos</th><th>Price</th>
+                <th title={tooltipText.return_delta}>Return Δ</th><th title={tooltipText.performance_delta}>Performance Δ</th><th title={tooltipText.forward_delta}>Forward Δ</th>
+                <th>Track</th><th></th>
               </tr>
             </thead>
             <tbody>
               {squad.map((row) => (
                 <tr key={`squad-${row.player_id}`}>
                   <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td>
-                  <td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td><td>{metric(row.actual_ppg)}</td><td>{row.value_par.toFixed(2)}</td>
+                  <td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td>
+                  <td className={row.return_delta == null ? "" : row.return_delta >= 0 ? "positive" : "negative"}>{metric(row.return_delta)}</td>
+                  <td className={row.performance_delta >= 0 ? "positive" : "negative"}>{row.performance_delta >= 0 ? "+" : ""}{row.performance_delta.toFixed(2)}</td>
                   <td className={`delta ${row.forward_delta >= 0 ? "positive" : "negative"}`}>{row.forward_delta >= 0 ? "+" : ""}{row.forward_delta.toFixed(2)}</td>
-                  <td title={row.value_trend.toFixed(2)}>{trendLabel(row.value_trend)}</td><td><span className={`health health-${(row.squad_health ?? "HEALTHY").toLowerCase().replace(" ", "-")}`}>{row.squad_health}</span></td>
                   <td>{trackedIds.has(row.player_id) ? <button className="action" onClick={() => untrack(row)}>Untrack</button> : <button className="action" onClick={() => track(row)}>Track</button>}</td>
                   <td><button className="action" onClick={() => viewMarket(row)}>Explore {row.position}</button> <button className="action" onClick={() => removeSquadPlayer(row)}>Remove</button></td>
                 </tr>
               ))}
-              {squad.length === 0 && <tr><td colSpan={10}>Import your public FPL team or add players manually.</td></tr>}
+              {squad.length === 0 && <tr><td colSpan={8}>Import your public FPL team or add players manually.</td></tr>}
             </tbody>
           </table>
         </article>
@@ -407,11 +415,8 @@ function App() {
             <select aria-label="Confidence filter" value={confidence} onChange={(event) => setConfidence(event.target.value)}><option value="ALL">All confidence</option><option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option></select>
             <select aria-label="Sort players" value={sortOption} onChange={(event) => changeSortOption(event.target.value as SortOption)}>
               <option value="BEST_VALUE">Best Value</option>
-              <option value="NEXT_6">Highest Next-6</option>
-              <option value="ACTUAL">Highest Actual PPG</option>
+              <option value="PERFORMANCE">Best Process</option>
               <option value="CHEAPEST">Cheapest</option>
-              <option value="IMPROVING">Improving Fastest</option>
-              <option value="OWNERSHIP">Ownership</option>
             </select>
             <label className="check"><input type="checkbox" checked={trackedOnly} onChange={(event) => setTrackedOnly(event.target.checked)} /> Tracked only</label>
           </div>
@@ -419,20 +424,21 @@ function App() {
             <thead>
               <tr>
                 <th>Player</th><th>Team</th><th>Pos</th><th><SortButton label="Price" sortKey="current_price" active={sortKey === "current_price"} direction={sortDirection} onSort={changeSort} /></th>
-                <th title={tooltipText.value_par}>Par</th><th title={tooltipText.next_6_xppg}><SortButton label="Next-6" sortKey="next_6_xppg" active={sortKey === "next_6_xppg"} direction={sortDirection} onSort={changeSort} /></th>
+                <th title={tooltipText.performance_delta}><SortButton label="Performance Δ" sortKey="performance_delta" active={sortKey === "performance_delta"} direction={sortDirection} onSort={changeSort} /></th>
                 <th title={tooltipText.forward_delta}><SortButton label="Forward Δ" sortKey="forward_delta" active={sortKey === "forward_delta"} direction={sortDirection} onSort={changeSort} /></th>
-                <th title={tooltipText.value_trend}>Trend</th><th title={tooltipText.confidence}>Conf</th><th>Track</th>
+                <th>Track</th>
               </tr>
             </thead>
             <tbody>
               {visiblePlayers.map((row) => (
                 <tr key={`player-${row.player_id}`}>
-                  <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td><td>{row.team}</td><td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td><td>{row.value_par.toFixed(2)}</td><td>{row.next_6_xppg.toFixed(2)}</td>
-                  <td className={`delta ${row.forward_delta >= 0 ? "positive" : "negative"}`}>{row.forward_delta >= 0 ? "+" : ""}{row.forward_delta.toFixed(2)}</td><td title={row.value_trend.toFixed(2)}>{trendLabel(row.value_trend)}</td><td>{confidenceLabel(row.projection_confidence)}</td>
+                  <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td><td>{row.team}</td><td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td>
+                  <td className={row.performance_delta >= 0 ? "positive" : "negative"}>{row.performance_delta >= 0 ? "+" : ""}{row.performance_delta.toFixed(2)}</td>
+                  <td className={`delta ${row.forward_delta >= 0 ? "positive" : "negative"}`}>{row.forward_delta >= 0 ? "+" : ""}{row.forward_delta.toFixed(2)}</td>
                   <td>{trackedIds.has(row.player_id) ? <button className="action" onClick={() => untrack(row)}>Untrack</button> : <button className="action" onClick={() => track(row)}>Track</button>}</td>
                 </tr>
               ))}
-              {visiblePlayers.length === 0 && <tr><td colSpan={10}>No players match these filters.</td></tr>}
+              {visiblePlayers.length === 0 && <tr><td colSpan={7}>No players match these filters.</td></tr>}
             </tbody>
           </table>
         </article>
@@ -441,9 +447,14 @@ function App() {
           <article className="wide">
             <h2>{detail.current.player}</h2>
             <div className="metrics">
-              <span>£{detail.current.current_price.toFixed(1)}</span><span>Mean {detail.current.market_mean.toFixed(2)}</span><span>Par {detail.current.value_par.toFixed(2)}</span><span>Actual {metric(detail.current.actual_ppg)}</span>
-              <span className={detail.current.historical_delta == null ? "" : detail.current.historical_delta >= 0 ? "positive" : "negative"}>Historical {metric(detail.current.historical_delta)}</span><span>Neutral {detail.current.neutral_xppg.toFixed(2)}</span><span>Next 3 {detail.current.next_3_xppg.toFixed(2)}</span><span>Next 6 {detail.current.next_6_xppg.toFixed(2)}</span>
-              <span className={detail.current.forward_delta >= 0 ? "positive" : "negative"}>Forward {detail.current.forward_delta >= 0 ? "+" : ""}{detail.current.forward_delta.toFixed(2)}</span><span>{trendLabel(detail.current.value_trend)}</span><span>Conf {confidenceLabel(detail.current.projection_confidence)}</span><span>Own {detail.current.ownership?.toFixed(1) ?? "-"}%</span>
+              <span>{detail.current.team}</span><span>{detail.current.position}</span><span>£{detail.current.current_price.toFixed(1)}</span>
+              <span className={detail.current.return_delta == null ? "" : detail.current.return_delta >= 0 ? "positive" : "negative"}>Return Δ {metric(detail.current.return_delta)}</span>
+              <span className={detail.current.performance_delta >= 0 ? "positive" : "negative"}>Performance Δ {detail.current.performance_delta >= 0 ? "+" : ""}{detail.current.performance_delta.toFixed(2)}</span>
+              <span className={detail.current.forward_delta >= 0 ? "positive" : "negative"}>Forward Δ {detail.current.forward_delta >= 0 ? "+" : ""}{detail.current.forward_delta.toFixed(2)}</span>
+              <span className={detail.current.value_balance == null ? "" : detail.current.value_balance >= 0 ? "positive" : "negative"}>Balance {metric(detail.current.value_balance)}</span>
+              <span>Par {detail.current.value_par.toFixed(2)}</span><span>Mean {detail.current.market_mean.toFixed(2)}</span><span>Actual {metric(detail.current.actual_ppg)}</span>
+              <span>Underlying {detail.current.underlying_xppg.toFixed(2)}</span><span>Next 3 {detail.current.next_3_xppg.toFixed(2)}</span><span>Next 6 {detail.current.next_6_xppg.toFixed(2)}</span>
+              <span>{trendLabel(detail.current.value_trend)}</span><span>Conf {confidenceLabel(detail.current.projection_confidence)}</span><span>Own {detail.current.ownership?.toFixed(1) ?? "-"}%</span>
               <span>Exp Min {detail.current.expected_minutes.toFixed(0)}</span><span>Start {Math.round(detail.current.start_probability * 100)}%</span><span>Minutes {detail.current.minutes_confidence}</span>
               {detail.current.xg90 != null && <span>xG90 {detail.current.xg90.toFixed(2)}</span>}{detail.current.xa90 != null && <span>xA90 {detail.current.xa90.toFixed(2)}</span>}{detail.current.role_xppg > 0 && <span>Role +{detail.current.role_xppg.toFixed(2)}</span>}{detail.current.clean_sheet_xppg_6 > 0 && <span>CS {detail.current.clean_sheet_xppg_6.toFixed(2)}</span>}{detail.current.defcon_xppg > 0 && <span>DefCon {detail.current.defcon_xppg.toFixed(2)}</span>}{detail.current.bonus_xppg > 0 && <span>Bonus {detail.current.bonus_xppg.toFixed(2)}</span>}{detail.current.save_xppg > 0 && <span>Saves {detail.current.save_xppg.toFixed(2)}</span>}
             </div>

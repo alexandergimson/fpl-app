@@ -3,6 +3,7 @@ from __future__ import annotations
 from backend.data.db import connect
 from backend.ingestion.loaders import replace_fixtures, replace_fpl_player_underlying, set_state, snapshot_prices, upsert_players
 from backend.ingestion.providers import OfficialFplProvider
+from backend.services.boards import freeze_player_gameweek_pars
 from backend.services.alerts import generate_tracked_alerts
 from backend.services.ingestion_runs import add_health_event, finish_ingestion_run, start_ingestion_run
 from backend.services.squad import get_team_id, import_public_squad
@@ -22,6 +23,7 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
             prices = snapshot_prices(con, season, dataset.frame, dataset.source, dataset.fetched_at)
             underlying = replace_fpl_player_underlying(con, season, dataset.frame, dataset.fetched_at)
             fixture_count = replace_fixtures(con, season, fixtures.frame, fixtures.source, fixtures.fetched_at)
+            frozen_pars = freeze_player_gameweek_pars(con, season, par_season)
             set_state(con, season, "current_gameweek", str(gameweek))
             team_id = get_team_id(con, season)
             imported_squad = import_public_squad(con, season, team_id, provider)["players"] if team_id else 0
@@ -35,7 +37,7 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
                 add_health_event(con, season, run_id, "WARN", "missing_player_underlying", "No player xG/xA rows loaded")
             if con.execute("SELECT COUNT(*) AS n FROM team_underlying_gameweeks WHERE season = ?", (season,)).fetchone()["n"] == 0:
                 add_health_event(con, season, run_id, "WARN", "missing_team_underlying", "No team xG/xGA rows loaded")
-            summary = f"{players} players, {prices} prices, {fixture_count} fixtures, {underlying} FPL xG/xA rows, {imported_squad} squad picks, {snapshots} snapshots, {alerts} alerts"
+            summary = f"{players} players, {prices} prices, {fixture_count} fixtures, {underlying} FPL xG/xA rows, {frozen_pars} frozen Pars, {imported_squad} squad picks, {snapshots} snapshots, {alerts} alerts"
             finish_ingestion_run(con, run_id, "SUCCESS", summary)
         return {
             "run_id": run_id,
@@ -45,6 +47,7 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
             "prices": prices,
             "fixtures": fixture_count,
             "underlying": underlying,
+            "frozen_pars": frozen_pars,
             "squad": imported_squad,
             "snapshots": snapshots,
             "alerts": alerts,

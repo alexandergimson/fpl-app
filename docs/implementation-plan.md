@@ -51,7 +51,7 @@
 - Emerging and Regression Risk are quick filters on the same All Players valuation rows.
 - Tracked player API/UI slice is implemented with immutable per-gameweek snapshots.
 - Tracked snapshots preserve model version, data cutoff, expected minutes, confidence and projection inputs.
-- My Squad API/UI slice is implemented with selling price, Historical Delta, Forward Delta and health status.
+- My Squad API/UI slice is implemented with selling price, Return Delta, Performance Delta and Forward Delta.
 - My Squad UI can add/remove players, enter purchase price and adjust bank for replacement budgets.
 - My Squad shows next-3, next-6, expected minutes, confidence and value trend.
 - Official current ingest stores price snapshots and the dashboard exposes recent price movements.

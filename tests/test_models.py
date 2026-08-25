@@ -11,7 +11,7 @@ import pandas as pd
 from backend.ingestion.providers import Dataset
 from backend.jobs.refresh import refresh_all
 from backend.services.valuation import captain_adjusted_delta, captaincy_weight, player_status, projection_confidence, selling_price
-from backend.services.boards import breakout_board, buy_board, infer_gameweeks, trap_board
+from backend.services.boards import breakout_board, buy_board, freeze_player_gameweek_pars, infer_gameweeks, trap_board
 from backend.services.bonus import bonus_rates, bonus_xppg
 from backend.services.goalkeepers import save_rates, save_xppg
 from backend.data.db import connect
@@ -258,6 +258,51 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(rows["Six"]["actual_ppg"], 6.0)
         self.assertEqual(rows["Four"]["actual_ppg"], 4.0)
         self.assertEqual(rows["Four"]["historical_delta"], 0.5)
+        self.assertEqual(rows["Four"]["return_delta"], 0.5)
+        self.assertEqual(rows["Four"]["value_balance"], 1.0)
+        self.assertAlmostEqual(rows["Four"]["performance_delta"], rows["Four"]["neutral_xppg"] - rows["Four"]["value_par"], places=2)
+
+    def test_return_delta_uses_frozen_pars_when_available(self):
+        with connect(":memory:") as con:
+            for price, par in ((5.0, 3.5), (6.0, 4.5)):
+                con.execute(
+                    "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    ("2026-27", "test", "MID", price, 3.0, par, 5, 0, "HIGH", "test", "now", "test"),
+                )
+            con.execute(
+                """
+                INSERT INTO fixtures VALUES
+                ('2026-27', 1, 1, '', 1, 2, 3, 3, 1, 'test', 'now', 'test'),
+                ('2026-27', 2, 2, '', 1, 3, 3, 3, 1, 'test', 'now', 'test')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Frozen', '', '', 1, 'TST', 'MID',
+                  6.0, 10, 180, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2026-27', 1, 1, 1, 2, 1, 4, 90, 1, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'test', 'then', 'test'),
+                ('2026-27', 1, 2, 2, 3, 1, 6, 90, 1, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 6.0, 'test', 'now', 'test')
+                """
+            )
+            self.assertEqual(freeze_player_gameweek_pars(con, "2026-27", "2026-27"), 2)
+            self.assertEqual(freeze_player_gameweek_pars(con, "2026-27", "2026-27"), 0)
+            row = buy_board(con, "2026-27", "2026-27", 2, 1)[0]
+        self.assertEqual(row["value_par"], 4.5)
+        self.assertEqual(row["value_balance"], 2.0)
+        self.assertEqual(row["return_delta"], 1.0)
+        self.assertEqual(row["historical_delta"], row["return_delta"])
 
     def test_history_as_of_prevents_future_leakage(self):
         with connect(":memory:") as con:
@@ -394,7 +439,7 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(row["selling_price"], 4.9)
         self.assertNotIn("best_replacement", row)
         self.assertNotIn("transfer_gain", row)
-        self.assertIn(row["squad_health"], {"STRONG VALUE", "HEALTHY", "WATCH", "REVIEW"})
+        self.assertIn(row["squad_health"], {"STRONG", "HEALTHY", "WATCH", "REVIEW"})
         self.assertEqual(squad_health(-0.6, 80, 0.8, 0), "REVIEW")
 
     def test_import_public_squad_replaces_squad_from_fpl_ids(self):

@@ -62,6 +62,74 @@ def actual_ppg(points: int, team_id: int | None, completed_by_team: dict[int, in
     return None
 
 
+def frozen_par_summary(con: sqlite3.Connection, season: str, as_of_gw: int | None = None) -> dict[int, dict[str, float]]:
+    clause = "AND gameweek <= ?" if as_of_gw is not None else ""
+    params = (season, as_of_gw) if as_of_gw is not None else (season,)
+    rows = con.execute(
+        f"""
+        SELECT player_id, COUNT(*) AS frozen_gameweeks, SUM(value_par) AS frozen_par_total
+        FROM frozen_player_gameweek_par
+        WHERE season = ? {clause}
+        GROUP BY player_id
+        """,
+        params,
+    ).fetchall()
+    return {row["player_id"]: {"frozen_gameweeks": row["frozen_gameweeks"], "frozen_par_total": row["frozen_par_total"] or 0.0} for row in rows}
+
+
+def value_balance_and_return_delta(points: int, played: int | None, value_par: float, frozen: dict[str, float] | None = None) -> tuple[float | None, float | None]:
+    if not played:
+        return None, None
+    frozen_count = int(frozen["frozen_gameweeks"]) if frozen and frozen.get("frozen_gameweeks") is not None else 0
+    frozen_total = float(frozen["frozen_par_total"]) if frozen and frozen_count == played else value_par * played
+    balance = points - frozen_total
+    return balance, balance / played
+
+
+def freeze_player_gameweek_pars(con: sqlite3.Connection, season: str, par_season: str = "2026-27", model_version: str = "par_iso_v1") -> int:
+    rows = con.execute(
+        """
+        SELECT DISTINCT
+          gw.player_id, gw.gameweek, COALESCE(gw.fixture_id, 0) AS fixture_id,
+          COALESCE(gw.value, p.current_price) AS price, p.position, gw.fetched_at
+        FROM player_gameweeks gw
+        JOIN players p ON p.season = gw.season AND p.player_id = gw.player_id
+        WHERE gw.season = ?
+        """,
+        (season,),
+    ).fetchall()
+    inserts = []
+    for row in rows:
+        _, value_par, _ = blended_par_for(con, row["position"], row["price"], par_season)
+        inserts.append(
+            (
+                season,
+                row["player_id"],
+                row["gameweek"],
+                row["fixture_id"],
+                row["price"],
+                row["position"],
+                round(value_par, 2),
+                model_version,
+                "price_par_points",
+                par_season,
+                row["fetched_at"],
+            )
+        )
+    before = con.total_changes
+    con.executemany(
+        """
+        INSERT OR IGNORE INTO frozen_player_gameweek_par (
+          season, player_id, gameweek, fixture_id, price, position, value_par,
+          par_model_version, source, source_version, data_cutoff
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        inserts,
+    )
+    con.commit()
+    return con.total_changes - before
+
+
 def buy_board(
     con: sqlite3.Connection,
     season: str,
@@ -87,6 +155,7 @@ def buy_board(
     current_par_points = current_curve_points(con, season, as_of_gw) if as_of_gw is not None else None
     denominator = gameweeks_played or as_of_gw or infer_gameweeks(rows, season, par_season)
     completed_by_team = team_completed_fixtures(con, season, as_of_gw)
+    frozen_pars = frozen_par_summary(con, season, as_of_gw)
     actual_fallback = denominator if season < par_season and not completed_by_team else None
     previous_deltas = {
         row["player_id"]: row["buy_delta"]
@@ -135,6 +204,7 @@ def buy_board(
             current_par_points,
         )
         actual = actual_ppg(points, row["team_id"], completed_by_team, actual_fallback)
+        played = completed_by_team.get(row["team_id"]) if row["team_id"] is not None else actual_fallback
         projection_ppg = actual if actual is not None else market_mean
         minutes_confidence = min(1.0, minutes / max(1, denominator * 90))
         neutral_xppg = projection_ppg * (0.35 + 0.65 * minutes_confidence) + market_mean * (1 - minutes_confidence) * 0.35
@@ -166,7 +236,9 @@ def buy_board(
         next_6_xppg = adjusted_horizon_ppg(open_play_xppg, fixture_factors, 6) + clean_sheet_6
         buy_delta_3 = next_3_xppg - value_par
         buy_delta_6 = next_6_xppg - value_par
-        historical_delta = actual - value_par if actual is not None else None
+        value_balance, return_delta = value_balance_and_return_delta(points, played, value_par, frozen_pars.get(row["player_id"]))
+        performance_delta = neutral_xppg - value_par
+        historical_delta = return_delta
         value_trend = buy_delta_6 - previous_deltas.get(row["player_id"], buy_delta_6)
         captain_delta = captain_adjusted_delta(next_6_xppg, value_par, price)
         confidence = projection_confidence(minutes_confidence, rates["underlying_minutes"] if rates else 0, row["status"], role is not None)
@@ -180,13 +252,17 @@ def buy_board(
                 "current_price": price,
                 "market_mean": round(market_mean, 2),
                 "value_par": round(value_par, 2),
+                "value_balance": round(value_balance, 2) if value_balance is not None else None,
                 "actual_ppg": round(actual, 2) if actual is not None else None,
                 "neutral_xppg": round(neutral_xppg, 2),
+                "underlying_xppg": round(neutral_xppg, 2),
                 "next_3_xppg": round(next_3_xppg, 2),
                 "next_6_xppg": round(next_6_xppg, 2),
                 "buy_delta_3": round(buy_delta_3, 2),
                 "buy_delta_6": round(buy_delta_6, 2),
                 "historical_delta": round(historical_delta, 2) if historical_delta is not None else None,
+                "return_delta": round(return_delta, 2) if return_delta is not None else None,
+                "performance_delta": round(performance_delta, 2),
                 "forward_delta": round(buy_delta_6, 2),
                 "value_trend": round(value_trend, 2),
                 "price_trend": round(price_trends.get(row["player_id"], 0.0) or 0.0, 2),
