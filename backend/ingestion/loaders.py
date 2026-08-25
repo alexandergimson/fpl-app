@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import sqlite3
+import html
+import re
+import unicodedata
 
 import pandas as pd
 
@@ -216,7 +219,7 @@ def replace_player_gameweeks(con: sqlite3.Connection, season: str, gameweeks: pd
             )
         )
         if "expected_goals" in data and "expected_assists" in data and (minutes > 0 or xg > 0 or xa > 0):
-            underlying.append((season, player_id, gameweek, minutes, xg, xa, source, fetched_at, season))
+            underlying.append((season, player_id, gameweek, minutes, xg, xa, 1, 1, source, fetched_at, season))
     con.executemany(
         """
         INSERT OR REPLACE INTO player_gameweeks (
@@ -231,8 +234,8 @@ def replace_player_gameweeks(con: sqlite3.Connection, season: str, gameweeks: pd
     con.executemany(
         """
         INSERT OR REPLACE INTO player_underlying_gameweeks (
-          season, player_id, gameweek, minutes, xg, xa, source, fetched_at, data_period
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          season, player_id, gameweek, minutes, xg, xa, xg_observed, xa_observed, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         underlying,
     )
@@ -251,19 +254,27 @@ def replace_player_underlying(con: sqlite3.Connection, season: str, metrics: pd.
     rows = []
     for row in metrics.itertuples(index=False):
         data = row._asdict()
+        has_xg = pd.notna(data.get("xg"))
+        has_xa = pd.notna(data.get("xa"))
+        has_cbit = pd.notna(data.get("cbit"))
+        has_cbirt = pd.notna(data.get("cbirt"))
         rows.append(
             (
                 season,
                 int(data["player_id"]),
                 int(data["gameweek"]),
                 int(data.get("minutes") or 0),
-                float(data.get("xg") or 0),
-                float(data.get("xa") or 0),
+                float(data["xg"]) if has_xg else 0.0,
+                float(data["xa"]) if has_xa else 0.0,
+                1 if has_xg else 0,
+                1 if has_xa else 0,
                 int(data["shots"]) if pd.notna(data.get("shots")) else None,
                 int(data["shots_in_box"]) if pd.notna(data.get("shots_in_box")) else None,
                 int(data["big_chances"]) if pd.notna(data.get("big_chances")) else None,
-                float(data["cbit"]) if pd.notna(data.get("cbit")) else None,
-                float(data["cbirt"]) if pd.notna(data.get("cbirt")) else None,
+                float(data["cbit"]) if has_cbit else None,
+                float(data["cbirt"]) if has_cbirt else None,
+                1 if has_cbit else 0,
+                1 if has_cbirt else 0,
                 source,
                 fetched_at,
                 season,
@@ -272,9 +283,10 @@ def replace_player_underlying(con: sqlite3.Connection, season: str, metrics: pd.
     con.executemany(
         """
         INSERT OR REPLACE INTO player_underlying_gameweeks (
-          season, player_id, gameweek, minutes, xg, xa, shots, shots_in_box,
-          big_chances, cbit, cbirt, source, fetched_at, data_period
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          season, player_id, gameweek, minutes, xg, xa, xg_observed, xa_observed,
+          shots, shots_in_box, big_chances, cbit, cbirt, cbit_observed, cbirt_observed,
+          source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
     )
@@ -285,6 +297,104 @@ def replace_player_underlying(con: sqlite3.Connection, season: str, metrics: pd.
 
 def replace_fpl_player_underlying(con: sqlite3.Connection, season: str, players: pd.DataFrame, fetched_at: str) -> int:
     return upsert_fpl_bootstrap_gameweek_observations(con, season, players, fetched_at)
+
+
+def normalise_name(value: str) -> str:
+    folded = unicodedata.normalize("NFKD", html.unescape(value)).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", " ", folded.lower()).strip()
+
+
+def replace_understat_player_underlying(con: sqlite3.Connection, season: str, metrics: pd.DataFrame, source: str, fetched_at: str) -> dict[str, int]:
+    provider = "understat"
+    con.execute("DELETE FROM external_player_underlying_observations WHERE provider = ? AND season = ?", (provider, season))
+    fpl_rows = con.execute(
+        """
+        SELECT p.player_id, p.web_name, p.first_name, p.second_name, p.team, t.name AS team_name
+        FROM players p
+        LEFT JOIN teams t ON t.season = p.season AND t.team_id = p.team_id
+        WHERE p.season = ?
+        """,
+        (season,),
+    ).fetchall()
+    exact = {}
+    by_team = {}
+    for row in fpl_rows:
+        first_last = f"{str(row['first_name'] or '').split(' ')[0]} {str(row['second_name'] or '').split(' ')[-1]}".strip()
+        for team_key in {row["team"], row["team_name"]}:
+            if not team_key:
+                continue
+            for name in {row["web_name"], f"{row['first_name'] or ''} {row['second_name'] or ''}".strip(), first_last}:
+                exact[(normalise_name(name), team_key)] = row["player_id"]
+                by_team.setdefault(team_key, []).append((normalise_name(name), row["player_id"]))
+    raw_rows = []
+    canonical_rows = []
+    mapped = unresolved = duplicates = 0
+    for row in metrics.itertuples(index=False):
+        data = row._asdict()
+        external_id = str(data["provider_player_id"])
+        team = str(data.get("team") or "")
+        name = str(data.get("player_name") or "")
+        norm = normalise_name(name)
+        player_id = exact.get((norm, team))
+        method = "exact_name_team" if player_id else "unresolved"
+        confidence = 1.0 if player_id else 0.0
+        if not player_id:
+            candidates = [candidate_id for candidate_name, candidate_id in by_team.get(team, []) if norm and (norm in candidate_name or candidate_name in norm)]
+            if len(set(candidates)) == 1:
+                player_id = candidates[0]
+                method = "fuzzy_name_team"
+                confidence = 0.85
+            elif candidates:
+                duplicates += 1
+        mapped += 1 if player_id else 0
+        unresolved += 0 if player_id else 1
+        gameweek = int(data["gameweek"]) if pd.notna(data.get("gameweek")) else 0
+        raw_rows.append((provider, season, external_id, name, team, gameweek, str(data.get("match_date") or ""), int(data.get("minutes") or 0), float(data.get("xg") or 0), float(data.get("xa") or 0), int(data.get("shots") or 0), int(data.get("key_passes") or 0), data.get("position"), player_id, source, fetched_at, season))
+        con.execute(
+            """
+            INSERT OR REPLACE INTO external_player_mappings (
+              provider, season, external_player_id, external_player_name, external_team,
+              fpl_player_id, mapping_method, confidence, verified_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (provider, season, external_id, name, team, player_id, method, confidence, fetched_at),
+        )
+        if player_id and gameweek:
+            has_fpl = con.execute(
+                """
+                SELECT 1 FROM player_underlying_gameweeks
+                WHERE season = ? AND player_id = ? AND gameweek = ?
+                  AND source = 'official_fpl_bootstrap'
+                  AND xg_observed = 1 AND xa_observed = 1
+                """,
+                (season, player_id, gameweek),
+            ).fetchone()
+            if not has_fpl:
+                canonical_rows.append((season, player_id, gameweek, int(data.get("minutes") or 0), float(data.get("xg") or 0), float(data.get("xa") or 0), 1, 1, int(data.get("shots") or 0), source, fetched_at, season))
+    con.executemany(
+        """
+        INSERT OR REPLACE INTO external_player_underlying_observations (
+          provider, season, external_player_id, external_player_name, external_team,
+          gameweek, match_date, minutes, xg, xa, shots, key_passes, position,
+          mapped_player_id, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        raw_rows,
+    )
+    con.execute("DELETE FROM player_underlying_gameweeks WHERE season = ? AND source = ?", (season, source))
+    con.executemany(
+        """
+        INSERT OR REPLACE INTO player_underlying_gameweeks (
+          season, player_id, gameweek, minutes, xg, xa, xg_observed, xa_observed,
+          shots, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        canonical_rows,
+    )
+    con.commit()
+    if canonical_rows:
+        rebuild_game_underlying_xpts(con, season, source)
+    return {"fetched": len(raw_rows), "mapped": mapped, "unmapped": unresolved, "duplicate_candidates": duplicates, "canonical": len(canonical_rows)}
 
 
 def upsert_fpl_bootstrap_gameweek_observations(con: sqlite3.Connection, season: str, players: pd.DataFrame, fetched_at: str) -> int:
@@ -343,7 +453,7 @@ def upsert_fpl_bootstrap_gameweek_observations(con: sqlite3.Connection, season: 
             continue
         gameweeks.append((season, player_id, gameweek, 0, None, 0, gw_points, gw_minutes, gw_starts, 0, 0, 0, 0, gw_saves, gw_bonus, 0, None, None, None, price, source, fetched_at, season))
         if gw_minutes > 0 or gw_xg > 0 or gw_xa > 0:
-            underlying.append((season, player_id, gameweek, gw_minutes, round(gw_xg, 4), round(gw_xa, 4), source, fetched_at, season))
+            underlying.append((season, player_id, gameweek, gw_minutes, round(gw_xg, 4), round(gw_xa, 4), 1, 1, source, fetched_at, season))
     con.executemany(
         """
         INSERT OR REPLACE INTO player_cumulative_observations (
@@ -368,8 +478,8 @@ def upsert_fpl_bootstrap_gameweek_observations(con: sqlite3.Connection, season: 
     con.executemany(
         """
         INSERT OR REPLACE INTO player_underlying_gameweeks (
-          season, player_id, gameweek, minutes, xg, xa, source, fetched_at, data_period
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          season, player_id, gameweek, minutes, xg, xa, xg_observed, xa_observed, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         underlying,
     )

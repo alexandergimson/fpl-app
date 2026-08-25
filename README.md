@@ -54,7 +54,7 @@ make backtest   # run walk-forward valuation vs naive PPG metrics
 make snapshot-tracked # store immutable snapshots for tracked players
 make generate-alerts # create dashboard alerts from tracked snapshots
 make refresh    # ingest live FPL data, snapshot tracked players and generate alerts
-make test       # run stdlib unit tests
+make test       # run stdlib unit tests via python -m unittest discover -s tests
 make dev        # run FastAPI after setup
 ```
 

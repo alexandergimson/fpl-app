@@ -5,7 +5,7 @@ import sqlite3
 from backend.models.price_par import ParPoint
 from backend.models.projections import role_xppg
 from backend.services.bonus import bonus_rates, bonus_xppg
-from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, upcoming_expected_opponent_goals, upcoming_fixture_factors
+from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, next_gameweek_fixture_projections, upcoming_expected_opponent_goals, upcoming_fixture_factors
 from backend.services.goalkeepers import observed_save_rates, save_rates, save_xppg
 from backend.services.history import player_totals_as_of
 from backend.services.minutes import baseline_minutes_profiles, fallback_minutes_profile, latest_minutes_overrides, minutes_profile
@@ -303,18 +303,39 @@ def buy_board(
             neutral_xppg = performance_xppg - observed_saves + projected_saves
         else:
             defcon = 0.0
-        performance_data_state = performance_evidence_state(row["position"], rates, own_xga is not None, row["player_id"] in observed_saves90_by_player)
         role = roles.get(row["player_id"])
         role_boost = role_xppg(row["position"], expected_minutes, role)
+        performance_data_state = performance_evidence_state(row["position"], rates, own_xga is not None, row["player_id"] in observed_saves90_by_player)
         neutral_xppg += role_boost
         fixture_factors = upcoming_fixture_factors(con, season, row["team_id"], 6)
         opponent_goals = upcoming_expected_opponent_goals(con, season, row["team_id"], 6)
         neutral_clean_sheet = process_clean_sheet if own_xga is not None else clean_sheet_horizon_ev([], row["position"], expected_minutes, 1, minute_profile["probability_of_60"])
         clean_sheet_3 = clean_sheet_horizon_ev(opponent_goals, row["position"], expected_minutes, 3, minute_profile["probability_of_60"])
         clean_sheet_6 = clean_sheet_horizon_ev(opponent_goals, row["position"], expected_minutes, 6, minute_profile["probability_of_60"])
-        open_play_xppg = max(0.0, neutral_xppg - neutral_clean_sheet)
-        next_3_xppg = adjusted_horizon_ppg(open_play_xppg, fixture_factors, 3) + clean_sheet_3
-        next_6_xppg = adjusted_horizon_ppg(open_play_xppg, fixture_factors, 6) + clean_sheet_6
+        fixture_projection = []
+        if rates:
+            fixture_projection = next_gameweek_fixture_projections(
+                con,
+                season,
+                row["team_id"],
+                row["position"],
+                expected_minutes,
+                minute_profile["probability_of_60"],
+                rates["xg90"],
+                rates["xa90"],
+                rates["cbit90"],
+                rates["cbirt90"],
+                bonus + role_boost,
+                projected_saves,
+                6,
+            )
+            gw_points = [float(item["total_xpts"]) for item in fixture_projection]
+            next_3_xppg = sum(gw_points[:3]) / 3
+            next_6_xppg = sum(gw_points[:6]) / 6
+        else:
+            open_play_xppg = max(0.0, neutral_xppg - neutral_clean_sheet)
+            next_3_xppg = adjusted_horizon_ppg(open_play_xppg, fixture_factors, 3) + clean_sheet_3
+            next_6_xppg = adjusted_horizon_ppg(open_play_xppg, fixture_factors, 6) + clean_sheet_6
         buy_delta_3 = next_3_xppg - value_par
         buy_delta_6 = next_6_xppg - value_par
         value_balance, return_delta = value_balance_and_return_delta(points, played, value_par, frozen_pars.get(row["player_id"]))
@@ -351,7 +372,11 @@ def buy_board(
                 "performance_sample_minutes": int(rates["underlying_minutes"]) if rates else 0,
                 "performance_model_version": PERFORMANCE_MODEL_VERSION,
                 "prior_source": rates["prior_source"] if rates else None,
+                "prior_confidence": rates["prior_confidence"] if rates else None,
                 "prior_minutes": int(rates["prior_minutes"]) if rates else 0,
+                "prior_seasons": rates["prior_seasons"] if rates else None,
+                "prior_model_version": rates["prior_model_version"] if rates else None,
+                "fixture_projection": fixture_projection,
                 "forward_delta": round(buy_delta_6, 2),
                 "value_trend": round(value_trend, 2),
                 "price_trend": round(price_trends.get(row["player_id"], 0.0) or 0.0, 2),
@@ -362,6 +387,8 @@ def buy_board(
                 "expected_minutes": round(expected_minutes, 1),
                 "xg90": round(rates["xg90"], 2) if rates else None,
                 "xa90": round(rates["xa90"], 2) if rates else None,
+                "raw_xg": round(rates["raw_xg"], 2) if rates else None,
+                "raw_xa": round(rates["raw_xa"], 2) if rates else None,
                 "role_xppg": round(role_boost, 2),
                 "clean_sheet_xppg_3": round(clean_sheet_3, 2),
                 "clean_sheet_xppg_6": round(clean_sheet_6, 2),

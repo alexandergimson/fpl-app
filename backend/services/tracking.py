@@ -6,16 +6,18 @@ import sqlite3
 from backend.services.boards import buy_board
 from backend.services.fixtures import current_gameweek
 from backend.services.team_strength import TEAM_STRENGTH_VERSION
+from backend.services.underlying import PERFORMANCE_MODEL_VERSION, UNDERLYING_COMPONENTS_VERSION
 
-MODEL_VERSION = "v1"
+MODEL_VERSION = "baseline_v2"
 COMPONENT_VERSIONS = {
     "data": "fpl_canonical_v1",
     "minutes": "minutes_hurdle_v1",
     "par": "par_iso_v1",
-    "projection": "component_projection_v1",
+    "projection": "projection_component_v3",
     "role": "role_overrides_v1",
     "team_strength": TEAM_STRENGTH_VERSION,
-    "underlying": "regressed_underlying_xpts_v1",
+    "underlying": UNDERLYING_COMPONENTS_VERSION,
+    "player_process": PERFORMANCE_MODEL_VERSION,
 }
 
 

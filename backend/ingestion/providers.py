@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 import gzip
+import html
 import json
 import re
+import unicodedata
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 from urllib.request import urlopen
@@ -175,6 +177,33 @@ class UnderstatProvider:
                 )
         return Dataset(pd.DataFrame(rows), source, fetched_at, season)
 
+    def player_underlying(self, season: str, teams: pd.DataFrame, fixtures: pd.DataFrame) -> Dataset:
+        payload, source, fetched_at = self._json(season)
+        fixtures_by_date = {str(row.get("kickoff_time", ""))[:10]: int(row["event"]) for row in fixtures.to_dict("records") if pd.notna(row.get("event")) and row.get("kickoff_time")}
+        result_dates = [str(match.get("datetime", ""))[:10] for match in payload.get("dates", []) if match.get("isResult")]
+        latest_date = max(result_dates, default="")
+        latest_gw = fixtures_by_date.get(latest_date)
+        rows = []
+        for player in payload.get("players", []):
+            if not player:
+                continue
+            rows.append(
+                {
+                    "provider_player_id": str(player.get("id")),
+                    "player_name": player.get("player_name") or "",
+                    "team": UNDERSTAT_TEAM_ALIASES.get(player.get("team_title") or "", player.get("team_title") or ""),
+                    "match_date": latest_date,
+                    "gameweek": latest_gw,
+                    "minutes": int(float(player.get("time") or 0)),
+                    "xg": float(player.get("xG") or 0),
+                    "xa": float(player.get("xA") or 0),
+                    "shots": int(float(player.get("shots") or 0)),
+                    "key_passes": int(float(player.get("key_passes") or 0)),
+                    "position": player.get("position"),
+                }
+            )
+        return Dataset(pd.DataFrame(rows), source, fetched_at, season)
+
 
 def season_year(season: str) -> int:
     match = re.match(r"^(\d{4})", season)
@@ -185,6 +214,11 @@ def season_year(season: str) -> int:
 
 def fpl_team_ids(teams: pd.DataFrame) -> dict[str, int]:
     return {str(row["name"]): int(row["id"]) for row in teams.to_dict("records")}
+
+
+def normalise_name(value: str) -> str:
+    folded = unicodedata.normalize("NFKD", html.unescape(value)).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", " ", folded.lower()).strip()
 
 
 def fixture_gameweeks_by_team_date(fixtures: pd.DataFrame) -> dict[tuple[int, str], int]:

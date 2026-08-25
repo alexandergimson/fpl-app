@@ -4,7 +4,7 @@ import sqlite3
 
 ROLLING_MATCHES = 6
 PRIOR_MATCHES = 6
-TEAM_STRENGTH_VERSION = "rolling_team_xg_v1"
+TEAM_STRENGTH_VERSION = "team_strength_v2"
 
 
 def shrink_rate(rate: float, matches: int, prior: float, prior_matches: int = PRIOR_MATCHES) -> float:

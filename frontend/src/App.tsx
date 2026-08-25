@@ -26,8 +26,11 @@ type BoardRow = {
   performance_sample_gameweeks?: number;
   performance_sample_minutes?: number;
   performance_model_version?: string;
-  prior_source?: "player_history" | "position_current" | null;
+  prior_source?: "player_history" | "historical_position_price" | "historical_position" | "none" | null;
+  prior_confidence?: "LOW" | "MEDIUM" | "HIGH" | null;
   prior_minutes?: number;
+  prior_seasons?: string | null;
+  fixture_projection?: { gameweek: number; total_xpts: number; fixtures: Record<string, number | string | boolean>[] }[];
   next_3_xppg: number;
   next_6_xppg: number;
   buy_delta_6: number;
@@ -48,6 +51,8 @@ type BoardRow = {
   tracking_status?: string;
   xg90?: number | null;
   xa90?: number | null;
+  raw_xg?: number | null;
+  raw_xa?: number | null;
   role_xppg: number;
   clean_sheet_xppg_6: number;
   defcon_xppg: number;
@@ -91,6 +96,14 @@ type DataStatus = {
     performance_partial_players: number;
     performance_missing_players: number;
     performance_coverage_by_position?: Record<string, { missing: number; partial: number; sufficient: number }>;
+    understat_team_rows?: number;
+    understat_team_mapping_coverage?: number;
+    understat_player_rows_fetched?: number;
+    understat_player_rows_mapped?: number;
+    understat_player_mapping_unresolved?: number;
+    player_prior_coverage?: Record<string, number>;
+    low_confidence_prior_players?: number;
+    latest_fixture_projection_run?: Record<string, string> | null;
     latest_ingestion_status?: string | null;
     historical_prior_weight: number;
     current_season_weight: number;
@@ -162,14 +175,15 @@ function valueTone(value: number | null | undefined) {
 }
 
 function performanceTitle(row: BoardRow) {
-  const prior = row.prior_source === "player_history" ? `Player-history prior, ${row.prior_minutes ?? 0} prior minutes.` : row.prior_source === "position_current" ? "Position fallback prior." : "No prior.";
+  const prior = row.prior_source === "player_history" ? `Player-history prior, ${row.prior_minutes ?? 0} prior minutes.` : row.prior_source === "historical_position_price" ? "Historical position-price prior." : row.prior_source === "historical_position" ? "Historical position prior." : "No prior.";
   const sample = `${row.performance_data_state} evidence from ${row.performance_sample_gameweeks ?? 0} GW, ${row.performance_sample_minutes ?? 0} minutes.`;
   return row.performance_delta == null ? `No numeric Performance Delta yet. ${sample} ${prior}` : `${sample} Process xPPG ${metric(row.process_xppg_regressed)}. ${prior}`;
 }
 
 function priorLabel(row: BoardRow) {
   if (row.prior_source === "player_history") return `Player prior (${row.prior_minutes ?? 0}m)`;
-  if (row.prior_source === "position_current") return "Position prior";
+  if (row.prior_source === "historical_position_price") return "Position-price prior";
+  if (row.prior_source === "historical_position") return "Position prior";
   return "No prior";
 }
 
@@ -181,7 +195,7 @@ function SortButton({ label, sortKey, active, direction, onSort, title }: { labe
   );
 }
 
-function App() {
+export function App() {
   const [points, setPoints] = useState<ParPoint[]>([]);
   const [players, setPlayers] = useState<BoardRow[]>([]);
   const [tracked, setTracked] = useState<BoardRow[]>([]);
@@ -492,7 +506,7 @@ function App() {
               <span>Underlying {detail.current.underlying_xppg.toFixed(2)}</span><span>Next 3 {detail.current.next_3_xppg.toFixed(2)}</span><span>Next 6 {detail.current.next_6_xppg.toFixed(2)}</span>
               <span>{trendLabel(detail.current.value_trend)}</span><span>Conf {confidenceLabel(detail.current.projection_confidence)}</span><span>Own {detail.current.ownership?.toFixed(1) ?? "-"}%</span>
               <span>Exp Min {detail.current.expected_minutes.toFixed(0)}</span><span>Start {Math.round(detail.current.start_probability * 100)}%</span><span>Minutes {detail.current.minutes_confidence}</span>
-              {detail.current.xg90 != null && <span>xG90 {detail.current.xg90.toFixed(2)}</span>}{detail.current.xa90 != null && <span>xA90 {detail.current.xa90.toFixed(2)}</span>}{detail.current.role_xppg > 0 && <span>Role +{detail.current.role_xppg.toFixed(2)}</span>}{detail.current.clean_sheet_xppg_6 > 0 && <span>CS {detail.current.clean_sheet_xppg_6.toFixed(2)}</span>}{detail.current.defcon_xppg > 0 && <span>DefCon {detail.current.defcon_xppg.toFixed(2)}</span>}{detail.current.bonus_xppg > 0 && <span>Bonus {detail.current.bonus_xppg.toFixed(2)}</span>}{detail.current.save_xppg > 0 && <span>Saves {detail.current.save_xppg.toFixed(2)}</span>}
+              {detail.current.raw_xg != null && <span>Raw xG {detail.current.raw_xg.toFixed(2)}</span>}{detail.current.raw_xa != null && <span>Raw xA {detail.current.raw_xa.toFixed(2)}</span>}{detail.current.xg90 != null && <span>xG90 {detail.current.xg90.toFixed(2)}</span>}{detail.current.xa90 != null && <span>xA90 {detail.current.xa90.toFixed(2)}</span>}{detail.current.role_xppg > 0 && <span>Role +{detail.current.role_xppg.toFixed(2)}</span>}{detail.current.clean_sheet_xppg_6 > 0 && <span>CS {detail.current.clean_sheet_xppg_6.toFixed(2)}</span>}{detail.current.defcon_xppg > 0 && <span>DefCon {detail.current.defcon_xppg.toFixed(2)}</span>}{detail.current.bonus_xppg > 0 && <span>Bonus {detail.current.bonus_xppg.toFixed(2)}</span>}{detail.current.save_xppg > 0 && <span>Saves {detail.current.save_xppg.toFixed(2)}</span>}
             </div>
             <h3>Attacking Roles</h3>
             <div className="role-form">
@@ -516,6 +530,21 @@ function App() {
             </div>
             <h3>Projection Breakdown</h3>
             <table><tbody>{Object.entries(detail.projection_breakdown).map(([key, value]) => <tr key={key}><td>{key.replace(/_/g, " ")}</td><td>{value.toFixed(2)}</td></tr>)}</tbody></table>
+            {detail.current.fixture_projection && detail.current.fixture_projection.length > 0 && (
+              <>
+                <h3>Next Fixtures</h3>
+                <table>
+                  <thead><tr><th>GW</th><th>Fixture</th><th>Attack</th><th>xGA</th><th>Goal</th><th>Assist</th><th>CS</th><th>DefCon</th><th>Bonus</th><th>Saves</th><th>Total</th></tr></thead>
+                  <tbody>
+                    {detail.current.fixture_projection.flatMap((gw) => gw.fixtures.length ? gw.fixtures.map((fixture, index) => (
+                      <tr key={`${gw.gameweek}-${fixture.fixture_id}`}>
+                        <td>{index === 0 ? gw.gameweek : ""}</td><td>{fixture.is_home ? "H" : "A"} vs {fixture.opponent_team_id}</td><td>{Number(fixture.attack_factor).toFixed(2)}</td><td>{Number(fixture.expected_goals_against).toFixed(2)}</td><td>{Number(fixture.goal_ev).toFixed(2)}</td><td>{Number(fixture.assist_ev).toFixed(2)}</td><td>{Number(fixture.clean_sheet_ev).toFixed(2)}</td><td>{Number(fixture.defcon_ev).toFixed(2)}</td><td>{Number(fixture.bonus_ev).toFixed(2)}</td><td>{Number(fixture.save_ev).toFixed(2)}</td><td>{Number(fixture.total_fixture_xpts).toFixed(2)}</td>
+                      </tr>
+                    )) : [<tr key={`${gw.gameweek}-blank`}><td>{gw.gameweek}</td><td>Blank</td><td colSpan={8}></td><td>0.00</td></tr>])}
+                  </tbody>
+                </table>
+              </>
+            )}
             <h3>Recent Gameweeks</h3>
             <table><thead><tr><th>GW</th><th>Pts</th><th>Min</th><th>Price</th></tr></thead><tbody>{detail.recent_gameweeks.map((row) => <tr key={row.gameweek}><td>{row.gameweek}</td><td>{row.total_points}</td><td>{row.minutes}</td><td>{row.value ? `£${row.value.toFixed(1)}` : "-"}</td></tr>)}{detail.recent_gameweeks.length === 0 && <tr><td colSpan={4}>No gameweek history yet</td></tr>}</tbody></table>
           </article>
@@ -530,6 +559,10 @@ function App() {
             <div className="overview-item"><span>Performance Partial</span><strong>{dataStatus.health_summary.performance_partial_players}</strong><small>held back</small></div>
             <div className="overview-item"><span>Performance Missing</span><strong>{dataStatus.health_summary.performance_missing_players}</strong><small>shown as —</small></div>
             <div className="overview-item"><span>Underlying Updated</span><strong>{formatDate(dataStatus.health_summary.advanced_stats_last_updated)}</strong><small>latest process feed</small></div>
+            <div className="overview-item"><span>Understat Teams</span><strong>{dataStatus.health_summary.understat_team_rows ?? dataStatus.health_summary.team_underlying_rows}</strong><small>team mappings</small></div>
+            <div className="overview-item"><span>Understat Players</span><strong>{dataStatus.health_summary.understat_player_rows_mapped ?? 0}/{dataStatus.health_summary.understat_player_rows_fetched ?? 0}</strong><small>{dataStatus.health_summary.understat_player_mapping_unresolved ?? 0} unresolved</small></div>
+            <div className="overview-item"><span>Low Prior Confidence</span><strong>{dataStatus.health_summary.low_confidence_prior_players ?? 0}</strong><small>fallback priors</small></div>
+            {Object.entries(dataStatus.health_summary.player_prior_coverage ?? {}).map(([source, count]) => <div className="overview-item" key={`prior-${source}`}><span>{source.replace(/_/g, " ")}</span><strong>{count}</strong><small>prior source</small></div>)}
             {Object.entries(dataStatus.health_summary.performance_coverage_by_position ?? {}).map(([position, counts]) => (
               <div className="overview-item" key={`perf-${position}`}><span>{position} Performance</span><strong>{counts.sufficient}</strong><small>{counts.partial} partial, {counts.missing} missing</small></div>
             ))}
@@ -556,4 +589,5 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+const root = document.getElementById("root");
+if (root) createRoot(root).render(<App />);

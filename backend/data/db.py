@@ -115,11 +115,15 @@ CREATE TABLE IF NOT EXISTS player_underlying_gameweeks (
   minutes INTEGER NOT NULL DEFAULT 0,
   xg REAL NOT NULL DEFAULT 0,
   xa REAL NOT NULL DEFAULT 0,
+  xg_observed INTEGER NOT NULL DEFAULT 1,
+  xa_observed INTEGER NOT NULL DEFAULT 1,
   shots INTEGER,
   shots_in_box INTEGER,
   big_chances INTEGER,
   cbit REAL,
   cbirt REAL,
+  cbit_observed INTEGER NOT NULL DEFAULT 0,
+  cbirt_observed INTEGER NOT NULL DEFAULT 0,
   source TEXT NOT NULL,
   fetched_at TEXT NOT NULL,
   data_period TEXT NOT NULL,
@@ -139,6 +143,7 @@ CREATE TABLE IF NOT EXISTS game_underlying_xpts (
   defcon_ev REAL NOT NULL DEFAULT 0,
   bonus_process_ev REAL NOT NULL DEFAULT 0,
   save_process_ev REAL NOT NULL DEFAULT 0,
+  deduction_process_ev REAL NOT NULL DEFAULT 0,
   game_underlying_xpts REAL NOT NULL DEFAULT 0,
   fetched_at TEXT NOT NULL,
   data_period TEXT NOT NULL,
@@ -316,6 +321,40 @@ CREATE TABLE IF NOT EXISTS data_health_events (
   message TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS external_player_mappings (
+  provider TEXT NOT NULL,
+  season TEXT NOT NULL,
+  external_player_id TEXT NOT NULL,
+  external_player_name TEXT NOT NULL,
+  external_team TEXT,
+  fpl_player_id INTEGER,
+  mapping_method TEXT NOT NULL,
+  confidence REAL NOT NULL,
+  verified_at TEXT NOT NULL,
+  PRIMARY KEY (provider, season, external_player_id)
+);
+
+CREATE TABLE IF NOT EXISTS external_player_underlying_observations (
+  provider TEXT NOT NULL,
+  season TEXT NOT NULL,
+  external_player_id TEXT NOT NULL,
+  external_player_name TEXT NOT NULL,
+  external_team TEXT,
+  gameweek INTEGER,
+  match_date TEXT,
+  minutes INTEGER NOT NULL DEFAULT 0,
+  xg REAL NOT NULL DEFAULT 0,
+  xa REAL NOT NULL DEFAULT 0,
+  shots INTEGER,
+  key_passes INTEGER,
+  position TEXT,
+  mapped_player_id INTEGER,
+  source TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  data_period TEXT NOT NULL,
+  PRIMARY KEY (provider, season, external_player_id, gameweek)
+);
 """
 
 
@@ -327,7 +366,19 @@ def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA busy_timeout = 15000")
     con.executescript(SCHEMA)
-    ensure_columns(con, "player_underlying_gameweeks", {"cbit": "REAL", "cbirt": "REAL"})
+    ensure_columns(
+        con,
+        "player_underlying_gameweeks",
+        {
+            "cbit": "REAL",
+            "cbirt": "REAL",
+            "xg_observed": "INTEGER NOT NULL DEFAULT 1",
+            "xa_observed": "INTEGER NOT NULL DEFAULT 1",
+            "cbit_observed": "INTEGER NOT NULL DEFAULT 0",
+            "cbirt_observed": "INTEGER NOT NULL DEFAULT 0",
+        },
+    )
+    ensure_columns(con, "game_underlying_xpts", {"deduction_process_ev": "REAL NOT NULL DEFAULT 0"})
     ensure_columns(
         con,
         "tracked_snapshots",
