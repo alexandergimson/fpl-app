@@ -14,7 +14,7 @@ COMPONENT_VERSIONS = {
     "projection": "component_projection_v1",
     "role": "role_overrides_v1",
     "team_strength": "fixture_difficulty_v1",
-    "underlying": "underlying_xpts_v1",
+    "underlying": "regressed_underlying_xpts_v1",
 }
 
 

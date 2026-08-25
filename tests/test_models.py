@@ -30,7 +30,7 @@ from backend.services.roles import add_role_override, latest_role_overrides, rol
 from backend.ingestion.loaders import replace_fixtures, replace_fpl_player_underlying, replace_player_underlying, upsert_fpl_bootstrap_gameweek_observations
 from backend.ingestion.loaders import replace_team_underlying, snapshot_prices
 from backend.services.prices import price_movements
-from backend.services.underlying import attacking_xppg, defcon_xppg, player_underlying_rates, underlying_xpts_components
+from backend.services.underlying import attacking_xppg, defcon_xppg, player_underlying_rates, regressed_rate, underlying_xpts_components
 from backend.services.team_strength import team_strengths
 from backend.services.price_par import blended_par_for, current_curve_points
 
@@ -89,6 +89,9 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(parts["goal_ev"], 4)
         self.assertEqual(parts["assist_ev"], 1.5)
         self.assertEqual(parts["defcon_ev"], 2)
+
+    def test_regressed_rate_shrinks_to_prior(self):
+        self.assertEqual(regressed_rate(1.0, 900, 0.5), 0.75)
 
     def test_bonus_xppg_scales_by_minutes(self):
         self.assertEqual(bonus_xppg(45, 1.0), 0.5)
@@ -777,6 +780,31 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(row["xg90"], 1.0)
         self.assertEqual(row["defcon_xppg"], 2.0)
         self.assertGreater(row["bonus_xppg"], 0)
+
+    def test_player_underlying_rates_are_regressed_by_position(self):
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO players VALUES
+                ('2026-27', 1, NULL, 'Tiny', '', '', 1, 'TST', 'MID', 5.0, 0, 90, 10.0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 2, NULL, 'Steady', '', '', 1, 'TST', 'MID', 5.0, 0, 900, 10.0, 'a', 'test', 'now', 'test')
+                """
+            )
+            replace_player_underlying(
+                con,
+                "2026-27",
+                pd.DataFrame(
+                    [
+                        {"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 1.0, "xa": 0.0},
+                        {"player_id": 2, "gameweek": 1, "minutes": 900, "xg": 0.0, "xa": 0.0},
+                    ]
+                ),
+                "test",
+                "now",
+            )
+            rates = player_underlying_rates(con, "2026-27")
+        self.assertLess(rates[1]["xg90"], 1.0)
+        self.assertGreater(rates[1]["xg90"], rates[2]["xg90"])
 
     def test_fpl_bootstrap_underlying_uses_canonical_player_ids_after_gw0(self):
         players = pd.DataFrame(

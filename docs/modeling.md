@@ -101,7 +101,7 @@ The official FPL API is the canonical player provider and ID system. Current ing
 
 Optional CSV ingestion can still store player gameweek xG/xA rows in `player_underlying_gameweeks` for validation or manual enrichment.
 
-When available, neutral xPPG uses xG/90 and xA/90 to inform attacking expectation. When unavailable, it falls back to a minutes-shrunk Market Mean estimate. It does not fall back to actual FPL points.
+When available, neutral xPPG uses position-regressed xG/90 and xA/90 to inform attacking expectation. Current player rates are shrunk toward the position average with a 900-minute prior. When unavailable, it falls back to a minutes-shrunk Market Mean estimate. It does not fall back to actual FPL points.
 
 Underlying imports also rebuild `game_underlying_xpts`, a provider-neutral derived process table keyed by official FPL player ID, Gameweek and source. It stores appearance EV, goal EV from xG, assist EV from xA, DefCon EV and placeholder zero values for clean-sheet, bonus and save process EVs until those expected-value feeds exist.
 
@@ -129,7 +129,7 @@ The model then applies FPL clean-sheet points by position and expected 60-minute
 
 Optional player-underlying CSV ingestion supports `cbit` and `cbirt`.
 
-DEF projections use `cbit` against the 10-action threshold. MID/FWD projections use `cbirt` against the 12-action threshold. The v1 probability is a capped rate-to-threshold estimate from per-90 actions, multiplied by expected 60-minute probability and capped at the +2 FPL points available per match.
+DEF projections use position-regressed `cbit` against the 10-action threshold. MID/FWD projections use position-regressed `cbirt` against the 12-action threshold. The v1 probability is a capped rate-to-threshold estimate from per-90 actions, multiplied by expected 60-minute probability and capped at the +2 FPL points available per match.
 
 ## Bonus
 

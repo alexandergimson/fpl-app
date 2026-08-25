@@ -4,17 +4,42 @@ import sqlite3
 
 
 GOAL_POINTS = {"GK": 6, "DEF": 6, "MID": 5, "FWD": 4}
+PRIOR_MINUTES = 900
+
+
+def regressed_rate(raw: float, minutes: int, prior: float, prior_minutes: int = PRIOR_MINUTES) -> float:
+    return (raw * minutes + prior * prior_minutes) / (minutes + prior_minutes) if minutes > 0 else prior
 
 
 def player_underlying_rates(con: sqlite3.Connection, season: str, through_gw: int | None = None) -> dict[int, dict[str, float]]:
     clause = "AND gameweek <= ?" if through_gw is not None else ""
     params = (season, through_gw) if through_gw is not None else (season,)
+    position_rows = con.execute(
+        f"""
+        SELECT p.position, SUM(u.minutes) AS minutes, SUM(u.xg) AS xg, SUM(u.xa) AS xa, SUM(u.cbit) AS cbit, SUM(u.cbirt) AS cbirt
+        FROM player_underlying_gameweeks u
+        JOIN players p ON p.season = u.season AND p.player_id = u.player_id
+        WHERE u.season = ? {clause}
+        GROUP BY p.position
+        """,
+        params,
+    ).fetchall()
+    position_rates = {
+        row["position"]: {
+            "xg90": ((row["xg"] or 0) / row["minutes"] * 90) if (row["minutes"] or 0) > 0 else 0.0,
+            "xa90": ((row["xa"] or 0) / row["minutes"] * 90) if (row["minutes"] or 0) > 0 else 0.0,
+            "cbit90": ((row["cbit"] or 0) / row["minutes"] * 90) if (row["minutes"] or 0) > 0 else 0.0,
+            "cbirt90": ((row["cbirt"] or 0) / row["minutes"] * 90) if (row["minutes"] or 0) > 0 else 0.0,
+        }
+        for row in position_rows
+    }
     rows = con.execute(
         f"""
-        SELECT player_id, SUM(minutes) AS minutes, SUM(xg) AS xg, SUM(xa) AS xa, SUM(cbit) AS cbit, SUM(cbirt) AS cbirt
-        FROM player_underlying_gameweeks
-        WHERE season = ? {clause}
-        GROUP BY player_id
+        SELECT u.player_id, p.position, SUM(u.minutes) AS minutes, SUM(u.xg) AS xg, SUM(u.xa) AS xa, SUM(u.cbit) AS cbit, SUM(u.cbirt) AS cbirt
+        FROM player_underlying_gameweeks u
+        JOIN players p ON p.season = u.season AND p.player_id = u.player_id
+        WHERE u.season = ? {clause}
+        GROUP BY u.player_id, p.position
         """,
         params,
     ).fetchall()
@@ -23,11 +48,12 @@ def player_underlying_rates(con: sqlite3.Connection, season: str, through_gw: in
         minutes = row["minutes"] or 0
         if minutes <= 0:
             continue
+        prior = position_rates.get(row["position"], {})
         rates[row["player_id"]] = {
-            "xg90": (row["xg"] or 0) / minutes * 90,
-            "xa90": (row["xa"] or 0) / minutes * 90,
-            "cbit90": (row["cbit"] or 0) / minutes * 90,
-            "cbirt90": (row["cbirt"] or 0) / minutes * 90,
+            "xg90": regressed_rate((row["xg"] or 0) / minutes * 90, minutes, prior.get("xg90", 0.0)),
+            "xa90": regressed_rate((row["xa"] or 0) / minutes * 90, minutes, prior.get("xa90", 0.0)),
+            "cbit90": regressed_rate((row["cbit"] or 0) / minutes * 90, minutes, prior.get("cbit90", 0.0)),
+            "cbirt90": regressed_rate((row["cbirt"] or 0) / minutes * 90, minutes, prior.get("cbirt90", 0.0)),
             "underlying_minutes": minutes,
         }
     return rates
