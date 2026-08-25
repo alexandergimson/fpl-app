@@ -66,17 +66,42 @@ def player_underlying_rates(con: sqlite3.Connection, season: str, through_gw: in
     return rates
 
 
-def performance_evidence_state(position: str, rates: dict[str, float] | None) -> str:
+def team_defensive_xga(con: sqlite3.Connection, season: str, through_gw: int | None = None) -> dict[int, float]:
+    clause = "AND gameweek <= ?" if through_gw is not None else ""
+    params = (season, through_gw) if through_gw is not None else (season,)
+    rows = con.execute(
+        f"""
+        SELECT team_id, AVG(xga) AS xga
+        FROM team_underlying_gameweeks
+        WHERE season = ? {clause}
+        GROUP BY team_id
+        """,
+        params,
+    ).fetchall()
+    return {row["team_id"]: row["xga"] for row in rows if row["xga"] is not None}
+
+
+def performance_confidence(sample_minutes: int) -> str:
+    if sample_minutes >= 900:
+        return "HIGH"
+    if sample_minutes >= 360:
+        return "MEDIUM"
+    return "LOW"
+
+
+def performance_evidence_state(position: str, rates: dict[str, float] | None, has_team_defence: bool = False, has_save_process: bool = False) -> str:
     if not rates or rates.get("underlying_minutes", 0) <= 0 or rates.get("underlying_gameweeks", 0) <= 0:
         return "missing"
     has_attack = rates.get("raw_xg", 0) > 0 or rates.get("raw_xa", 0) > 0
     has_defcon = rates.get("raw_cbit", 0) > 0 or rates.get("raw_cbirt", 0) > 0
-    if position == "GK":
-        return "missing"
     if position in {"MID", "FWD"}:
         return "sufficient" if has_attack else "partial"
     if position == "DEF":
-        return "partial" if has_attack or has_defcon else "missing"
+        if not has_attack and not has_defcon:
+            return "missing"
+        return "sufficient" if has_team_defence else "partial"
+    if position == "GK":
+        return "sufficient" if has_team_defence and has_save_process else "partial"
     return "missing"
 
 

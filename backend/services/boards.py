@@ -11,7 +11,7 @@ from backend.services.history import player_totals_as_of
 from backend.services.minutes import baseline_minutes_profiles, fallback_minutes_profile, latest_minutes_overrides, minutes_profile
 from backend.services.price_par import blended_par_for, current_curve_points
 from backend.services.roles import ROLE_KEYS, latest_role_overrides
-from backend.services.underlying import PERFORMANCE_MODEL_VERSION, attacking_xppg, defcon_xppg, performance_evidence_state, player_underlying_rates
+from backend.services.underlying import PERFORMANCE_MODEL_VERSION, attacking_xppg, defcon_xppg, performance_confidence, performance_evidence_state, player_underlying_rates, team_defensive_xga
 from backend.services.valuation import captain_adjusted_delta, player_status, projection_confidence
 
 
@@ -214,6 +214,7 @@ def buy_board(
     ).fetchall()
     as_of_totals = player_totals_as_of(con, season, as_of_gw) if as_of_gw is not None else {}
     underlying = player_underlying_rates(con, season, as_of_gw)
+    team_xga = team_defensive_xga(con, season, as_of_gw)
     bonus90_by_player = bonus_rates(con, season, as_of_gw)
     saves90_by_player = save_rates(con, season, as_of_gw)
     overrides = latest_minutes_overrides(con, season)
@@ -289,20 +290,22 @@ def buy_board(
         rates = underlying.get(row["player_id"])
         bonus = bonus_xppg(expected_minutes, bonus90_by_player.get(row["player_id"], 0.0))
         saves = save_xppg(row["position"], expected_minutes, saves90_by_player.get(row["player_id"], 0.0))
+        own_xga = team_xga.get(row["team_id"])
+        process_clean_sheet = clean_sheet_horizon_ev([own_xga], row["position"], expected_minutes, 1, minute_profile["probability_of_60"]) if own_xga is not None else 0.0
         if rates:
             appearance = min(2.0, 2.0 * expected_minutes / 90)
             attack = attacking_xppg(row["position"], expected_minutes, rates["xg90"], rates["xa90"])
             defcon = defcon_xppg(row["position"], expected_minutes, rates["cbit90"], rates["cbirt90"])
-            neutral_xppg = appearance + attack + defcon + bonus + saves + max(0.0, market_mean - 2.0) * 0.25
+            neutral_xppg = appearance + attack + process_clean_sheet + defcon + bonus + saves + max(0.0, market_mean - 2.0) * 0.25
         else:
             defcon = 0.0
-        performance_data_state = performance_evidence_state(row["position"], rates)
+        performance_data_state = performance_evidence_state(row["position"], rates, own_xga is not None, row["player_id"] in saves90_by_player)
         role = roles.get(row["player_id"])
         role_boost = role_xppg(row["position"], expected_minutes, role)
         neutral_xppg += role_boost
         fixture_factors = upcoming_fixture_factors(con, season, row["team_id"], 6)
         opponent_goals = upcoming_expected_opponent_goals(con, season, row["team_id"], 6)
-        neutral_clean_sheet = clean_sheet_horizon_ev([], row["position"], expected_minutes, 1, minute_profile["probability_of_60"])
+        neutral_clean_sheet = process_clean_sheet if own_xga is not None else clean_sheet_horizon_ev([], row["position"], expected_minutes, 1, minute_profile["probability_of_60"])
         clean_sheet_3 = clean_sheet_horizon_ev(opponent_goals, row["position"], expected_minutes, 3, minute_profile["probability_of_60"])
         clean_sheet_6 = clean_sheet_horizon_ev(opponent_goals, row["position"], expected_minutes, 6, minute_profile["probability_of_60"])
         open_play_xppg = max(0.0, neutral_xppg - neutral_clean_sheet)
@@ -338,6 +341,7 @@ def buy_board(
                 "return_delta": round(return_delta, 2) if return_delta is not None else None,
                 "performance_delta": round(performance_delta, 2) if performance_delta is not None else None,
                 "performance_data_state": performance_data_state,
+                "performance_confidence": performance_confidence(int(rates["underlying_minutes"]) if rates else 0),
                 "performance_sample_gameweeks": int(rates["underlying_gameweeks"]) if rates else 0,
                 "performance_sample_minutes": int(rates["underlying_minutes"]) if rates else 0,
                 "performance_model_version": PERFORMANCE_MODEL_VERSION,

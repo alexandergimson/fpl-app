@@ -472,6 +472,60 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(row["performance_data_state"], "partial")
         self.assertIsNone(row["performance_delta"])
 
+    def test_defender_can_have_sufficient_performance_evidence(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "DEF", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Cal', '', '', 1, 'ARS', 'DEF',
+                  5.0, 9, 80, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            replace_player_underlying(con, "2026-27", pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 80, "xg": 0.2, "xa": 0.1, "cbit": 6}]), "test", "now")
+            replace_team_underlying(con, "2026-27", pd.DataFrame([{"team_id": 1, "gameweek": 1, "xg": 1.8, "xga": 0.6}]), "understat", "now")
+            row = buy_board(con, "2026-27", "2026-27", 1, 1)[0]
+        self.assertEqual(row["performance_data_state"], "sufficient")
+        self.assertEqual(row["performance_confidence"], "LOW")
+        self.assertIsInstance(row["performance_delta"], float)
+
+    def test_goalkeeper_can_have_sufficient_performance_evidence(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "GK", 4.5, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Keeper', '', '', 1, 'TST', 'GK',
+                  4.5, 6, 90, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES (
+                  '2026-27', 1, 1, 1, 2, 1, 6, 90, 1, 0, 0, 0, 1, 4, 0, 0,
+                  NULL, NULL, NULL, 4.5, 'test', 'now', 'test'
+                )
+                """
+            )
+            replace_player_underlying(con, "2026-27", pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 0.0, "xa": 0.0}]), "test", "now")
+            replace_team_underlying(con, "2026-27", pd.DataFrame([{"team_id": 1, "gameweek": 1, "xg": 1.0, "xga": 0.8}]), "understat", "now")
+            row = buy_board(con, "2026-27", "2026-27", 1, 1)[0]
+        self.assertEqual(row["performance_data_state"], "sufficient")
+        self.assertIsInstance(row["performance_delta"], float)
+
     def test_history_as_of_prevents_future_leakage(self):
         with connect(":memory:") as con:
             con.execute(
@@ -1018,6 +1072,22 @@ class ModelTests(unittest.TestCase):
                 upsert_fpl_bootstrap_gameweek_observations(con, "2026-27", frame, f"gw{gameweek}")
             rows = con.execute("SELECT gameweek, xg, xa FROM player_underlying_gameweeks ORDER BY gameweek").fetchall()
         self.assertEqual([dict(row) for row in rows], [{"gameweek": 1, "xg": 0.4, "xa": 0.2}, {"gameweek": 2, "xg": 0.4, "xa": 0.3}, {"gameweek": 3, "xg": 0.3, "xa": 0.1}])
+
+    def test_fpl_bootstrap_uses_official_starts_under_60_minutes(self):
+        players = pd.DataFrame([{"id": 42, "now_cost": 50, "total_points": 1, "minutes": 55, "starts": 1, "selected_by_percent": 10, "expected_goals": "0", "expected_assists": "0"}])
+        players.attrs["current_gameweek"] = 1
+        with connect(":memory:") as con:
+            upsert_fpl_bootstrap_gameweek_observations(con, "2026-27", players, "now")
+            starts = con.execute("SELECT starts FROM player_gameweeks WHERE player_id = 42").fetchone()["starts"]
+        self.assertEqual(starts, 1)
+
+    def test_fpl_bootstrap_uses_official_substitute_starts_at_60_minutes(self):
+        players = pd.DataFrame([{"id": 42, "now_cost": 50, "total_points": 1, "minutes": 60, "starts": 0, "selected_by_percent": 10, "expected_goals": "0", "expected_assists": "0"}])
+        players.attrs["current_gameweek"] = 1
+        with connect(":memory:") as con:
+            upsert_fpl_bootstrap_gameweek_observations(con, "2026-27", players, "now")
+            starts = con.execute("SELECT starts FROM player_gameweeks WHERE player_id = 42").fetchone()["starts"]
+        self.assertEqual(starts, 0)
 
     def test_role_override_boosts_board_projection(self):
         with connect(":memory:") as con:

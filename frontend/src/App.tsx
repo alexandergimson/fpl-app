@@ -21,6 +21,7 @@ type BoardRow = {
   underlying_xppg: number;
   performance_delta: number | null;
   performance_data_state: "missing" | "partial" | "sufficient";
+  performance_confidence: "LOW" | "MEDIUM" | "HIGH";
   performance_sample_gameweeks?: number;
   performance_sample_minutes?: number;
   performance_model_version?: string;
@@ -86,6 +87,7 @@ type DataStatus = {
     performance_sufficient_players: number;
     performance_partial_players: number;
     performance_missing_players: number;
+    performance_coverage_by_position?: Record<string, { missing: number; partial: number; sufficient: number }>;
     latest_ingestion_status?: string | null;
     historical_prior_weight: number;
     current_season_weight: number;
@@ -515,6 +517,9 @@ function App() {
             <div className="overview-item"><span>Performance Partial</span><strong>{dataStatus.health_summary.performance_partial_players}</strong><small>held back</small></div>
             <div className="overview-item"><span>Performance Missing</span><strong>{dataStatus.health_summary.performance_missing_players}</strong><small>shown as —</small></div>
             <div className="overview-item"><span>Underlying Updated</span><strong>{formatDate(dataStatus.health_summary.advanced_stats_last_updated)}</strong><small>latest process feed</small></div>
+            {Object.entries(dataStatus.health_summary.performance_coverage_by_position ?? {}).map(([position, counts]) => (
+              <div className="overview-item" key={`perf-${position}`}><span>{position} Performance</span><strong>{counts.sufficient}</strong><small>{counts.partial} partial, {counts.missing} missing</small></div>
+            ))}
             {dataStatus.sources.map((source) => <div className="overview-item" key={source.key}><span>{source.label}</span><strong>{source.rows}</strong><small>{formatDate(source.fetched_at)}</small></div>)}
           </div>}
           <div className="chart-grid">
