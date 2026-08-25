@@ -7,8 +7,8 @@ from backend.models.projections import clean_sheet_ev
 
 
 GOAL_POINTS = {"GK": 6, "DEF": 6, "MID": 5, "FWD": 4}
-PERFORMANCE_MODEL_VERSION = "player_process_v3"
-UNDERLYING_COMPONENTS_VERSION = "underlying_components_v2"
+PERFORMANCE_MODEL_VERSION = "player_process_v4"
+UNDERLYING_COMPONENTS_VERSION = "underlying_components_v3"
 
 
 def regressed_rate(raw: float, minutes: int, prior: float, prior_minutes: int = PLAYER_ATTACK_PRIOR_MINUTES) -> float:
@@ -162,6 +162,38 @@ def calculate_game_underlying_components(
     return parts
 
 
+def calculate_regressed_process_components(
+    position: str,
+    expected_minutes: float,
+    xg90: float,
+    xa90: float,
+    cbit90: float,
+    cbirt90: float,
+    expected_goals_against: float | None,
+    probability_of_60_value: float,
+    bonus_ev: float = 0.0,
+    save_ev: float = 0.0,
+    attack_factor: float = 1.0,
+) -> dict[str, float]:
+    minutes = max(0.0, expected_minutes)
+    minutes_share = minutes / 90
+    parts = calculate_game_underlying_components(
+        position,
+        int(round(minutes)),
+        minutes_share * max(0.0, xg90) * attack_factor,
+        minutes_share * max(0.0, xa90) * attack_factor,
+        minutes_share * max(0.0, cbit90),
+        minutes_share * max(0.0, cbirt90),
+        expected_goals_against,
+        bonus_ev,
+        save_ev,
+    )
+    if expected_goals_against is not None:
+        parts["clean_sheet_process_ev"] = clean_sheet_process_xppg(position, minutes, expected_goals_against, probability_of_60_value)
+        parts["game_underlying_xpts"] = sum(value for key, value in parts.items() if key != "game_underlying_xpts")
+    return parts
+
+
 def performance_confidence(sample_minutes: int) -> str:
     if sample_minutes >= 900:
         return "HIGH"
@@ -222,14 +254,13 @@ def underlying_xpts_components(position: str, minutes: int, xg: float, xa: float
 def rebuild_game_underlying_xpts(con: sqlite3.Connection, season: str, source: str | None = None) -> int:
     clause = "AND u.source = ?" if source else ""
     params = (season, source) if source else (season,)
+    team_xga = team_defensive_xga(con, season)
     rows = con.execute(
         f"""
         SELECT u.player_id, u.gameweek, u.source, u.minutes, u.xg, u.xa, u.cbit, u.cbirt,
-               u.fetched_at, u.data_period, p.position, COALESCE(tx.xga, 1.35) AS expected_goals_against,
-               COALESCE(pg.saves, 0) AS saves
+               u.fetched_at, u.data_period, p.position, p.team_id, COALESCE(pg.saves, 0) AS saves
         FROM player_underlying_gameweeks u
         JOIN players p ON p.season = u.season AND p.player_id = u.player_id
-        LEFT JOIN team_underlying_gameweeks tx ON tx.season = u.season AND tx.team_id = p.team_id AND tx.gameweek = u.gameweek
         LEFT JOIN player_gameweeks pg ON pg.season = u.season AND pg.player_id = u.player_id AND pg.gameweek = u.gameweek
         WHERE u.season = ? {clause}
         """,
@@ -248,7 +279,7 @@ def rebuild_game_underlying_xpts(con: sqlite3.Connection, season: str, source: s
             row["xa"],
             row["cbit"],
             row["cbirt"],
-            row["expected_goals_against"],
+            team_xga.get(row["team_id"], 1.35),
             save_ev=(row["saves"] or 0) / 3 if row["position"] == "GK" else 0.0,
         )
         inserts.append(

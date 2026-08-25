@@ -306,7 +306,6 @@ def normalise_name(value: str) -> str:
 
 def replace_understat_player_underlying(con: sqlite3.Connection, season: str, metrics: pd.DataFrame, source: str, fetched_at: str) -> dict[str, int]:
     provider = "understat"
-    con.execute("DELETE FROM external_player_underlying_observations WHERE provider = ? AND season = ?", (provider, season))
     fpl_rows = con.execute(
         """
         SELECT p.player_id, p.web_name, p.first_name, p.second_name, p.team, t.name AS team_name
@@ -327,7 +326,9 @@ def replace_understat_player_underlying(con: sqlite3.Connection, season: str, me
                 exact[(normalise_name(name), team_key)] = row["player_id"]
                 by_team.setdefault(team_key, []).append((normalise_name(name), row["player_id"]))
     raw_rows = []
+    cumulative_rows = []
     canonical_rows = []
+    gameweek_sources = set()
     mapped = unresolved = duplicates = 0
     for row in metrics.itertuples(index=False):
         data = row._asdict()
@@ -349,7 +350,36 @@ def replace_understat_player_underlying(con: sqlite3.Connection, season: str, me
         mapped += 1 if player_id else 0
         unresolved += 0 if player_id else 1
         gameweek = int(data["gameweek"]) if pd.notna(data.get("gameweek")) else 0
-        raw_rows.append((provider, season, external_id, name, team, gameweek, str(data.get("match_date") or ""), int(data.get("minutes") or 0), float(data.get("xg") or 0), float(data.get("xa") or 0), int(data.get("shots") or 0), int(data.get("key_passes") or 0), data.get("position"), player_id, source, fetched_at, season))
+        minutes = int(data.get("minutes") or 0)
+        xg = float(data.get("xg") or 0)
+        xa = float(data.get("xa") or 0)
+        shots = int(data.get("shots") or 0)
+        key_passes = int(data.get("key_passes") or 0)
+        previous = con.execute(
+            """
+            SELECT season_cumulative_minutes, season_cumulative_xg, season_cumulative_xa,
+                   season_cumulative_shots, season_cumulative_key_passes
+            FROM understat_player_cumulative_observations
+            WHERE provider = ? AND season = ? AND external_player_id = ? AND as_of_gameweek < ?
+            ORDER BY as_of_gameweek DESC
+            LIMIT 1
+            """,
+            (provider, season, external_id, gameweek),
+        ).fetchone()
+        gw_minutes = minutes - (previous["season_cumulative_minutes"] if previous else 0)
+        gw_xg = xg - (previous["season_cumulative_xg"] if previous else 0.0)
+        gw_xa = xa - (previous["season_cumulative_xa"] if previous else 0.0)
+        gw_shots = shots - (previous["season_cumulative_shots"] if previous else 0)
+        gw_key_passes = key_passes - (previous["season_cumulative_key_passes"] if previous else 0)
+        if min(gw_minutes, gw_xg, gw_xa, gw_shots, gw_key_passes) < -0.0001:
+            gw_minutes, gw_xg, gw_xa, gw_shots, gw_key_passes = minutes, xg, xa, shots, key_passes
+        gw_minutes = max(0, int(gw_minutes))
+        gw_xg = max(0.0, gw_xg)
+        gw_xa = max(0.0, gw_xa)
+        gw_shots = max(0, int(gw_shots))
+        gw_key_passes = max(0, int(gw_key_passes))
+        raw_rows.append((provider, season, external_id, name, team, gameweek, str(data.get("match_date") or ""), gw_minutes, round(gw_xg, 4), round(gw_xa, 4), gw_shots, gw_key_passes, data.get("position"), player_id, source, fetched_at, season))
+        cumulative_rows.append((provider, season, external_id, name, team, gameweek, minutes, xg, xa, shots, key_passes, player_id, source, fetched_at, season))
         con.execute(
             """
             INSERT OR REPLACE INTO external_player_mappings (
@@ -359,6 +389,8 @@ def replace_understat_player_underlying(con: sqlite3.Connection, season: str, me
             """,
             (provider, season, external_id, name, team, player_id, method, confidence, fetched_at),
         )
+        if gameweek:
+            gameweek_sources.add(gameweek)
         if player_id and gameweek:
             has_fpl = con.execute(
                 """
@@ -370,7 +402,33 @@ def replace_understat_player_underlying(con: sqlite3.Connection, season: str, me
                 (season, player_id, gameweek),
             ).fetchone()
             if not has_fpl:
-                canonical_rows.append((season, player_id, gameweek, int(data.get("minutes") or 0), float(data.get("xg") or 0), float(data.get("xa") or 0), 1, 1, int(data.get("shots") or 0), source, fetched_at, season))
+                canonical_rows.append((season, player_id, gameweek, gw_minutes, round(gw_xg, 4), round(gw_xa, 4), 1, 1, gw_shots, source, fetched_at, season))
+    for gameweek in gameweek_sources:
+        con.execute("DELETE FROM external_player_underlying_observations WHERE provider = ? AND season = ? AND gameweek = ?", (provider, season, gameweek))
+        con.execute("DELETE FROM understat_player_gameweek_observations WHERE provider = ? AND season = ? AND gameweek = ?", (provider, season, gameweek))
+        con.execute("DELETE FROM player_underlying_gameweeks WHERE season = ? AND source = ? AND gameweek = ?", (season, source, gameweek))
+    con.executemany(
+        """
+        INSERT OR REPLACE INTO understat_player_cumulative_observations (
+          provider, season, external_player_id, external_player_name, external_team,
+          as_of_gameweek, season_cumulative_minutes, season_cumulative_xg,
+          season_cumulative_xa, season_cumulative_shots, season_cumulative_key_passes,
+          mapped_player_id, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        cumulative_rows,
+    )
+    con.executemany(
+        """
+        INSERT OR REPLACE INTO understat_player_gameweek_observations (
+          provider, season, external_player_id, external_player_name, external_team,
+          gameweek, match_date, gameweek_minutes, gameweek_xg, gameweek_xa,
+          gameweek_shots, gameweek_key_passes, position, mapped_player_id,
+          source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        raw_rows,
+    )
     con.executemany(
         """
         INSERT OR REPLACE INTO external_player_underlying_observations (
@@ -381,7 +439,6 @@ def replace_understat_player_underlying(con: sqlite3.Connection, season: str, me
         """,
         raw_rows,
     )
-    con.execute("DELETE FROM player_underlying_gameweeks WHERE season = ? AND source = ?", (season, source))
     con.executemany(
         """
         INSERT OR REPLACE INTO player_underlying_gameweeks (

@@ -11,7 +11,7 @@ from backend.services.history import player_totals_as_of
 from backend.services.minutes import baseline_minutes_profiles, fallback_minutes_profile, latest_minutes_overrides, minutes_profile
 from backend.services.price_par import blended_par_for, current_curve_points
 from backend.services.roles import ROLE_KEYS, latest_role_overrides
-from backend.services.underlying import PERFORMANCE_MODEL_VERSION, attacking_xppg, clean_sheet_process_xppg, defcon_xppg, performance_confidence, performance_evidence_state, player_underlying_rates, team_defensive_xga
+from backend.services.underlying import PERFORMANCE_MODEL_VERSION, calculate_regressed_process_components, clean_sheet_process_xppg, performance_confidence, performance_evidence_state, player_underlying_rates, team_defensive_xga
 from backend.services.valuation import captain_adjusted_delta, player_status, projection_confidence
 
 
@@ -296,10 +296,20 @@ def buy_board(
         process_clean_sheet = clean_sheet_process_xppg(row["position"], expected_minutes, own_xga, minute_profile["probability_of_60"]) if own_xga is not None else 0.0
         performance_xppg = None
         if rates:
-            appearance = min(2.0, 2.0 * expected_minutes / 90)
-            attack = attacking_xppg(row["position"], expected_minutes, rates["xg90"], rates["xa90"])
-            defcon = defcon_xppg(row["position"], expected_minutes, rates["cbit90"], rates["cbirt90"])
-            performance_xppg = appearance + attack + process_clean_sheet + defcon + bonus + observed_saves
+            parts = calculate_regressed_process_components(
+                row["position"],
+                expected_minutes,
+                rates["xg90"],
+                rates["xa90"],
+                rates["cbit90"],
+                rates["cbirt90"],
+                own_xga,
+                minute_profile["probability_of_60"],
+                bonus,
+                observed_saves,
+            )
+            defcon = parts["defcon_ev"]
+            performance_xppg = parts["game_underlying_xpts"]
             neutral_xppg = performance_xppg - observed_saves + projected_saves
         else:
             defcon = 0.0

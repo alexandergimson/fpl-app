@@ -355,6 +355,46 @@ CREATE TABLE IF NOT EXISTS external_player_underlying_observations (
   data_period TEXT NOT NULL,
   PRIMARY KEY (provider, season, external_player_id, gameweek)
 );
+
+CREATE TABLE IF NOT EXISTS understat_player_cumulative_observations (
+  provider TEXT NOT NULL,
+  season TEXT NOT NULL,
+  external_player_id TEXT NOT NULL,
+  external_player_name TEXT NOT NULL,
+  external_team TEXT,
+  as_of_gameweek INTEGER NOT NULL,
+  season_cumulative_minutes INTEGER NOT NULL DEFAULT 0,
+  season_cumulative_xg REAL NOT NULL DEFAULT 0,
+  season_cumulative_xa REAL NOT NULL DEFAULT 0,
+  season_cumulative_shots INTEGER NOT NULL DEFAULT 0,
+  season_cumulative_key_passes INTEGER NOT NULL DEFAULT 0,
+  mapped_player_id INTEGER,
+  source TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  data_period TEXT NOT NULL,
+  PRIMARY KEY (provider, season, external_player_id, as_of_gameweek)
+);
+
+CREATE TABLE IF NOT EXISTS understat_player_gameweek_observations (
+  provider TEXT NOT NULL,
+  season TEXT NOT NULL,
+  external_player_id TEXT NOT NULL,
+  external_player_name TEXT NOT NULL,
+  external_team TEXT,
+  gameweek INTEGER NOT NULL,
+  match_date TEXT,
+  gameweek_minutes INTEGER NOT NULL DEFAULT 0,
+  gameweek_xg REAL NOT NULL DEFAULT 0,
+  gameweek_xa REAL NOT NULL DEFAULT 0,
+  gameweek_shots INTEGER NOT NULL DEFAULT 0,
+  gameweek_key_passes INTEGER NOT NULL DEFAULT 0,
+  position TEXT,
+  mapped_player_id INTEGER,
+  source TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  data_period TEXT NOT NULL,
+  PRIMARY KEY (provider, season, external_player_id, gameweek)
+);
 """
 
 

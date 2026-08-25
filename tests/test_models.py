@@ -1,4 +1,5 @@
 import unittest
+import inspect
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -16,7 +17,7 @@ from backend.services.boards import breakout_board, buy_board, freeze_player_gam
 from backend.services.bonus import bonus_rates, bonus_xppg
 from backend.services.goalkeepers import observed_save_rates, save_rates, save_xppg
 from backend.data.db import connect
-from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, next_gameweek_fixture_projections, upcoming_expected_opponent_goals, upcoming_fixture_factors
+from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, home_away_goal_multipliers, next_gameweek_fixture_projections, upcoming_expected_opponent_goals, upcoming_fixture_factors
 from backend.services.history import future_frozen_par, future_points, player_totals_as_of
 from backend.backtests.metrics import evaluate_model, evaluate_rows, mae, ranks, rmse, spearman
 from backend.services.tracking import snapshot_tracked, track_player, tracked_momentum, tracked_players, tracked_snapshots, tracking_status, untrack_player
@@ -30,7 +31,7 @@ from backend.services.roles import add_role_override, latest_role_overrides, rol
 from backend.ingestion.loaders import replace_fixtures, replace_fpl_player_underlying, replace_player_underlying, replace_understat_player_underlying, upsert_fpl_bootstrap_gameweek_observations
 from backend.ingestion.loaders import replace_team_underlying, snapshot_prices
 from backend.services.prices import price_movements
-from backend.services.underlying import attacking_xppg, calculate_game_underlying_components, defcon_xppg, performance_evidence_state, player_underlying_rates, regressed_rate, team_defensive_xga, underlying_xpts_components
+from backend.services.underlying import attacking_xppg, calculate_game_underlying_components, calculate_regressed_process_components, defcon_xppg, performance_evidence_state, player_underlying_rates, regressed_rate, team_defensive_xga, underlying_xpts_components
 from backend.services.team_strength import shrink_rate, team_strengths
 from backend.services.price_par import blended_par_for, current_curve_points
 
@@ -98,6 +99,19 @@ class ModelTests(unittest.TestCase):
         self.assertAlmostEqual(parts["game_underlying_xpts"], total)
         self.assertGreater(parts["clean_sheet_process_ev"], 0)
         self.assertEqual(parts["save_process_ev"], 1.0)
+
+    def test_regressed_process_components_match_game_component_keys(self):
+        parts = calculate_regressed_process_components("FWD", 90, 1.0, 0.5, 0.0, 12.0, 1.2, 1.0, 0.2, 0.0)
+        self.assertEqual(parts["goal_ev"], 4.0)
+        self.assertEqual(parts["assist_ev"], 1.5)
+        self.assertEqual(parts["defcon_ev"], 2.0)
+        self.assertAlmostEqual(parts["game_underlying_xpts"], sum(value for key, value in parts.items() if key != "game_underlying_xpts"))
+
+    def test_buy_board_consumes_canonical_process_helper(self):
+        source = inspect.getsource(buy_board)
+        self.assertIn("calculate_regressed_process_components", source)
+        self.assertNotIn("attacking_xppg(", source)
+        self.assertNotIn("defcon_xppg(", source)
 
     def test_regressed_rate_shrinks_to_prior(self):
         self.assertEqual(regressed_rate(1.0, 900, 0.5), 0.75)
@@ -168,6 +182,30 @@ class ModelTests(unittest.TestCase):
 
     def test_bonus_xppg_scales_by_minutes(self):
         self.assertEqual(bonus_xppg(45, 1.0), 0.5)
+
+    def test_bonus_rates_use_bps_not_realised_bonus(self):
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'BPS Man', '', '', 1, 'TST', 'MID',
+                  6.0, 0, 90, 0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2026-27', 1, 1, 1, 2, 1, 2, 90, 1, 0, 0, 0, 0, 0, 0, 36, NULL, NULL, NULL, 6.0, 'test', 'now', 'test')
+                """
+            )
+            rates = bonus_rates(con, "2026-27")
+        self.assertGreater(rates[1], 0)
 
     def test_save_xppg_only_applies_to_goalkeepers(self):
         self.assertEqual(save_xppg("GK", 90, 3), 1)
@@ -283,6 +321,34 @@ class ModelTests(unittest.TestCase):
             rows = {row["player"]: row for row in buy_board(con, "2026-27", "2026-27", 1, 10)}
         self.assertEqual(rows["Easy"]["performance_delta"], rows["Hard"]["performance_delta"])
         self.assertNotEqual(rows["Easy"]["forward_delta"], rows["Hard"]["forward_delta"])
+
+    def test_forward_projection_uses_estimated_home_away_effect(self):
+        with connect(":memory:") as con:
+            con.execute("INSERT INTO app_state VALUES ('2026-27', 'current_gameweek', '1', CURRENT_TIMESTAMP)")
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2025-26', 1, 1, 1, 2, 1, 0, 90, 1, 4, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'test', 'now', 'test'),
+                ('2025-26', 2, 1, 1, 1, 0, 0, 90, 1, 1, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'test', 'now', 'test')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO fixtures VALUES
+                ('2026-27', 1, 2, '', 1, 2, 3, 3, 0, 'test', 'now', 'test'),
+                ('2026-27', 2, 3, '', 2, 1, 3, 3, 0, 'test', 'now', 'test')
+                """
+            )
+            venue = home_away_goal_multipliers(con, "2026-27")
+            projections = next_gameweek_fixture_projections(con, "2026-27", 1, "FWD", 90, 1, 1, 0, 0, 0, 0, 0, horizon=2)
+        self.assertGreater(venue["home"], venue["away"])
+        self.assertGreater(projections[0]["fixtures"][0]["attack_factor"], projections[1]["fixtures"][0]["attack_factor"])
+        self.assertEqual(projections[0]["fixtures"][0]["venue_multiplier"], venue["home"])
 
     def test_forward_projection_handles_blank_and_double_gameweeks(self):
         with connect(":memory:") as con:
@@ -869,7 +935,7 @@ class ModelTests(unittest.TestCase):
             self.assertEqual(len(snapshots), 1)
             self.assertEqual(len(runs), 1)
             self.assertEqual(snapshots[0]["model_run_id"], runs[0]["id"])
-            self.assertEqual(snapshots[0]["model_version"], "baseline_v2")
+            self.assertEqual(snapshots[0]["model_version"], "baseline_v3")
             self.assertEqual(snapshots[0]["data_cutoff"], "now")
             component_versions = json.loads(snapshots[0]["component_versions"])
             self.assertEqual(component_versions, json.loads(runs[0]["component_versions"]))
@@ -1195,7 +1261,7 @@ class ModelTests(unittest.TestCase):
                   goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
                   value, source, fetched_at, data_period
                 ) VALUES
-                ('2026-27', 1, 1, 1, 2, 1, 6, 90, 1, 0, 0, 0, 0, 0, 3, 0, NULL, NULL, NULL, 6.0, 'test', 'now', 'test')
+                ('2026-27', 1, 1, 1, 2, 1, 6, 90, 1, 0, 0, 0, 0, 0, 3, 45, NULL, NULL, NULL, 6.0, 'test', 'now', 'test')
                 """
             )
             count = replace_player_underlying(
@@ -1456,6 +1522,39 @@ class ModelTests(unittest.TestCase):
             row = con.execute("SELECT player_id, xg, xa, xg_observed, xa_observed FROM player_underlying_gameweeks WHERE source = 'understat'").fetchone()
         self.assertEqual(result["canonical"], 1)
         self.assertEqual(dict(row), {"player_id": 1, "xg": 0.0, "xa": 0.0, "xg_observed": 1, "xa_observed": 1})
+
+    def test_understat_cumulative_refreshes_are_differenced_by_gameweek(self):
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Odegaard', 'Martin', 'Odegaard', 1, 'ARS', 'MID',
+                  8.5, 0, 180, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            replace_understat_player_underlying(
+                con,
+                "2026-27",
+                pd.DataFrame([{"provider_player_id": "u1", "player_name": "Martin Odegaard", "team": "ARS", "gameweek": 1, "match_date": "2026-08-21", "minutes": 90, "xg": 0.7, "xa": 0.1, "shots": 3, "key_passes": 1}]),
+                "understat",
+                "gw1",
+            )
+            replace_understat_player_underlying(
+                con,
+                "2026-27",
+                pd.DataFrame([{"provider_player_id": "u1", "player_name": "Martin Odegaard", "team": "ARS", "gameweek": 2, "match_date": "2026-08-28", "minutes": 180, "xg": 1.3, "xa": 0.25, "shots": 5, "key_passes": 4}]),
+                "understat",
+                "gw2",
+            )
+            rows = con.execute(
+                "SELECT gameweek, minutes, xg, xa, shots FROM player_underlying_gameweeks WHERE source = 'understat' ORDER BY gameweek"
+            ).fetchall()
+            observed = con.execute(
+                "SELECT gameweek, gameweek_minutes, gameweek_xg, gameweek_xa, gameweek_shots, gameweek_key_passes FROM understat_player_gameweek_observations ORDER BY gameweek"
+            ).fetchall()
+        self.assertEqual([dict(row) for row in rows], [{"gameweek": 1, "minutes": 90, "xg": 0.7, "xa": 0.1, "shots": 3}, {"gameweek": 2, "minutes": 90, "xg": 0.6, "xa": 0.15, "shots": 2}])
+        self.assertEqual([dict(row) for row in observed], [{"gameweek": 1, "gameweek_minutes": 90, "gameweek_xg": 0.7, "gameweek_xa": 0.1, "gameweek_shots": 3, "gameweek_key_passes": 1}, {"gameweek": 2, "gameweek_minutes": 90, "gameweek_xg": 0.6, "gameweek_xa": 0.15, "gameweek_shots": 2, "gameweek_key_passes": 3}])
 
     def test_team_strength_uses_rolling_window(self):
         with connect(":memory:") as con:

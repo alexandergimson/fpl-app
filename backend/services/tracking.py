@@ -8,12 +8,12 @@ from backend.services.fixtures import current_gameweek
 from backend.services.team_strength import TEAM_STRENGTH_VERSION
 from backend.services.underlying import PERFORMANCE_MODEL_VERSION, UNDERLYING_COMPONENTS_VERSION
 
-MODEL_VERSION = "baseline_v2"
+MODEL_VERSION = "baseline_v3"
 COMPONENT_VERSIONS = {
     "data": "fpl_canonical_v1",
     "minutes": "minutes_hurdle_v1",
     "par": "par_iso_v1",
-    "projection": "projection_component_v3",
+    "projection": "projection_component_v4",
     "role": "role_overrides_v1",
     "team_strength": TEAM_STRENGTH_VERSION,
     "underlying": UNDERLYING_COMPONENTS_VERSION,

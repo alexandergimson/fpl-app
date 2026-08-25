@@ -63,7 +63,7 @@ def data_status(con: sqlite3.Connection, season: str) -> dict:
         SELECT COUNT(*) AS fetched,
                SUM(CASE WHEN mapped_player_id IS NOT NULL THEN 1 ELSE 0 END) AS mapped,
                MAX(fetched_at) AS fetched_at
-        FROM external_player_underlying_observations
+        FROM understat_player_gameweek_observations
         WHERE provider = 'understat' AND season = ?
         """,
         (season,),
