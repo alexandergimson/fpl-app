@@ -33,3 +33,20 @@ def future_points(con: sqlite3.Connection, season: str, player_id: int, start_gw
         (season, player_id, start_gw, end_gw),
     ).fetchone()
     return int(row["points"] or 0)
+
+
+def future_frozen_par(con: sqlite3.Connection, season: str, player_id: int, start_gw: int, end_gw: int) -> float | None:
+    row = con.execute(
+        """
+        SELECT COUNT(*) AS gameweeks, SUM(value_par) AS par
+        FROM (
+          SELECT gameweek, MAX(value_par) AS value_par
+          FROM frozen_player_gameweek_par
+          WHERE season = ? AND player_id = ? AND gameweek BETWEEN ? AND ?
+          GROUP BY gameweek
+        )
+        """,
+        (season, player_id, start_gw, end_gw),
+    ).fetchone()
+    expected = end_gw - start_gw + 1
+    return float(row["par"]) if row["gameweeks"] == expected else None

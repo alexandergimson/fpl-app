@@ -96,6 +96,8 @@ def value_balance_and_return_delta(points: int, played: int | None, value_par: f
 
 
 def freeze_player_gameweek_pars(con: sqlite3.Connection, season: str, par_season: str = "2026-27", model_version: str = "par_iso_v1") -> int:
+    if not con.execute("SELECT 1 FROM price_par_points WHERE season = ? LIMIT 1", (par_season,)).fetchone():
+        return 0
     rows = con.execute(
         """
         SELECT
@@ -130,6 +132,21 @@ def freeze_player_gameweek_pars(con: sqlite3.Connection, season: str, par_season
         """,
         (season, season, season),
     ).fetchall()
+    if not rows:
+        rows = con.execute(
+            """
+            SELECT
+              p.player_id, gw.gameweek, 0 AS fixture_id,
+              COALESCE(MAX(gw.value), p.current_price) AS price,
+              p.position,
+              COALESCE(MAX(gw.fetched_at), p.fetched_at) AS fetched_at
+            FROM player_gameweeks gw
+            JOIN players p ON p.season = gw.season AND p.player_id = gw.player_id
+            WHERE gw.season = ?
+            GROUP BY p.player_id, gw.gameweek, p.current_price, p.position, p.fetched_at
+            """,
+            (season,),
+        ).fetchall()
     inserts = []
     for row in rows:
         _, value_par, _ = blended_par_for(con, row["position"], row["price"], par_season)

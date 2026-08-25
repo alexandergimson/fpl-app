@@ -8,7 +8,7 @@ def main() -> None:
         results = walk_forward(con) if count else []
     print("walk-forward windows:", WINDOWS)
     print(f"players loaded: {count}")
-    print("model       train_end test_window top_n players mae rmse spear avg_excess hit_rate top_q")
+    print("model       train_end test_window top_n players mae rmse spear avg_excess hit_rate par_cov top_q")
     for row in results:
         print(
             f"{row['model']:<11} "
@@ -21,6 +21,7 @@ def main() -> None:
             f"{row['spearman']:<5.2f} "
             f"{row['avg_excess_points']:+.2f} "
             f"{row['beating_par_rate']:.2f} "
+            f"{row['frozen_par_coverage']:.2f} "
             f"{row['top_quartile_hit_rate']:.2f}"
         )
     print("backtest: naive PPG vs Buy Delta, Opportunity Score and Captain-adjusted ranking.")

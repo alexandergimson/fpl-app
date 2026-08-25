@@ -3,8 +3,8 @@ from __future__ import annotations
 import math
 import sqlite3
 
-from backend.services.boards import buy_board
-from backend.services.history import future_points
+from backend.services.boards import buy_board, freeze_player_gameweek_pars
+from backend.services.history import future_frozen_par, future_points
 
 
 WINDOWS = [(1, 5, 6, 10), (1, 10, 11, 16), (1, 15, 16, 21), (1, 20, 21, 26)]
@@ -87,10 +87,11 @@ def evaluate_rows(
     for row in rows:
         actual = future_points(con, season, row["player_id"], test_start, test_end)
         predicted = row[prediction_key] * horizon
-        par = row["value_par"] * horizon
+        par = future_frozen_par(con, season, row["player_id"], test_start, test_end)
         errors.append(predicted - actual)
-        excess.append(actual - par)
-        hits += actual > par
+        if par is not None:
+            excess.append(actual - par)
+            hits += actual > par
         top_quartile_hits += actual >= quartile_cutoff
     return {
         "players": len(rows),
@@ -98,13 +99,15 @@ def evaluate_rows(
         "rmse": round(rmse(errors), 2),
         "spearman": round(spearman([row[prediction_key] for row in all_rows], all_actual), 2),
         "avg_excess_points": round(sum(excess) / len(excess), 2) if excess else 0.0,
-        "beating_par_rate": round(hits / len(rows), 2) if rows else 0.0,
+        "beating_par_rate": round(hits / len(excess), 2) if excess else 0.0,
+        "frozen_par_coverage": round(len(excess) / len(rows), 2) if rows else 0.0,
         "top_quartile_hit_rate": round(top_quartile_hits / len(rows), 2) if rows else 0.0,
     }
 
 
 def walk_forward(con: sqlite3.Connection, season: str = "2025-26", par_season: str = "2026-27") -> list[dict]:
     results = []
+    freeze_player_gameweek_pars(con, season, par_season)
     for _, train_end, test_start, test_end in WINDOWS:
         for top_n in (10, 20):
             results.append(evaluate_model(con, season, par_season, train_end, test_start, test_end, top_n, "naive_ppg", "actual_ppg", "actual_ppg"))

@@ -16,7 +16,7 @@ from backend.services.bonus import bonus_rates, bonus_xppg
 from backend.services.goalkeepers import save_rates, save_xppg
 from backend.data.db import connect
 from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, upcoming_expected_opponent_goals, upcoming_fixture_factors
-from backend.services.history import future_points, player_totals_as_of
+from backend.services.history import future_frozen_par, future_points, player_totals_as_of
 from backend.backtests.metrics import evaluate_model, evaluate_rows, mae, ranks, rmse, spearman
 from backend.services.tracking import snapshot_tracked, track_player, tracked_momentum, tracked_players, tracked_snapshots, tracking_status, untrack_player
 from backend.services.squad import import_public_squad, remove_squad_player, squad_analysis, squad_health, upsert_squad_player
@@ -444,6 +444,35 @@ class ModelTests(unittest.TestCase):
             rows = [{"player_id": 1, "actual_ppg": 5, "next_6_xppg": 4, "value_par": 3}]
             result = evaluate_rows(con, "2025-26", rows, rows, 2, 2, 1, prediction_key="actual_ppg")
         self.assertEqual(result["mae"], 1)
+
+    def test_backtest_excess_uses_future_frozen_par(self):
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2025-26', 1, 2, 1, 2, 1, 6, 90, 1, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'test', 'now', 'test')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO frozen_player_gameweek_par (
+                  season, player_id, gameweek, fixture_id, price, position, value_par,
+                  par_model_version, source, source_version, data_cutoff
+                ) VALUES ('2025-26', 1, 2, 0, 5.0, 'MID', 3.5, 'test', 'test', 'test', 'now')
+                """
+            )
+            rows = [{"player_id": 1, "actual_ppg": 5, "next_6_xppg": 4, "value_par": 100}]
+            result = evaluate_rows(con, "2025-26", rows, rows, 2, 2, 1, prediction_key="actual_ppg")
+            frozen_par = future_frozen_par(con, "2025-26", 1, 2, 2)
+        self.assertEqual(frozen_par, 3.5)
+        self.assertEqual(result["avg_excess_points"], 2.5)
+        self.assertEqual(result["beating_par_rate"], 1.0)
+        self.assertEqual(result["frozen_par_coverage"], 1.0)
 
     def test_evaluate_model_can_rank_by_opportunity(self):
         with connect(":memory:") as con:
