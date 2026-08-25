@@ -29,7 +29,7 @@ from backend.services.roles import add_role_override, latest_role_overrides, rol
 from backend.ingestion.loaders import replace_fixtures, replace_fpl_player_underlying, replace_player_underlying
 from backend.ingestion.loaders import replace_team_underlying, snapshot_prices
 from backend.services.prices import price_movements
-from backend.services.underlying import attacking_xppg, defcon_xppg, player_underlying_rates
+from backend.services.underlying import attacking_xppg, defcon_xppg, player_underlying_rates, underlying_xpts_components
 from backend.services.team_strength import team_strengths
 from backend.services.price_par import blended_par_for, current_curve_points
 
@@ -81,6 +81,13 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(defcon_ev(2), 2)
         self.assertEqual(defcon_xppg("DEF", 90, 10, 0), 2)
         self.assertEqual(defcon_xppg("MID", 30, 0, 12), 1)
+
+    def test_underlying_xpts_components_use_expected_attack(self):
+        parts = underlying_xpts_components("FWD", 90, 1.0, 0.5, cbirt=12)
+        self.assertEqual(parts["appearance_ev"], 2)
+        self.assertEqual(parts["goal_ev"], 4)
+        self.assertEqual(parts["assist_ev"], 1.5)
+        self.assertEqual(parts["defcon_ev"], 2)
 
     def test_bonus_xppg_scales_by_minutes(self):
         self.assertEqual(bonus_xppg(45, 1.0), 0.5)
@@ -657,11 +664,13 @@ class ModelTests(unittest.TestCase):
                 "test",
                 "now",
             )
+            process = con.execute("SELECT goal_ev, assist_ev, defcon_ev, game_underlying_xpts FROM game_underlying_xpts").fetchone()
             rates = player_underlying_rates(con, "2026-27")
             bonus = bonus_rates(con, "2026-27")
             row = buy_board(con, "2026-27", "2026-27", 10, 1)[0]
         self.assertEqual(count, 1)
         self.assertEqual(round(attacking_xppg("FWD", 90, 1, 0.5), 2), 5.5)
+        self.assertEqual(dict(process), {"goal_ev": 4.0, "assist_ev": 1.5, "defcon_ev": 2.0, "game_underlying_xpts": 9.5})
         self.assertEqual(round(rates[1]["xg90"], 2), 1.0)
         self.assertEqual(round(rates[1]["cbirt90"], 2), 12.0)
         self.assertGreater(bonus[1], 0)
@@ -677,6 +686,13 @@ class ModelTests(unittest.TestCase):
             ]
         )
         with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO players VALUES
+                ('2026-27', 42, NULL, 'FortyTwo', '', '', 1, 'TST', 'MID', 5.0, 0, 0, 10.0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 43, NULL, 'FortyThree', '', '', 1, 'TST', 'MID', 5.0, 0, 0, 10.0, 'a', 'test', 'now', 'test')
+                """
+            )
             players.attrs["current_gameweek"] = 0
             self.assertEqual(replace_fpl_player_underlying(con, "2026-27", players, "now"), 0)
             players.attrs["current_gameweek"] = 1
@@ -684,10 +700,12 @@ class ModelTests(unittest.TestCase):
             players.attrs["current_gameweek"] = 2
             count = replace_fpl_player_underlying(con, "2026-27", players, "now")
             row = con.execute("SELECT player_id, gameweek, minutes, xg, xa, source FROM player_underlying_gameweeks WHERE gameweek = 2").fetchone()
+            xpts = con.execute("SELECT player_id, gameweek, goal_ev, assist_ev, source FROM game_underlying_xpts WHERE gameweek = 2").fetchone()
             rows = con.execute("SELECT COUNT(*) AS n FROM player_underlying_gameweeks").fetchone()["n"]
         self.assertEqual(count, 1)
         self.assertEqual(rows, 2)
         self.assertEqual(dict(row), {"player_id": 42, "gameweek": 2, "minutes": 180, "xg": 1.2, "xa": 0.4, "source": "official_fpl_bootstrap"})
+        self.assertEqual(dict(xpts), {"player_id": 42, "gameweek": 2, "goal_ev": 6.0, "assist_ev": 1.2, "source": "official_fpl_bootstrap"})
 
     def test_role_override_boosts_board_projection(self):
         with connect(":memory:") as con:

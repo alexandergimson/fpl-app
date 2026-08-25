@@ -12,6 +12,7 @@ SOURCES = {
     "price_par_points": "Price Par",
     "player_gameweeks": "Gameweeks",
     "player_underlying_gameweeks": "Player xG/xA",
+    "game_underlying_xpts": "Underlying xPts",
     "team_underlying_gameweeks": "Team xG/xGA",
     "price_history": "Prices",
 }
@@ -39,7 +40,7 @@ def data_status(con: sqlite3.Connection, season: str) -> dict:
         default=None,
     )
     advanced_updated = max(
-        (by_key[key]["fetched_at"] for key in ("player_underlying_gameweeks", "team_underlying_gameweeks") if by_key[key]["fetched_at"]),
+        (by_key[key]["fetched_at"] for key in ("player_underlying_gameweeks", "game_underlying_xpts", "team_underlying_gameweeks") if by_key[key]["fetched_at"]),
         default=None,
     )
     current_gameweek = int(current_gw["value"]) if current_gw else None

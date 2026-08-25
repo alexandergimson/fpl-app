@@ -101,6 +101,8 @@ Optional CSV ingestion can still store player gameweek xG/xA rows in `player_und
 
 When available, neutral xPPG uses xG/90 and xA/90 to inform attacking expectation. When unavailable, it falls back to the existing minutes-shrunk actual PPG estimate.
 
+Underlying imports also rebuild `game_underlying_xpts`, a provider-neutral derived process table keyed by official FPL player ID, Gameweek and source. It stores appearance EV, goal EV from xG, assist EV from xA, DefCon EV and placeholder zero values for clean-sheet, bonus and save process EVs until those expected-value feeds exist.
+
 ## Team Strength
 
 Optional team xG/xGA CSV ingestion stores rows in `team_underlying_gameweeks`.

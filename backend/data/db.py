@@ -110,6 +110,25 @@ CREATE TABLE IF NOT EXISTS player_underlying_gameweeks (
   PRIMARY KEY (season, player_id, gameweek, source)
 );
 
+CREATE TABLE IF NOT EXISTS game_underlying_xpts (
+  season TEXT NOT NULL,
+  player_id INTEGER NOT NULL,
+  gameweek INTEGER NOT NULL,
+  source TEXT NOT NULL,
+  minutes INTEGER NOT NULL DEFAULT 0,
+  appearance_ev REAL NOT NULL DEFAULT 0,
+  goal_ev REAL NOT NULL DEFAULT 0,
+  assist_ev REAL NOT NULL DEFAULT 0,
+  clean_sheet_process_ev REAL NOT NULL DEFAULT 0,
+  defcon_ev REAL NOT NULL DEFAULT 0,
+  bonus_process_ev REAL NOT NULL DEFAULT 0,
+  save_process_ev REAL NOT NULL DEFAULT 0,
+  game_underlying_xpts REAL NOT NULL DEFAULT 0,
+  fetched_at TEXT NOT NULL,
+  data_period TEXT NOT NULL,
+  PRIMARY KEY (season, player_id, gameweek, source)
+);
+
 CREATE TABLE IF NOT EXISTS team_underlying_gameweeks (
   season TEXT NOT NULL,
   team_id INTEGER NOT NULL,

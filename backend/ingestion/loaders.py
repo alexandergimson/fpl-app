@@ -6,6 +6,7 @@ import pandas as pd
 
 from backend.models.config import POSITIONS
 from backend.models.price_par import ParPoint
+from backend.services.underlying import rebuild_game_underlying_xpts
 
 
 def upsert_players(con: sqlite3.Connection, season: str, players: pd.DataFrame, source: str, fetched_at: str) -> int:
@@ -259,6 +260,7 @@ def replace_player_underlying(con: sqlite3.Connection, season: str, metrics: pd.
         rows,
     )
     con.commit()
+    rebuild_game_underlying_xpts(con, season, source)
     return len(rows)
 
 
@@ -286,6 +288,7 @@ def replace_fpl_player_underlying(con: sqlite3.Connection, season: str, players:
         rows,
     )
     con.commit()
+    rebuild_game_underlying_xpts(con, season, source)
     return len(rows)
 
 

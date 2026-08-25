@@ -24,6 +24,7 @@
 ## Schema Notes
 
 - `frozen_player_gameweek_par` stores immutable historical Par rows by player, Gameweek and fixture.
+- `game_underlying_xpts` stores derived provider-neutral process components from raw underlying rows.
 - `tracked_snapshots` stores Return Delta, Performance Delta, Forward Delta compatibility value, Value Balance, projections and provenance fields.
 - Most tables already carry `source`, `fetched_at` and `data_period`; richer model-run IDs remain future work.
 
@@ -32,4 +33,5 @@
 - Frozen Pars are populated from completed team fixtures, so DNPs are included even when no `player_gameweeks` row exists.
 - If frozen Pars are missing for a player/team fixture set, realised Value Balance and Return Delta stay null instead of falling back to today's Value Par.
 - Underlying xPPG is still the v1 deterministic blend, not the later empirical-Bayes player ability model.
+- Clean-sheet, bonus and save process EVs are zero in `game_underlying_xpts` until a provider supplies expected process inputs.
 - Team strength is a rolling/fallback baseline, not the state-space challenger.
