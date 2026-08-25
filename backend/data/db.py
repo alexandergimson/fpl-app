@@ -217,6 +217,7 @@ CREATE TABLE IF NOT EXISTS tracked_snapshots (
   xg90 REAL,
   xa90 REAL,
   model_version TEXT,
+  component_versions TEXT,
   data_cutoff TEXT,
   status TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -329,6 +330,7 @@ def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
             "xg90": "REAL",
             "xa90": "REAL",
             "model_version": "TEXT",
+            "component_versions": "TEXT",
             "data_cutoff": "TEXT",
         },
     )

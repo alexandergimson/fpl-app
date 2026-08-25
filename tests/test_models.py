@@ -1,4 +1,5 @@
 import unittest
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -525,6 +526,10 @@ class ModelTests(unittest.TestCase):
             self.assertEqual(len(snapshots), 1)
             self.assertEqual(snapshots[0]["model_version"], "v1")
             self.assertEqual(snapshots[0]["data_cutoff"], "now")
+            component_versions = json.loads(snapshots[0]["component_versions"])
+            self.assertEqual(component_versions["data"], "fpl_canonical_v1")
+            self.assertEqual(component_versions["par"], "par_iso_v1")
+            self.assertIn("team_strength", component_versions)
             self.assertIn("expected_minutes", snapshots[0])
             untrack_player(con, "2026-27", 1)
             self.assertEqual(tracked_players(con, "2026-27"), [])

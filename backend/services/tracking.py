@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 
 from backend.services.boards import buy_board
 from backend.services.fixtures import current_gameweek
 
 MODEL_VERSION = "v1"
+COMPONENT_VERSIONS = {
+    "data": "fpl_canonical_v1",
+    "minutes": "minutes_baseline_v1",
+    "par": "par_iso_v1",
+    "projection": "component_projection_v1",
+    "role": "role_overrides_v1",
+    "team_strength": "fixture_difficulty_v1",
+    "underlying": "underlying_xpts_v1",
+}
 
 
 def track_player(con: sqlite3.Connection, season: str, player_id: int, note: str | None = None) -> None:
@@ -48,8 +58,8 @@ def snapshot_tracked(con: sqlite3.Connection, season: str, par_season: str = "20
           value_balance, return_delta, performance_delta,
           actual_ppg, neutral_xppg, next_3_xppg, next_6_xppg, buy_delta,
           ownership, start_probability, expected_minutes, projection_confidence,
-          fixture_factor_6, xg90, xa90, model_version, data_cutoff, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          fixture_factor_6, xg90, xa90, model_version, component_versions, data_cutoff, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -75,6 +85,7 @@ def snapshot_tracked(con: sqlite3.Connection, season: str, par_season: str = "20
                 row["xg90"],
                 row["xa90"],
                 MODEL_VERSION,
+                json.dumps(COMPONENT_VERSIONS, sort_keys=True),
                 con.execute("SELECT MAX(fetched_at) AS fetched_at FROM players WHERE season = ?", (season,)).fetchone()["fetched_at"],
                 row["status"],
             )
