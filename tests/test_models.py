@@ -9,7 +9,7 @@ from backend.models.config import prior_weight_for_gw
 from backend.models.projections import clean_sheet_ev, defcon_ev, expected_minutes, probability_of_60, role_xppg
 from backend.models.projections import projection_breakdown
 import pandas as pd
-from backend.ingestion.providers import Dataset
+from backend.ingestion.providers import Dataset, UnderstatProvider
 from backend.jobs.refresh import refresh_all
 from backend.services.valuation import captain_adjusted_delta, captaincy_weight, player_status, projection_confidence, selling_price
 from backend.services.boards import breakout_board, buy_board, freeze_player_gameweek_pars, infer_gameweeks, trap_board, value_balance_and_return_delta
@@ -755,7 +755,10 @@ class ModelTests(unittest.TestCase):
             "bootstrap": lambda self, season: Dataset(players, "test", "2026-08-21T10:00:00Z", season),
             "fixtures": lambda self, season: Dataset(fixtures, "test", "2026-08-21T10:00:00Z", season),
         })
-        with TemporaryDirectory() as tmp, patch("backend.jobs.refresh.OfficialFplProvider", provider):
+        understat = type("Understat", (), {
+            "team_underlying": lambda self, season, teams, fixtures: Dataset(pd.DataFrame(), "understat", "now", season),
+        })
+        with TemporaryDirectory() as tmp, patch("backend.jobs.refresh.OfficialFplProvider", provider), patch("backend.jobs.refresh.UnderstatProvider", understat):
             db_path = str(Path(tmp) / "refresh.sqlite")
             result = refresh_all("2026-27", "2026-27", db_path)
             with connect(db_path) as con:
@@ -794,7 +797,10 @@ class ModelTests(unittest.TestCase):
             "bootstrap": lambda self, season: Dataset(players, "test", "2026-08-21T10:00:00Z", season),
             "fixtures": lambda self, season: Dataset(fixtures, "test", "2026-08-21T10:00:00Z", season),
         })
-        with TemporaryDirectory() as tmp, patch("backend.jobs.refresh.OfficialFplProvider", provider):
+        understat = type("Understat", (), {
+            "team_underlying": lambda self, season, teams, fixtures: Dataset(pd.DataFrame(), "understat", "now", season),
+        })
+        with TemporaryDirectory() as tmp, patch("backend.jobs.refresh.OfficialFplProvider", provider), patch("backend.jobs.refresh.UnderstatProvider", understat):
             db_path = str(Path(tmp) / "refresh.sqlite")
             result = refresh_all("2026-27", "2026-27", db_path)
             with connect(db_path) as con:
@@ -806,6 +812,48 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(gameweek, "1")
         self.assertEqual(player_gameweeks, 1)
         self.assertEqual(underlying_rows, 1)
+
+    def test_refresh_ingests_understat_team_underlying(self):
+        players = pd.DataFrame(
+            [
+                {
+                    "id": 1,
+                    "code": 1,
+                    "web_name": "Refresh",
+                    "first_name": "",
+                    "second_name": "",
+                    "team": 1,
+                    "team_code": 1,
+                    "element_type": 3,
+                    "now_cost": 50,
+                    "total_points": 5,
+                    "minutes": 90,
+                    "expected_goals": "0.1",
+                    "expected_assists": "0.2",
+                    "selected_by_percent": 10,
+                    "status": "a",
+                }
+            ]
+        )
+        players.attrs["teams"] = pd.DataFrame([{"id": 1, "name": "Arsenal", "short_name": "ARS"}, {"id": 2, "name": "Man Utd", "short_name": "MUN"}])
+        players.attrs["current_gameweek"] = 0
+        fixtures = pd.DataFrame(
+            [{"id": 1, "event": 1, "kickoff_time": "2026-08-22T12:30:00Z", "team_h": 1, "team_a": 2, "team_h_difficulty": 3, "team_a_difficulty": 3, "finished": True}]
+        )
+        provider = type("Provider", (), {
+            "bootstrap": lambda self, season: Dataset(players, "test", "2026-08-21T10:00:00Z", season),
+            "fixtures": lambda self, season: Dataset(fixtures, "test", "2026-08-21T10:00:00Z", season),
+        })
+        understat = type("Understat", (), {
+            "team_underlying": lambda self, season, teams, fixtures: Dataset(pd.DataFrame([{"team_id": 1, "gameweek": 1, "is_home": 1, "xg": 2.1, "xga": 0.7}]), "understat", "now", season),
+        })
+        with TemporaryDirectory() as tmp, patch("backend.jobs.refresh.OfficialFplProvider", provider), patch("backend.jobs.refresh.UnderstatProvider", understat):
+            db_path = str(Path(tmp) / "refresh.sqlite")
+            result = refresh_all("2026-27", "2026-27", db_path)
+            with connect(db_path) as con:
+                row = con.execute("SELECT team_id, gameweek, xg, xga, source FROM team_underlying_gameweeks").fetchone()
+        self.assertEqual(result["team_underlying"], 1)
+        self.assertEqual(dict(row), {"team_id": 1, "gameweek": 1, "xg": 2.1, "xga": 0.7, "source": "understat"})
 
     def test_provisional_finished_fixture_counts_as_completed(self):
         fixtures = pd.DataFrame(
@@ -1016,6 +1064,24 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(count, 2)
         self.assertGreater(strengths[2]["defensive_weakness"], 1)
         self.assertGreater(factors[0], 1)
+
+    def test_understat_team_underlying_maps_to_fpl_fixture_gameweeks(self):
+        class FakeUnderstat(UnderstatProvider):
+            def _json(self, season):
+                return {
+                    "teams": {
+                        "1": {
+                            "title": "Manchester United",
+                            "history": [{"h_a": "a", "date": "2026-08-22 12:30:00", "xG": "0.7", "xGA": "2.1"}],
+                        }
+                    }
+                }, "understat", "now"
+
+        teams = pd.DataFrame([{"id": 1, "name": "Arsenal"}, {"id": 2, "name": "Man Utd"}])
+        fixtures = pd.DataFrame([{"event": 1, "kickoff_time": "2026-08-22T12:30:00Z", "team_h": 1, "team_a": 2}])
+        dataset = FakeUnderstat().team_underlying("2026-27", teams, fixtures)
+        self.assertEqual(dataset.source, "understat")
+        self.assertEqual(dataset.frame.to_dict("records"), [{"team_id": 2, "gameweek": 1, "is_home": 0, "xg": 0.7, "xga": 2.1}])
 
     def test_team_strength_uses_rolling_window(self):
         with connect(":memory:") as con:

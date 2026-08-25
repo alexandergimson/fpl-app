@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from backend.data.db import connect
-from backend.ingestion.loaders import replace_fixtures, set_state, snapshot_prices, upsert_fpl_bootstrap_gameweek_observations, upsert_players
-from backend.ingestion.providers import OfficialFplProvider
+from backend.ingestion.loaders import replace_fixtures, replace_team_underlying, set_state, snapshot_prices, upsert_fpl_bootstrap_gameweek_observations, upsert_players
+from backend.ingestion.providers import OfficialFplProvider, UnderstatProvider
 from backend.services.boards import freeze_player_gameweek_pars
 from backend.services.alerts import generate_tracked_alerts
 from backend.services.ingestion_runs import add_health_event, finish_ingestion_run, start_ingestion_run
@@ -23,6 +23,7 @@ def latest_finished_fixture_gameweek(fixtures) -> int:
 
 def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: str | None = None) -> dict:
     provider = OfficialFplProvider()
+    understat = UnderstatProvider()
     with connect(db_path) if db_path else connect() as con:
         run_id = start_ingestion_run(con, season, "local_refresh", "refresh")
     try:
@@ -35,6 +36,12 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
             prices = snapshot_prices(con, season, dataset.frame, dataset.source, dataset.fetched_at)
             observations = upsert_fpl_bootstrap_gameweek_observations(con, season, dataset.frame, dataset.fetched_at)
             fixture_count = replace_fixtures(con, season, fixtures.frame, fixtures.source, fixtures.fetched_at)
+            try:
+                team_underlying = understat.team_underlying(season, dataset.frame.attrs.get("teams"), fixtures.frame)
+                team_underlying_count = replace_team_underlying(con, season, team_underlying.frame, team_underlying.source, team_underlying.fetched_at) if not team_underlying.frame.empty else 0
+            except Exception as exc:
+                team_underlying_count = 0
+                add_health_event(con, season, run_id, "WARN", "understat_team_failed", str(exc))
             frozen_pars = freeze_player_gameweek_pars(con, season, par_season)
             set_state(con, season, "current_gameweek", str(gameweek))
             team_id = get_team_id(con, season)
@@ -49,7 +56,7 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
                 add_health_event(con, season, run_id, "WARN", "missing_player_underlying", "No player xG/xA rows loaded")
             if con.execute("SELECT COUNT(*) AS n FROM team_underlying_gameweeks WHERE season = ?", (season,)).fetchone()["n"] == 0:
                 add_health_event(con, season, run_id, "WARN", "missing_team_underlying", "No team xG/xGA rows loaded")
-            summary = f"{players} players, {prices} prices, {fixture_count} fixtures, {observations} player GW observations, {frozen_pars} frozen Pars, {imported_squad} squad picks, {snapshots} snapshots, {alerts} alerts"
+            summary = f"{players} players, {prices} prices, {fixture_count} fixtures, {observations} player GW observations, {team_underlying_count} team xG/xGA rows, {frozen_pars} frozen Pars, {imported_squad} squad picks, {snapshots} snapshots, {alerts} alerts"
             finish_ingestion_run(con, run_id, "SUCCESS", summary)
         return {
             "run_id": run_id,
@@ -59,6 +66,7 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
             "prices": prices,
             "fixtures": fixture_count,
             "observations": observations,
+            "team_underlying": team_underlying_count,
             "frozen_pars": frozen_pars,
             "squad": imported_squad,
             "snapshots": snapshots,
