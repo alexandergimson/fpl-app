@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS player_cumulative_observations (
   gameweek INTEGER NOT NULL,
   total_points INTEGER NOT NULL DEFAULT 0,
   minutes INTEGER NOT NULL DEFAULT 0,
+  bps INTEGER NOT NULL DEFAULT 0,
   xg REAL NOT NULL DEFAULT 0,
   xa REAL NOT NULL DEFAULT 0,
   ownership REAL,
@@ -418,6 +419,7 @@ def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
             "cbirt_observed": "INTEGER NOT NULL DEFAULT 0",
         },
     )
+    ensure_columns(con, "player_cumulative_observations", {"bps": "INTEGER NOT NULL DEFAULT 0"})
     ensure_columns(con, "game_underlying_xpts", {"deduction_process_ev": "REAL NOT NULL DEFAULT 0"})
     ensure_columns(
         con,

@@ -1064,6 +1064,7 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(status["health_summary"]["performance_missing_players"], 1)
         self.assertEqual(status["health_summary"]["performance_partial_players"], 0)
         self.assertEqual(status["health_summary"]["performance_sufficient_players"], 0)
+        self.assertEqual(status["health_summary"]["team_strength_status"], "degraded")
 
     def test_refresh_all_records_summary_without_tracked_players(self):
         players = pd.DataFrame(
@@ -1193,6 +1194,74 @@ class ModelTests(unittest.TestCase):
                 row = con.execute("SELECT team_id, gameweek, xg, xga, source FROM team_underlying_gameweeks").fetchone()
         self.assertEqual(result["team_underlying"], 1)
         self.assertEqual(dict(row), {"team_id": 1, "gameweek": 1, "xg": 2.1, "xga": 0.7, "source": "understat"})
+
+    def test_understat_team_outage_keeps_fpl_player_baseline(self):
+        players = pd.DataFrame(
+            [
+                {
+                    "id": 1,
+                    "code": 1,
+                    "web_name": "FPLOnly",
+                    "first_name": "",
+                    "second_name": "",
+                    "team": 1,
+                    "team_code": 1,
+                    "element_type": 3,
+                    "now_cost": 50,
+                    "total_points": 5,
+                    "minutes": 90,
+                    "bps": 30,
+                    "expected_goals": "0.3",
+                    "expected_assists": "0.2",
+                    "selected_by_percent": 10,
+                    "status": "a",
+                }
+            ]
+        )
+        players.attrs["teams"] = pd.DataFrame([{"id": 1, "name": "Team", "short_name": "TST"}, {"id": 2, "name": "Opp", "short_name": "OPP"}])
+        players.attrs["current_gameweek"] = 0
+        fixtures = pd.DataFrame(
+            [
+                {"id": 1, "event": 1, "kickoff_time": "", "team_h": 1, "team_a": 2, "team_h_difficulty": 3, "team_a_difficulty": 3, "finished": True},
+                {"id": 2, "event": 2, "kickoff_time": "", "team_h": 1, "team_a": 2, "team_h_difficulty": 2, "team_a_difficulty": 4, "finished": False},
+            ]
+        )
+        provider = type("Provider", (), {
+            "bootstrap": lambda self, season: Dataset(players, "test", "2026-08-21T10:00:00Z", season),
+            "fixtures": lambda self, season: Dataset(fixtures, "test", "2026-08-21T10:00:00Z", season),
+        })
+
+        class BrokenUnderstat:
+            def team_underlying(self, season, teams, fixtures):
+                raise RuntimeError("understat down")
+
+            def player_underlying(self, season, teams, fixtures):
+                raise AssertionError("player Understat must not be used in production refresh")
+
+        with TemporaryDirectory() as tmp, patch("backend.jobs.refresh.OfficialFplProvider", provider), patch("backend.jobs.refresh.UnderstatProvider", BrokenUnderstat):
+            db_path = str(Path(tmp) / "refresh.sqlite")
+            with connect(db_path) as con:
+                con.execute(
+                    """
+                    INSERT INTO player_underlying_gameweeks (
+                      season, player_id, gameweek, minutes, xg, xa, source, fetched_at, data_period
+                    ) VALUES ('2026-27', 99, 1, 90, 9, 9, 'https://understat.com/getLeagueData/EPL/2026', 'old', 'old')
+                    """
+                )
+            result = refresh_all("2026-27", "2026-27", db_path)
+            with connect(db_path) as con:
+                con.execute("INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"))
+                status = data_status(con, "2026-27")
+                team_rows = con.execute("SELECT COUNT(*) AS n FROM team_underlying_gameweeks").fetchone()["n"]
+                process_rows = con.execute("SELECT COUNT(*) AS n FROM player_underlying_gameweeks WHERE source = 'official_fpl_bootstrap'").fetchone()["n"]
+                stale_rows = con.execute("SELECT COUNT(*) AS n FROM player_underlying_gameweeks WHERE source != 'official_fpl_bootstrap'").fetchone()["n"]
+                row = buy_board(con, "2026-27", "2026-27", 1, 1)[0]
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual(team_rows, 0)
+        self.assertEqual(process_rows, 1)
+        self.assertEqual(stale_rows, 0)
+        self.assertEqual(status["health_summary"]["team_strength_status"], "degraded")
+        self.assertGreater(row["next_6_xppg"], 0)
 
     def test_provisional_finished_fixture_counts_as_completed(self):
         fixtures = pd.DataFrame(
@@ -1330,16 +1399,27 @@ class ModelTests(unittest.TestCase):
             players.attrs["current_gameweek"] = 0
             self.assertEqual(replace_fpl_player_underlying(con, "2026-27", players, "now"), 0)
             players.attrs["current_gameweek"] = 1
-            self.assertEqual(replace_fpl_player_underlying(con, "2026-27", players, "then"), 2)
+            self.assertEqual(replace_fpl_player_underlying(con, "2026-27", players, "then"), 1)
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2026-27', 43, 2, 0, NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'official_fpl_bootstrap', 'old', 'test')
+                """
+            )
             players.attrs["current_gameweek"] = 2
             count = replace_fpl_player_underlying(con, "2026-27", players, "now")
             row = con.execute("SELECT player_id, gameweek, minutes, xg, xa, source FROM player_underlying_gameweeks WHERE gameweek = 1").fetchone()
             xpts = con.execute("SELECT player_id, gameweek, goal_ev, assist_ev, source FROM game_underlying_xpts WHERE gameweek = 1").fetchone()
             rows = con.execute("SELECT COUNT(*) AS n FROM player_underlying_gameweeks").fetchone()["n"]
             gameweek_rows = con.execute("SELECT COUNT(*) AS n FROM player_gameweeks WHERE gameweek = 2").fetchone()["n"]
-        self.assertEqual(count, 2)
+        self.assertEqual(count, 0)
         self.assertEqual(rows, 1)
-        self.assertEqual(gameweek_rows, 2)
+        self.assertEqual(gameweek_rows, 0)
         self.assertEqual(dict(row), {"player_id": 42, "gameweek": 1, "minutes": 180, "xg": 1.2, "xa": 0.4, "source": "official_fpl_bootstrap"})
         self.assertEqual(dict(xpts), {"player_id": 42, "gameweek": 1, "goal_ev": 6.0, "assist_ev": 1.2, "source": "official_fpl_bootstrap"})
 
@@ -1353,12 +1433,14 @@ class ModelTests(unittest.TestCase):
                 )
                 """
             )
-            for gameweek, xg, xa in [(1, "0.4", "0.2"), (2, "0.8", "0.5"), (3, "1.1", "0.6")]:
-                frame = pd.DataFrame([{"id": 42, "now_cost": 50, "total_points": gameweek, "minutes": gameweek * 90, "selected_by_percent": 10, "expected_goals": xg, "expected_assists": xa}])
+            for gameweek, xg, xa, bps, starts in [(1, "0.4", "0.2", 30, 1), (2, "0.8", "0.5", 54, 2), (3, "1.1", "0.6", 60, 2)]:
+                frame = pd.DataFrame([{"id": 42, "now_cost": 50, "total_points": gameweek, "minutes": gameweek * 90, "starts": starts, "bps": bps, "selected_by_percent": 10, "expected_goals": xg, "expected_assists": xa}])
                 frame.attrs["current_gameweek"] = gameweek
                 upsert_fpl_bootstrap_gameweek_observations(con, "2026-27", frame, f"gw{gameweek}")
             rows = con.execute("SELECT gameweek, xg, xa FROM player_underlying_gameweeks ORDER BY gameweek").fetchall()
+            gameweeks = con.execute("SELECT gameweek, minutes, starts, bps FROM player_gameweeks ORDER BY gameweek").fetchall()
         self.assertEqual([dict(row) for row in rows], [{"gameweek": 1, "xg": 0.4, "xa": 0.2}, {"gameweek": 2, "xg": 0.4, "xa": 0.3}, {"gameweek": 3, "xg": 0.3, "xa": 0.1}])
+        self.assertEqual([dict(row) for row in gameweeks], [{"gameweek": 1, "minutes": 90, "starts": 1, "bps": 30}, {"gameweek": 2, "minutes": 90, "starts": 1, "bps": 24}, {"gameweek": 3, "minutes": 90, "starts": 0, "bps": 6}])
 
     def test_fpl_bootstrap_uses_official_starts_under_60_minutes(self):
         players = pd.DataFrame([{"id": 42, "now_cost": 50, "total_points": 1, "minutes": 55, "starts": 1, "selected_by_percent": 10, "expected_goals": "0", "expected_assists": "0"}])
@@ -1502,7 +1584,7 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(mapping["mapping_method"], "exact_name_team")
         self.assertEqual(canonical["n"], 0)
 
-    def test_understat_fills_canonical_gap_when_fpl_missing(self):
+    def test_understat_player_rows_are_research_only_when_fpl_missing(self):
         with connect(":memory:") as con:
             con.execute(
                 """
@@ -1519,9 +1601,11 @@ class ModelTests(unittest.TestCase):
                 "understat",
                 "now",
             )
-            row = con.execute("SELECT player_id, xg, xa, xg_observed, xa_observed FROM player_underlying_gameweeks WHERE source = 'understat'").fetchone()
-        self.assertEqual(result["canonical"], 1)
-        self.assertEqual(dict(row), {"player_id": 1, "xg": 0.0, "xa": 0.0, "xg_observed": 1, "xa_observed": 1})
+            canonical = con.execute("SELECT COUNT(*) AS n FROM player_underlying_gameweeks WHERE source = 'understat'").fetchone()
+            research = con.execute("SELECT mapped_player_id, gameweek_xg, gameweek_xa FROM understat_player_gameweek_observations").fetchone()
+        self.assertEqual(result["canonical"], 0)
+        self.assertEqual(canonical["n"], 0)
+        self.assertEqual(dict(research), {"mapped_player_id": 1, "gameweek_xg": 0.0, "gameweek_xa": 0.0})
 
     def test_understat_cumulative_refreshes_are_differenced_by_gameweek(self):
         with connect(":memory:") as con:
@@ -1547,13 +1631,11 @@ class ModelTests(unittest.TestCase):
                 "understat",
                 "gw2",
             )
-            rows = con.execute(
-                "SELECT gameweek, minutes, xg, xa, shots FROM player_underlying_gameweeks WHERE source = 'understat' ORDER BY gameweek"
-            ).fetchall()
+            canonical = con.execute("SELECT COUNT(*) AS n FROM player_underlying_gameweeks WHERE source = 'understat'").fetchone()["n"]
             observed = con.execute(
                 "SELECT gameweek, gameweek_minutes, gameweek_xg, gameweek_xa, gameweek_shots, gameweek_key_passes FROM understat_player_gameweek_observations ORDER BY gameweek"
             ).fetchall()
-        self.assertEqual([dict(row) for row in rows], [{"gameweek": 1, "minutes": 90, "xg": 0.7, "xa": 0.1, "shots": 3}, {"gameweek": 2, "minutes": 90, "xg": 0.6, "xa": 0.15, "shots": 2}])
+        self.assertEqual(canonical, 0)
         self.assertEqual([dict(row) for row in observed], [{"gameweek": 1, "gameweek_minutes": 90, "gameweek_xg": 0.7, "gameweek_xa": 0.1, "gameweek_shots": 3, "gameweek_key_passes": 1}, {"gameweek": 2, "gameweek_minutes": 90, "gameweek_xg": 0.6, "gameweek_xa": 0.15, "gameweek_shots": 2, "gameweek_key_passes": 3}])
 
     def test_team_strength_uses_rolling_window(self):

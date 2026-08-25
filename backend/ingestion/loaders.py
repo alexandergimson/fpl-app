@@ -327,7 +327,6 @@ def replace_understat_player_underlying(con: sqlite3.Connection, season: str, me
                 by_team.setdefault(team_key, []).append((normalise_name(name), row["player_id"]))
     raw_rows = []
     cumulative_rows = []
-    canonical_rows = []
     gameweek_sources = set()
     mapped = unresolved = duplicates = 0
     for row in metrics.itertuples(index=False):
@@ -391,22 +390,9 @@ def replace_understat_player_underlying(con: sqlite3.Connection, season: str, me
         )
         if gameweek:
             gameweek_sources.add(gameweek)
-        if player_id and gameweek:
-            has_fpl = con.execute(
-                """
-                SELECT 1 FROM player_underlying_gameweeks
-                WHERE season = ? AND player_id = ? AND gameweek = ?
-                  AND source = 'official_fpl_bootstrap'
-                  AND xg_observed = 1 AND xa_observed = 1
-                """,
-                (season, player_id, gameweek),
-            ).fetchone()
-            if not has_fpl:
-                canonical_rows.append((season, player_id, gameweek, gw_minutes, round(gw_xg, 4), round(gw_xa, 4), 1, 1, gw_shots, source, fetched_at, season))
     for gameweek in gameweek_sources:
         con.execute("DELETE FROM external_player_underlying_observations WHERE provider = ? AND season = ? AND gameweek = ?", (provider, season, gameweek))
         con.execute("DELETE FROM understat_player_gameweek_observations WHERE provider = ? AND season = ? AND gameweek = ?", (provider, season, gameweek))
-        con.execute("DELETE FROM player_underlying_gameweeks WHERE season = ? AND source = ? AND gameweek = ?", (season, source, gameweek))
     con.executemany(
         """
         INSERT OR REPLACE INTO understat_player_cumulative_observations (
@@ -439,19 +425,8 @@ def replace_understat_player_underlying(con: sqlite3.Connection, season: str, me
         """,
         raw_rows,
     )
-    con.executemany(
-        """
-        INSERT OR REPLACE INTO player_underlying_gameweeks (
-          season, player_id, gameweek, minutes, xg, xa, xg_observed, xa_observed,
-          shots, source, fetched_at, data_period
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        canonical_rows,
-    )
     con.commit()
-    if canonical_rows:
-        rebuild_game_underlying_xpts(con, season, source)
-    return {"fetched": len(raw_rows), "mapped": mapped, "unmapped": unresolved, "duplicate_candidates": duplicates, "canonical": len(canonical_rows)}
+    return {"fetched": len(raw_rows), "mapped": mapped, "unmapped": unresolved, "duplicate_candidates": duplicates, "canonical": 0}
 
 
 def upsert_fpl_bootstrap_gameweek_observations(con: sqlite3.Connection, season: str, players: pd.DataFrame, fetched_at: str) -> int:
@@ -488,10 +463,12 @@ def upsert_fpl_bootstrap_gameweek_observations(con: sqlite3.Connection, season: 
         xa = float(data.get("expected_assists") or 0)
         ownership = float(data["selected_by_percent"]) if pd.notna(data.get("selected_by_percent")) else None
         price = float(data["now_cost"]) / 10 if pd.notna(data.get("now_cost")) else None
-        cumulative.append((season, player_id, gameweek, points, minutes, xg, xa, ownership, price, source, fetched_at, season))
+        bps = int(data.get("bps") or 0)
+        cumulative.append((season, player_id, gameweek, points, minutes, bps, xg, xa, ownership, price, source, fetched_at, season))
         prev = previous.get(player_id)
         gw_points = points - (prev["total_points"] if prev else 0)
         gw_minutes = minutes - (prev["minutes"] if prev else 0)
+        gw_bps = bps - (prev["bps"] if prev else 0)
         gw_xg = xg - (prev["xg"] if prev else 0.0)
         gw_xa = xa - (prev["xa"] if prev else 0.0)
         if "starts" in data and pd.notna(data.get("starts")):
@@ -505,21 +482,24 @@ def upsert_fpl_bootstrap_gameweek_observations(con: sqlite3.Connection, season: 
         else:
             gw_starts = 0
             gw_saves = 0
-            gw_bonus = 0
-        if gw_points < 0 or gw_minutes < 0 or gw_xg < -0.0001 or gw_xa < -0.0001:
+        gw_bonus = 0
+        if gw_points < 0 or gw_minutes < 0 or gw_bps < 0 or gw_xg < -0.0001 or gw_xa < -0.0001:
             continue
-        gameweeks.append((season, player_id, gameweek, 0, None, 0, gw_points, gw_minutes, gw_starts, 0, 0, 0, 0, gw_saves, gw_bonus, 0, None, None, None, price, source, fetched_at, season))
+        if not any((gw_points, gw_minutes, gw_starts, gw_saves, gw_bonus, gw_bps)) and abs(gw_xg) < 0.0001 and abs(gw_xa) < 0.0001:
+            continue
+        gameweeks.append((season, player_id, gameweek, 0, None, 0, gw_points, gw_minutes, gw_starts, 0, 0, 0, 0, gw_saves, gw_bonus, gw_bps, None, None, None, price, source, fetched_at, season))
         if gw_minutes > 0 or gw_xg > 0 or gw_xa > 0:
             underlying.append((season, player_id, gameweek, gw_minutes, round(gw_xg, 4), round(gw_xa, 4), 1, 1, source, fetched_at, season))
     con.executemany(
         """
         INSERT OR REPLACE INTO player_cumulative_observations (
-          season, player_id, gameweek, total_points, minutes, xg, xa,
+          season, player_id, gameweek, total_points, minutes, bps, xg, xa,
           ownership, current_price, source, fetched_at, data_period
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         cumulative,
     )
+    con.execute("DELETE FROM player_gameweeks WHERE season = ? AND source = ? AND gameweek = ?", (season, source, gameweek))
     con.executemany(
         """
         INSERT OR REPLACE INTO player_gameweeks (
