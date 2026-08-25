@@ -30,7 +30,7 @@ from backend.services.roles import add_role_override, latest_role_overrides, rol
 from backend.ingestion.loaders import replace_fixtures, replace_fpl_player_underlying, replace_player_underlying, upsert_fpl_bootstrap_gameweek_observations
 from backend.ingestion.loaders import replace_team_underlying, snapshot_prices
 from backend.services.prices import price_movements
-from backend.services.underlying import attacking_xppg, defcon_xppg, player_underlying_rates, regressed_rate, underlying_xpts_components
+from backend.services.underlying import attacking_xppg, defcon_xppg, performance_evidence_state, player_underlying_rates, regressed_rate, underlying_xpts_components
 from backend.services.team_strength import shrink_rate, team_strengths
 from backend.services.price_par import blended_par_for, current_curve_points
 
@@ -277,7 +277,9 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(rows["Four"]["historical_delta"], 0.5)
         self.assertEqual(rows["Four"]["return_delta"], 0.5)
         self.assertEqual(rows["Four"]["value_balance"], 1.0)
-        self.assertAlmostEqual(rows["Four"]["performance_delta"], rows["Four"]["neutral_xppg"] - rows["Four"]["value_par"], places=2)
+        self.assertIsNone(rows["Four"]["performance_delta"])
+        self.assertEqual(rows["Four"]["performance_data_state"], "missing")
+        self.assertIsNotNone(rows["Four"]["forward_delta"])
 
     def test_return_delta_requires_frozen_pars(self):
         self.assertEqual(value_balance_and_return_delta(6, 1, 4.0), (None, None))
@@ -410,6 +412,65 @@ class ModelTests(unittest.TestCase):
         blank = row_for(2)
         self.assertNotEqual(haul["actual_ppg"], blank["actual_ppg"])
         self.assertEqual(haul["performance_delta"], blank["performance_delta"])
+
+    def test_missing_underlying_keeps_performance_delta_null_but_forward_delta_numeric(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "FWD", 7.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES
+                ('2026-27', 1, NULL, 'One', '', '', 1, 'TST', 'FWD', 7.0, 9, 90, 10.0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 2, NULL, 'Two', '', '', 1, 'TST', 'FWD', 7.0, 2, 90, 10.0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 3, NULL, 'Three', '', '', 1, 'TST', 'FWD', 7.0, 0, 0, 10.0, 'a', 'test', 'now', 'test')
+                """
+            )
+            rows = buy_board(con, "2026-27", "2026-27", 1, 10)
+        self.assertEqual({row["performance_data_state"] for row in rows}, {"missing"})
+        self.assertTrue(all(row["performance_delta"] is None for row in rows))
+        self.assertTrue(all(isinstance(row["forward_delta"], float) for row in rows))
+
+    def test_calculated_performance_delta_can_be_genuine_zero(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "FWD", 7.0, 2.0, 3.0, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Zero', '', '', 1, 'TST', 'FWD',
+                  7.0, 0, 90, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            replace_player_underlying(con, "2026-27", pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 0.25, "xa": 0.0}]), "test", "now")
+            row = buy_board(con, "2026-27", "2026-27", 1, 1)[0]
+        self.assertEqual(row["performance_data_state"], "sufficient")
+        self.assertEqual(row["performance_delta"], 0.0)
+
+    def test_defender_underlying_without_complete_defensive_process_is_partial(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "DEF", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Partial', '', '', 1, 'TST', 'DEF',
+                  5.0, 0, 90, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            replace_player_underlying(con, "2026-27", pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 0.1, "xa": 0.0, "cbit": 6}]), "test", "now")
+            rates = player_underlying_rates(con, "2026-27")
+            row = buy_board(con, "2026-27", "2026-27", 1, 1)[0]
+        self.assertEqual(performance_evidence_state("DEF", rates[1]), "partial")
+        self.assertEqual(row["performance_data_state"], "partial")
+        self.assertIsNone(row["performance_delta"])
 
     def test_history_as_of_prevents_future_leakage(self):
         with connect(":memory:") as con:
@@ -661,6 +722,9 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(status["health_summary"]["received_player_count"], 1)
         self.assertEqual(status["health_summary"]["latest_ingestion_status"], "SUCCESS")
         self.assertEqual(status["health_summary"]["current_season_weight"], 0.25)
+        self.assertEqual(status["health_summary"]["performance_missing_players"], 1)
+        self.assertEqual(status["health_summary"]["performance_partial_players"], 0)
+        self.assertEqual(status["health_summary"]["performance_sufficient_players"], 0)
 
     def test_refresh_all_records_summary_without_tracked_players(self):
         players = pd.DataFrame(
@@ -712,8 +776,10 @@ class ModelTests(unittest.TestCase):
                     "team_code": 1,
                     "element_type": 3,
                     "now_cost": 50,
-                    "total_points": 0,
-                    "minutes": 0,
+                    "total_points": 5,
+                    "minutes": 90,
+                    "expected_goals": "0.1",
+                    "expected_assists": "0.2",
                     "selected_by_percent": 10,
                     "status": "a",
                 }
@@ -733,8 +799,13 @@ class ModelTests(unittest.TestCase):
             result = refresh_all("2026-27", "2026-27", db_path)
             with connect(db_path) as con:
                 gameweek = con.execute("SELECT value FROM app_state WHERE season = '2026-27' AND key = 'current_gameweek'").fetchone()["value"]
+                player_gameweeks = con.execute("SELECT COUNT(*) AS n FROM player_gameweeks WHERE season = '2026-27'").fetchone()["n"]
+                underlying_rows = con.execute("SELECT COUNT(*) AS n FROM player_underlying_gameweeks WHERE season = '2026-27'").fetchone()["n"]
         self.assertEqual(result["gameweek"], 1)
+        self.assertEqual(result["observations"], 1)
         self.assertEqual(gameweek, "1")
+        self.assertEqual(player_gameweeks, 1)
+        self.assertEqual(underlying_rows, 1)
 
     def test_provisional_finished_fixture_counts_as_completed(self):
         fixtures = pd.DataFrame(

@@ -19,7 +19,11 @@ type BoardRow = {
   return_delta: number | null;
   neutral_xppg: number;
   underlying_xppg: number;
-  performance_delta: number;
+  performance_delta: number | null;
+  performance_data_state: "missing" | "partial" | "sufficient";
+  performance_sample_gameweeks?: number;
+  performance_sample_minutes?: number;
+  performance_model_version?: string;
   next_3_xppg: number;
   next_6_xppg: number;
   buy_delta_6: number;
@@ -79,6 +83,9 @@ type DataStatus = {
     processed_fixture_count: number;
     player_underlying_rows: number;
     team_underlying_rows: number;
+    performance_sufficient_players: number;
+    performance_partial_players: number;
+    performance_missing_players: number;
     latest_ingestion_status?: string | null;
     historical_prior_weight: number;
     current_season_weight: number;
@@ -138,6 +145,20 @@ function confidenceLabel(value: number) {
 
 function metric(value: number | null | undefined, digits = 2) {
   return value == null ? "—" : value.toFixed(digits);
+}
+
+function signedMetric(value: number | null | undefined, digits = 2) {
+  return value == null ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
+}
+
+function valueTone(value: number | null | undefined) {
+  if (value == null) return "";
+  return value >= 0 ? "positive" : "negative";
+}
+
+function performanceTitle(row: BoardRow) {
+  if (row.performance_delta == null) return "Not enough underlying performance data yet.";
+  return `${row.performance_data_state} evidence from ${row.performance_sample_gameweeks ?? 0} GW, ${row.performance_sample_minutes ?? 0} minutes.`;
 }
 
 function SortButton({ label, sortKey, active, direction, onSort, title }: { label: string; sortKey: SortKey; active: boolean; direction: "asc" | "desc"; onSort: (key: SortKey) => void; title?: string }) {
@@ -384,7 +405,7 @@ function App() {
                   <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td>
                   <td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td>
                   <td className={row.return_delta == null ? "" : row.return_delta >= 0 ? "positive" : "negative"}>{metric(row.return_delta)}</td>
-                  <td className={row.performance_delta >= 0 ? "positive" : "negative"}>{row.performance_delta >= 0 ? "+" : ""}{row.performance_delta.toFixed(2)}</td>
+                  <td title={performanceTitle(row)} className={valueTone(row.performance_delta)}>{signedMetric(row.performance_delta)}</td>
                   <td className={`delta ${row.forward_delta >= 0 ? "positive" : "negative"}`}>{row.forward_delta >= 0 ? "+" : ""}{row.forward_delta.toFixed(2)}</td>
                   <td>{trackedIds.has(row.player_id) ? <button className="action" onClick={() => untrack(row)}>Untrack</button> : <button className="action" onClick={() => track(row)}>Track</button>}</td>
                   <td><button className="action" onClick={() => viewMarket(row)}>Explore {row.position}</button> <button className="action" onClick={() => removeSquadPlayer(row)}>Remove</button></td>
@@ -433,7 +454,7 @@ function App() {
               {visiblePlayers.map((row) => (
                 <tr key={`player-${row.player_id}`}>
                   <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td><td>{row.team}</td><td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td>
-                  <td className={row.performance_delta >= 0 ? "positive" : "negative"}>{row.performance_delta >= 0 ? "+" : ""}{row.performance_delta.toFixed(2)}</td>
+                  <td title={performanceTitle(row)} className={valueTone(row.performance_delta)}>{signedMetric(row.performance_delta)}</td>
                   <td className={`delta ${row.forward_delta >= 0 ? "positive" : "negative"}`}>{row.forward_delta >= 0 ? "+" : ""}{row.forward_delta.toFixed(2)}</td>
                   <td>{trackedIds.has(row.player_id) ? <button className="action" onClick={() => untrack(row)}>Untrack</button> : <button className="action" onClick={() => track(row)}>Track</button>}</td>
                 </tr>
@@ -449,7 +470,7 @@ function App() {
             <div className="metrics">
               <span>{detail.current.team}</span><span>{detail.current.position}</span><span>£{detail.current.current_price.toFixed(1)}</span>
               <span className={detail.current.return_delta == null ? "" : detail.current.return_delta >= 0 ? "positive" : "negative"}>Return Δ {metric(detail.current.return_delta)}</span>
-              <span className={detail.current.performance_delta >= 0 ? "positive" : "negative"}>Performance Δ {detail.current.performance_delta >= 0 ? "+" : ""}{detail.current.performance_delta.toFixed(2)}</span>
+              <span title={performanceTitle(detail.current)} className={valueTone(detail.current.performance_delta)}>Performance Δ {signedMetric(detail.current.performance_delta)}</span>
               <span className={detail.current.forward_delta >= 0 ? "positive" : "negative"}>Forward Δ {detail.current.forward_delta >= 0 ? "+" : ""}{detail.current.forward_delta.toFixed(2)}</span>
               <span className={detail.current.value_balance == null ? "" : detail.current.value_balance >= 0 ? "positive" : "negative"}>Balance {metric(detail.current.value_balance)}</span>
               <span>Par {detail.current.value_par.toFixed(2)}</span><span>Mean {detail.current.market_mean.toFixed(2)}</span><span>Actual {metric(detail.current.actual_ppg)}</span>
@@ -490,6 +511,10 @@ function App() {
           {dataStatus && <div className="status-grid">
             <div className="overview-item"><span>Season</span><strong>{dataStatus.season}</strong><small>GW {dataStatus.current_gameweek ?? "-"}</small></div>
             <div className="overview-item"><span>Latest Ingest</span><strong>{dataStatus.latest_ingestion_runs[0]?.status ?? "-"}</strong><small>{dataStatus.latest_ingestion_runs[0]?.summary ?? "not run"}</small></div>
+            <div className="overview-item"><span>Performance Sufficient</span><strong>{dataStatus.health_summary.performance_sufficient_players}</strong><small>numeric Performance Δ</small></div>
+            <div className="overview-item"><span>Performance Partial</span><strong>{dataStatus.health_summary.performance_partial_players}</strong><small>held back</small></div>
+            <div className="overview-item"><span>Performance Missing</span><strong>{dataStatus.health_summary.performance_missing_players}</strong><small>shown as —</small></div>
+            <div className="overview-item"><span>Underlying Updated</span><strong>{formatDate(dataStatus.health_summary.advanced_stats_last_updated)}</strong><small>latest process feed</small></div>
             {dataStatus.sources.map((source) => <div className="overview-item" key={source.key}><span>{source.label}</span><strong>{source.rows}</strong><small>{formatDate(source.fetched_at)}</small></div>)}
           </div>}
           <div className="chart-grid">

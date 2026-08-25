@@ -4,6 +4,7 @@ import sqlite3
 
 from backend.models.config import prior_weight_for_gw
 from backend.services.ingestion_runs import latest_health_events, latest_ingestion_runs
+from backend.services.underlying import performance_evidence_state, player_underlying_rates
 
 
 SOURCES = {
@@ -46,6 +47,12 @@ def data_status(con: sqlite3.Connection, season: str) -> dict:
     )
     current_gameweek = int(current_gw["value"]) if current_gw else None
     historical_weight, current_weight = prior_weight_for_gw(current_gameweek or 0)
+    performance_rates = player_underlying_rates(con, season)
+    performance_coverage = {"missing": 0, "partial": 0, "sufficient": 0}
+    player_rows = con.execute("SELECT player_id, position FROM players WHERE season = ?", (season,)).fetchall()
+    for player in player_rows:
+        state = performance_evidence_state(player["position"], performance_rates.get(player["player_id"]))
+        performance_coverage[state] += 1
     return {
         "season": season,
         "current_gameweek": current_gameweek,
@@ -60,6 +67,9 @@ def data_status(con: sqlite3.Connection, season: str) -> dict:
             "processed_fixture_count": by_key["fixtures"]["rows"],
             "player_underlying_rows": by_key["player_underlying_gameweeks"]["rows"],
             "team_underlying_rows": by_key["team_underlying_gameweeks"]["rows"],
+            "performance_sufficient_players": performance_coverage["sufficient"],
+            "performance_partial_players": performance_coverage["partial"],
+            "performance_missing_players": performance_coverage["missing"],
             "latest_ingestion_status": latest_runs[0]["status"] if latest_runs else None,
             "historical_prior_weight": historical_weight,
             "current_season_weight": current_weight,

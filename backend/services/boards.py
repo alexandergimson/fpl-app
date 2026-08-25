@@ -11,7 +11,7 @@ from backend.services.history import player_totals_as_of
 from backend.services.minutes import baseline_minutes_profiles, fallback_minutes_profile, latest_minutes_overrides, minutes_profile
 from backend.services.price_par import blended_par_for, current_curve_points
 from backend.services.roles import ROLE_KEYS, latest_role_overrides
-from backend.services.underlying import attacking_xppg, defcon_xppg, player_underlying_rates
+from backend.services.underlying import PERFORMANCE_MODEL_VERSION, attacking_xppg, defcon_xppg, performance_evidence_state, player_underlying_rates
 from backend.services.valuation import captain_adjusted_delta, player_status, projection_confidence
 
 
@@ -296,6 +296,7 @@ def buy_board(
             neutral_xppg = appearance + attack + defcon + bonus + saves + max(0.0, market_mean - 2.0) * 0.25
         else:
             defcon = 0.0
+        performance_data_state = performance_evidence_state(row["position"], rates)
         role = roles.get(row["player_id"])
         role_boost = role_xppg(row["position"], expected_minutes, role)
         neutral_xppg += role_boost
@@ -310,7 +311,7 @@ def buy_board(
         buy_delta_3 = next_3_xppg - value_par
         buy_delta_6 = next_6_xppg - value_par
         value_balance, return_delta = value_balance_and_return_delta(points, played, value_par, frozen_pars.get(row["player_id"]))
-        performance_delta = neutral_xppg - value_par
+        performance_delta = neutral_xppg - value_par if performance_data_state == "sufficient" else None
         historical_delta = return_delta
         value_trend = buy_delta_6 - previous_deltas.get(row["player_id"], buy_delta_6)
         captain_delta = captain_adjusted_delta(next_6_xppg, value_par, price)
@@ -335,7 +336,11 @@ def buy_board(
                 "buy_delta_6": round(buy_delta_6, 2),
                 "historical_delta": round(historical_delta, 2) if historical_delta is not None else None,
                 "return_delta": round(return_delta, 2) if return_delta is not None else None,
-                "performance_delta": round(performance_delta, 2),
+                "performance_delta": round(performance_delta, 2) if performance_delta is not None else None,
+                "performance_data_state": performance_data_state,
+                "performance_sample_gameweeks": int(rates["underlying_gameweeks"]) if rates else 0,
+                "performance_sample_minutes": int(rates["underlying_minutes"]) if rates else 0,
+                "performance_model_version": PERFORMANCE_MODEL_VERSION,
                 "forward_delta": round(buy_delta_6, 2),
                 "value_trend": round(value_trend, 2),
                 "price_trend": round(price_trends.get(row["player_id"], 0.0) or 0.0, 2),

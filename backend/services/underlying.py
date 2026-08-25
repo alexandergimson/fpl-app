@@ -5,6 +5,7 @@ import sqlite3
 
 GOAL_POINTS = {"GK": 6, "DEF": 6, "MID": 5, "FWD": 4}
 PRIOR_MINUTES = 900
+PERFORMANCE_MODEL_VERSION = "performance_evidence_v1"
 
 
 def regressed_rate(raw: float, minutes: int, prior: float, prior_minutes: int = PRIOR_MINUTES) -> float:
@@ -35,7 +36,8 @@ def player_underlying_rates(con: sqlite3.Connection, season: str, through_gw: in
     }
     rows = con.execute(
         f"""
-        SELECT u.player_id, p.position, SUM(u.minutes) AS minutes, SUM(u.xg) AS xg, SUM(u.xa) AS xa, SUM(u.cbit) AS cbit, SUM(u.cbirt) AS cbirt
+        SELECT u.player_id, p.position, COUNT(DISTINCT u.gameweek) AS gameweeks,
+               SUM(u.minutes) AS minutes, SUM(u.xg) AS xg, SUM(u.xa) AS xa, SUM(u.cbit) AS cbit, SUM(u.cbirt) AS cbirt
         FROM player_underlying_gameweeks u
         JOIN players p ON p.season = u.season AND p.player_id = u.player_id
         WHERE u.season = ? {clause}
@@ -54,9 +56,28 @@ def player_underlying_rates(con: sqlite3.Connection, season: str, through_gw: in
             "xa90": regressed_rate((row["xa"] or 0) / minutes * 90, minutes, prior.get("xa90", 0.0)),
             "cbit90": regressed_rate((row["cbit"] or 0) / minutes * 90, minutes, prior.get("cbit90", 0.0)),
             "cbirt90": regressed_rate((row["cbirt"] or 0) / minutes * 90, minutes, prior.get("cbirt90", 0.0)),
+            "raw_xg": row["xg"] or 0.0,
+            "raw_xa": row["xa"] or 0.0,
+            "raw_cbit": row["cbit"] or 0.0,
+            "raw_cbirt": row["cbirt"] or 0.0,
             "underlying_minutes": minutes,
+            "underlying_gameweeks": row["gameweeks"] or 0,
         }
     return rates
+
+
+def performance_evidence_state(position: str, rates: dict[str, float] | None) -> str:
+    if not rates or rates.get("underlying_minutes", 0) <= 0 or rates.get("underlying_gameweeks", 0) <= 0:
+        return "missing"
+    has_attack = rates.get("raw_xg", 0) > 0 or rates.get("raw_xa", 0) > 0
+    has_defcon = rates.get("raw_cbit", 0) > 0 or rates.get("raw_cbirt", 0) > 0
+    if position == "GK":
+        return "missing"
+    if position in {"MID", "FWD"}:
+        return "sufficient" if has_attack else "partial"
+    if position == "DEF":
+        return "partial" if has_attack or has_defcon else "missing"
+    return "missing"
 
 
 def attacking_xppg(position: str, expected_minutes: float, xg90: float, xa90: float) -> float:

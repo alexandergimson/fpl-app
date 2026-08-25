@@ -29,6 +29,7 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
         dataset = provider.bootstrap(season)
         fixtures = provider.fixtures(season)
         gameweek = max(int(dataset.frame.attrs.get("current_gameweek", 0) or 0), latest_finished_fixture_gameweek(fixtures))
+        dataset.frame.attrs["current_gameweek"] = gameweek
         with connect(db_path) if db_path else connect() as con:
             players = upsert_players(con, season, dataset.frame, dataset.source, dataset.fetched_at)
             prices = snapshot_prices(con, season, dataset.frame, dataset.source, dataset.fetched_at)
