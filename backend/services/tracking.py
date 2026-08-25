@@ -10,7 +10,7 @@ from backend.services.team_strength import TEAM_STRENGTH_VERSION
 MODEL_VERSION = "v1"
 COMPONENT_VERSIONS = {
     "data": "fpl_canonical_v1",
-    "minutes": "minutes_baseline_v1",
+    "minutes": "minutes_hurdle_v1",
     "par": "par_iso_v1",
     "projection": "component_projection_v1",
     "role": "role_overrides_v1",

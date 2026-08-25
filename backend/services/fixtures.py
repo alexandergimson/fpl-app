@@ -83,10 +83,10 @@ def clean_sheet_points(position: str) -> int:
     return 4 if position in {"GK", "DEF"} else 1 if position == "MID" else 0
 
 
-def clean_sheet_horizon_ev(expected_goals: list[float], position: str, expected_minutes: float, horizon: int) -> float:
+def clean_sheet_horizon_ev(expected_goals: list[float], position: str, expected_minutes: float, horizon: int, p60: float | None = None) -> float:
     points = clean_sheet_points(position)
     if not points:
         return 0.0
-    probability_of_60 = max(0.0, min(1.0, expected_minutes / 60))
+    probability_of_60 = max(0.0, min(1.0, expected_minutes / 60)) if p60 is None else max(0.0, min(1.0, p60))
     padded = expected_goals + [1.35] * max(0, horizon - len(expected_goals))
     return sum(clean_sheet_ev(xg, points, probability_of_60) for xg in padded[:horizon]) / horizon

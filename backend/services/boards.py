@@ -8,7 +8,7 @@ from backend.services.bonus import bonus_rates, bonus_xppg
 from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, upcoming_expected_opponent_goals, upcoming_fixture_factors
 from backend.services.goalkeepers import save_rates, save_xppg
 from backend.services.history import player_totals_as_of
-from backend.services.minutes import latest_minutes_overrides
+from backend.services.minutes import baseline_minutes_profiles, fallback_minutes_profile, latest_minutes_overrides, minutes_profile
 from backend.services.price_par import blended_par_for, current_curve_points
 from backend.services.roles import ROLE_KEYS, latest_role_overrides
 from backend.services.underlying import attacking_xppg, defcon_xppg, player_underlying_rates
@@ -222,6 +222,7 @@ def buy_board(
     denominator = gameweeks_played or as_of_gw or infer_gameweeks(rows, season, par_season)
     completed_by_team = team_completed_fixtures(con, season, as_of_gw)
     frozen_pars = frozen_par_summary(con, season, as_of_gw)
+    baseline_minutes = baseline_minutes_profiles(con, season, denominator, as_of_gw)
     actual_fallback = denominator if season < par_season and not completed_by_team else None
     previous_deltas = {
         row["player_id"]: row["buy_delta"]
@@ -271,12 +272,19 @@ def buy_board(
         )
         actual = actual_ppg(points, row["team_id"], completed_by_team, actual_fallback)
         played = completed_by_team.get(row["team_id"]) if row["team_id"] is not None else actual_fallback
-        minutes_confidence = min(1.0, minutes / max(1, denominator * 90))
+        minute_profile = baseline_minutes.get(row["player_id"]) or fallback_minutes_profile(minutes, denominator)
+        minutes_confidence = min(1.0, minute_profile["expected_minutes"] / 60)
         neutral_xppg = market_mean * (0.35 + 0.65 * minutes_confidence)
-        expected_minutes = minutes / max(1, denominator)
+        expected_minutes = minute_profile["expected_minutes"]
         override = overrides.get(row["player_id"])
         if override:
-            expected_minutes = override["expected_minutes"]
+            minute_profile = minutes_profile(
+                override["start_probability"],
+                override["expected_minutes_if_starting"],
+                override["substitute_probability"],
+                override["expected_minutes_if_sub"],
+            )
+            expected_minutes = minute_profile["expected_minutes"]
             minutes_confidence = max(minutes_confidence, 0.75)
         rates = underlying.get(row["player_id"])
         bonus = bonus_xppg(expected_minutes, bonus90_by_player.get(row["player_id"], 0.0))
@@ -293,9 +301,9 @@ def buy_board(
         neutral_xppg += role_boost
         fixture_factors = upcoming_fixture_factors(con, season, row["team_id"], 6)
         opponent_goals = upcoming_expected_opponent_goals(con, season, row["team_id"], 6)
-        neutral_clean_sheet = clean_sheet_horizon_ev([], row["position"], expected_minutes, 1)
-        clean_sheet_3 = clean_sheet_horizon_ev(opponent_goals, row["position"], expected_minutes, 3)
-        clean_sheet_6 = clean_sheet_horizon_ev(opponent_goals, row["position"], expected_minutes, 6)
+        neutral_clean_sheet = clean_sheet_horizon_ev([], row["position"], expected_minutes, 1, minute_profile["probability_of_60"])
+        clean_sheet_3 = clean_sheet_horizon_ev(opponent_goals, row["position"], expected_minutes, 3, minute_profile["probability_of_60"])
+        clean_sheet_6 = clean_sheet_horizon_ev(opponent_goals, row["position"], expected_minutes, 6, minute_profile["probability_of_60"])
         open_play_xppg = max(0.0, neutral_xppg - neutral_clean_sheet)
         next_3_xppg = adjusted_horizon_ppg(open_play_xppg, fixture_factors, 3) + clean_sheet_3
         next_6_xppg = adjusted_horizon_ppg(open_play_xppg, fixture_factors, 6) + clean_sheet_6
@@ -347,7 +355,7 @@ def buy_board(
                 "expected_opponent_goals_6": round(sum((opponent_goals + [1.35] * 6)[:6]) / 6, 2),
                 "role_override_reason": role["reason"] if role else None,
                 **{key: role[key] if role else 0 for key in ROLE_KEYS},
-                "start_probability": round(override["start_probability"] if override else min(1.0, minutes / max(1, denominator * 60)), 2),
+                "start_probability": round(minute_profile["start_probability"], 2),
                 "minutes_confidence": "HIGH" if minutes_confidence >= 0.75 else "MEDIUM" if minutes_confidence >= 0.5 else "LOW",
                 "minutes_override_reason": override["reason"] if override else None,
                 "fixture_factor_3": round(sum((fixture_factors + [1.0, 1.0, 1.0])[:3]) / 3, 2),

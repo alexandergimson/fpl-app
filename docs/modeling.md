@@ -93,7 +93,7 @@ This is not pretending to be a finished predictive model; it gives the API/UI a 
 
 Player detail includes a v1 projection breakdown. It decomposes the current `next_6_xppg` into appearance, attacking, clean-sheet, bonus/other and fixture adjustment using fields already in the board row. This is explainability scaffolding, not a substitute for xG/xA/DefCon ingestion.
 
-Manual minutes overrides set start probability, expected starter minutes, substitute probability and substitute minutes. Boards use the latest override for projection minutes and player detail keeps the override history visible.
+Minutes use a hurdle profile: start probability, expected minutes if starting, substitute probability, substitute minutes and P(60+). Boards estimate that profile from player Gameweek starts/sub appearances when available, fall back to total minutes when not, and let manual overrides replace the profile. Player detail keeps the override history visible.
 
 ## Underlying Player Data
 
@@ -149,7 +149,7 @@ Manual role overrides can mark penalties, direct free kicks, corners and indirec
 
 ## Projection Confidence
 
-Projection confidence combines minutes security, available underlying-data sample, role stability and FPL availability status. It still deliberately stays simple; injury/detail uncertainty can replace the coarse status factor when richer data is available.
+Projection confidence combines hurdle-profile minutes security, available underlying-data sample, role stability and FPL availability status. It still deliberately stays simple; injury/detail uncertainty can replace the coarse status factor when richer data is available.
 
 ## Tracking Momentum
 

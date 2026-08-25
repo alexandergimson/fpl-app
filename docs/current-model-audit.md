@@ -31,7 +31,7 @@
 
 ## Known Limitations
 
-- Frozen Pars are populated from completed team fixtures, so DNPs are included even when no `player_gameweeks` row exists.
+- Frozen Pars are populated from completed team FPL Gameweeks, so DNPs are included even when no `player_gameweeks` row exists.
 - If frozen Pars are missing for a player/team fixture set, realised Value Balance and Return Delta stay null instead of falling back to today's Value Par.
 - Underlying xPPG is still the v1 deterministic blend, not the later empirical-Bayes player ability model.
 - Clean-sheet, bonus and save process EVs are zero in `game_underlying_xpts` until a provider supplies expected process inputs.

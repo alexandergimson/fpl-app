@@ -12,6 +12,10 @@ def expected_minutes(
     return start_probability * expected_minutes_if_starting + substitute_probability * expected_minutes_if_sub
 
 
+def probability_of_60(start_probability: float, expected_minutes_if_starting: float) -> float:
+    return start_probability if expected_minutes_if_starting >= 60 else 0.0
+
+
 def clean_sheet_ev(expected_opponent_goals: float, points: int, probability_of_60: float) -> float:
     return exp(-expected_opponent_goals) * points * probability_of_60
 

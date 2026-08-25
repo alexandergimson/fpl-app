@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from backend.models.price_par import ParPoint, interpolate, pava
 from backend.models.config import prior_weight_for_gw
-from backend.models.projections import clean_sheet_ev, defcon_ev, expected_minutes, role_xppg
+from backend.models.projections import clean_sheet_ev, defcon_ev, expected_minutes, probability_of_60, role_xppg
 from backend.models.projections import projection_breakdown
 import pandas as pd
 from backend.ingestion.providers import Dataset
@@ -69,6 +69,8 @@ class ModelTests(unittest.TestCase):
 
     def test_expected_minutes(self):
         self.assertAlmostEqual(expected_minutes(0.8, 75, 0.15, 20), 63)
+        self.assertEqual(probability_of_60(0.8, 59), 0.0)
+        self.assertEqual(probability_of_60(0.8, 60), 0.8)
 
     def test_role_xppg(self):
         role = {"penalties": 1, "direct_free_kicks": 0, "corners": 1, "indirect_free_kicks": 0}
@@ -773,7 +775,7 @@ class ModelTests(unittest.TestCase):
             process = con.execute("SELECT goal_ev, assist_ev, defcon_ev, game_underlying_xpts FROM game_underlying_xpts").fetchone()
             rates = player_underlying_rates(con, "2026-27")
             bonus = bonus_rates(con, "2026-27")
-            row = buy_board(con, "2026-27", "2026-27", 10, 1)[0]
+            row = buy_board(con, "2026-27", "2026-27", 1, 1)[0]
         self.assertEqual(count, 1)
         self.assertEqual(round(attacking_xppg("FWD", 90, 1, 0.5), 2), 5.5)
         self.assertEqual(dict(process), {"goal_ev": 4.0, "assist_ev": 1.5, "defcon_ev": 2.0, "game_underlying_xpts": 9.5})
@@ -1043,6 +1045,37 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(round(overrides[1]["expected_minutes"], 1), 74.0)
         self.assertGreater(after["expected_minutes"], before["expected_minutes"])
         self.assertEqual(after["minutes_override_reason"], "starter injured")
+
+    def test_board_minutes_use_start_sub_hurdle_profile(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "DEF", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Hurdle', '', '', 1, 'TST', 'DEF',
+                  5.0, 5, 90, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2026-27', 1, 1, 1, 2, 1, 3, 70, 1, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'test', 'now', 'test'),
+                ('2026-27', 1, 2, 2, 2, 1, 2, 20, 0, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'test', 'now', 'test')
+                """
+            )
+            row = buy_board(con, "2026-27", "2026-27", 2, 1)[0]
+        self.assertEqual(row["expected_minutes"], 45.0)
+        self.assertEqual(row["start_probability"], 0.5)
+        self.assertLess(row["clean_sheet_xppg_6"], clean_sheet_horizon_ev([], "DEF", 45, 6))
 
 
 if __name__ == "__main__":
