@@ -471,18 +471,16 @@ def upsert_fpl_bootstrap_gameweek_observations(con: sqlite3.Connection, season: 
         gw_bps = bps - (prev["bps"] if prev else 0)
         gw_xg = xg - (prev["xg"] if prev else 0.0)
         gw_xa = xa - (prev["xa"] if prev else 0.0)
+        previous_counts = con.execute(
+            "SELECT SUM(starts) AS starts, SUM(saves) AS saves, SUM(bonus) AS bonus FROM player_gameweeks WHERE season = ? AND source = ? AND player_id = ? AND gameweek < ?",
+            (season, source, player_id, gameweek),
+        ).fetchone()
         if "starts" in data and pd.notna(data.get("starts")):
-            previous_counts = con.execute(
-                "SELECT SUM(starts) AS starts, SUM(saves) AS saves, SUM(bonus) AS bonus FROM player_gameweeks WHERE season = ? AND source = ? AND player_id = ? AND gameweek < ?",
-                (season, source, player_id, gameweek),
-            ).fetchone()
             gw_starts = max(0, int(data.get("starts") or 0) - (previous_counts["starts"] or 0))
-            gw_saves = max(0, int(data.get("saves") or 0) - (previous_counts["saves"] or 0))
-            gw_bonus = max(0, int(data.get("bonus") or 0) - (previous_counts["bonus"] or 0))
         else:
             gw_starts = 0
-            gw_saves = 0
-        gw_bonus = 0
+        gw_saves = max(0, int(data.get("saves") or 0) - (previous_counts["saves"] or 0))
+        gw_bonus = max(0, int(data.get("bonus") or 0) - (previous_counts["bonus"] or 0))
         if gw_points < 0 or gw_minutes < 0 or gw_bps < 0 or gw_xg < -0.0001 or gw_xa < -0.0001:
             continue
         if not any((gw_points, gw_minutes, gw_starts, gw_saves, gw_bonus, gw_bps)) and abs(gw_xg) < 0.0001 and abs(gw_xa) < 0.0001:

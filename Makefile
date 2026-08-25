@@ -1,7 +1,7 @@
 PYTHON ?= python3
 CSV ?=
 
-.PHONY: setup init-db ingest price-par backtest test dev refresh
+.PHONY: setup init-db ingest price-par backtest test dev refresh snapshot-current
 
 setup:
 	$(PYTHON) -m venv .venv
@@ -30,6 +30,9 @@ backtest:
 
 snapshot-tracked:
 	$(PYTHON) -m scripts.snapshot_tracked
+
+snapshot-current:
+	$(PYTHON) -m scripts.snapshot_current_predictions
 
 generate-alerts:
 	$(PYTHON) -m scripts.generate_alerts

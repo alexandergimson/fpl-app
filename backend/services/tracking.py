@@ -127,6 +127,23 @@ def create_model_run(con: sqlite3.Connection, season: str, gameweek: int, model_
     return int(cursor.lastrowid)
 
 
+def snapshot_current_predictions(con: sqlite3.Connection, season: str, par_season: str = "2026-27", gameweek: int | None = None) -> int:
+    gw = gameweek if gameweek is not None else current_gameweek(con, season)
+    rows = buy_board(con, season, par_season, None, 2000)
+    data_cutoff = con.execute("SELECT MAX(fetched_at) AS fetched_at FROM players WHERE season = ?", (season,)).fetchone()["fetched_at"]
+    model_run_id = create_model_run(con, season, gw, MODEL_VERSION, json.dumps(COMPONENT_VERSIONS, sort_keys=True), data_cutoff)
+    con.executemany(
+        """
+        INSERT INTO current_prediction_snapshots (
+          model_run_id, season, gameweek, player_id, prediction_json
+        ) VALUES (?, ?, ?, ?, ?)
+        """,
+        [(model_run_id, season, gw, row["player_id"], json.dumps(row, sort_keys=True)) for row in rows],
+    )
+    con.commit()
+    return len(rows)
+
+
 def tracked_snapshots(con: sqlite3.Connection, season: str, player_id: int) -> list[dict]:
     rows = con.execute(
         """

@@ -178,6 +178,7 @@ class UnderstatProvider:
         return Dataset(pd.DataFrame(rows), source, fetched_at, season)
 
     def player_underlying(self, season: str, teams: pd.DataFrame, fixtures: pd.DataFrame) -> Dataset:
+        """Research-only season-cumulative player feed; production refresh must not call this."""
         payload, source, fetched_at = self._json(season)
         fixtures_by_date = {str(row.get("kickoff_time", ""))[:10]: int(row["event"]) for row in fixtures.to_dict("records") if pd.notna(row.get("event")) and row.get("kickoff_time")}
         result_dates = [str(match.get("datetime", ""))[:10] for match in payload.get("dates", []) if match.get("isResult")]

@@ -20,7 +20,7 @@ from backend.data.db import connect
 from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, home_away_goal_multipliers, next_gameweek_fixture_projections, upcoming_expected_opponent_goals, upcoming_fixture_factors
 from backend.services.history import future_frozen_par, future_points, player_totals_as_of
 from backend.backtests.metrics import evaluate_model, evaluate_rows, mae, ranks, rmse, spearman
-from backend.services.tracking import snapshot_tracked, track_player, tracked_momentum, tracked_players, tracked_snapshots, tracking_status, untrack_player
+from backend.services.tracking import snapshot_current_predictions, snapshot_tracked, track_player, tracked_momentum, tracked_players, tracked_snapshots, tracking_status, untrack_player
 from backend.services.squad import import_public_squad, remove_squad_player, squad_analysis, squad_health, upsert_squad_player
 from backend.services.status import data_status
 from backend.services.ingestion_runs import add_health_event, finish_ingestion_run, start_ingestion_run
@@ -206,6 +206,70 @@ class ModelTests(unittest.TestCase):
             )
             rates = bonus_rates(con, "2026-27")
         self.assertGreater(rates[1], 0)
+
+    def test_actual_bonus_does_not_drive_bonus_process(self):
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO players VALUES
+                ('2026-27', 1, NULL, 'Same BPS', '', '', 1, 'TST', 'MID', 5.0, 0, 90, 0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 2, NULL, 'Same BPS Bonus', '', '', 1, 'TST', 'MID', 5.0, 0, 90, 0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 3, NULL, 'More BPS', '', '', 1, 'TST', 'MID', 5.0, 0, 90, 0, 'a', 'test', 'now', 'test')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2026-27', 1, 1, 1, 2, 1, 2, 90, 1, 0, 0, 0, 0, 0, 0, 30, NULL, NULL, NULL, 5.0, 'test', 'now', 'test'),
+                ('2026-27', 2, 1, 1, 2, 1, 5, 90, 1, 0, 0, 0, 0, 0, 3, 30, NULL, NULL, NULL, 5.0, 'test', 'now', 'test'),
+                ('2026-27', 3, 1, 1, 2, 1, 5, 90, 1, 0, 0, 0, 0, 0, 0, 60, NULL, NULL, NULL, 5.0, 'test', 'now', 'test')
+                """
+            )
+            rates = bonus_rates(con, "2026-27")
+        self.assertEqual(round(rates[1], 4), round(rates[2], 4))
+        self.assertGreater(rates[3], rates[1])
+
+    def test_actual_bonus_does_not_change_performance_delta(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute("INSERT INTO fixtures VALUES ('2026-27', 1, 1, '', 1, 2, 3, 3, 1, 'test', 'now', 'test')")
+            con.execute(
+                """
+                INSERT INTO players VALUES
+                ('2026-27', 1, NULL, 'NoBonus', '', '', 1, 'TST', 'MID', 5.0, 2, 90, 0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 2, NULL, 'ActualBonus', '', '', 1, 'TST', 'MID', 5.0, 5, 90, 0, 'a', 'test', 'now', 'test')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2026-27', 1, 1, 1, 2, 1, 2, 90, 1, 0, 0, 0, 0, 0, 0, 30, NULL, NULL, NULL, 5.0, 'test', 'now', 'test'),
+                ('2026-27', 2, 1, 1, 2, 1, 5, 90, 1, 0, 0, 0, 0, 0, 3, 30, NULL, NULL, NULL, 5.0, 'test', 'now', 'test')
+                """
+            )
+            replace_player_underlying(
+                con,
+                "2026-27",
+                pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 0.2, "xa": 0.1}, {"player_id": 2, "gameweek": 1, "minutes": 90, "xg": 0.2, "xa": 0.1}]),
+                "test",
+                "now",
+            )
+            rows = {row["player"]: row for row in buy_board(con, "2026-27", "2026-27", 1, 10)}
+        self.assertEqual(rows["NoBonus"]["bonus_xppg"], rows["ActualBonus"]["bonus_xppg"])
+        self.assertEqual(rows["NoBonus"]["performance_delta"], rows["ActualBonus"]["performance_delta"])
 
     def test_save_xppg_only_applies_to_goalkeepers(self):
         self.assertEqual(save_xppg("GK", 90, 3), 1)
@@ -946,6 +1010,28 @@ class ModelTests(unittest.TestCase):
             untrack_player(con, "2026-27", 1)
             self.assertEqual(tracked_players(con, "2026-27"), [])
 
+    def test_current_prediction_snapshot_freezes_all_board_rows(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Freeze', '', '', 1, 'TST', 'MID',
+                  5.0, 38, 3420, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            count = snapshot_current_predictions(con, "2026-27", gameweek=1)
+            snapshot = con.execute("SELECT * FROM current_prediction_snapshots").fetchone()
+            run = con.execute("SELECT * FROM model_runs").fetchone()
+        self.assertEqual(count, 1)
+        self.assertEqual(snapshot["model_run_id"], run["id"])
+        self.assertEqual(json.loads(snapshot["prediction_json"])["player"], "Freeze")
+        self.assertEqual(run["model_version"], "baseline_v3")
+
     def test_tracked_momentum_uses_latest_two_snapshots(self):
         with connect(":memory:") as con:
             con.execute(
@@ -1433,14 +1519,14 @@ class ModelTests(unittest.TestCase):
                 )
                 """
             )
-            for gameweek, xg, xa, bps, starts in [(1, "0.4", "0.2", 30, 1), (2, "0.8", "0.5", 54, 2), (3, "1.1", "0.6", 60, 2)]:
-                frame = pd.DataFrame([{"id": 42, "now_cost": 50, "total_points": gameweek, "minutes": gameweek * 90, "starts": starts, "bps": bps, "selected_by_percent": 10, "expected_goals": xg, "expected_assists": xa}])
+            for gameweek, xg, xa, bps, starts, bonus in [(1, "0.4", "0.2", 30, 1, 2), (2, "0.8", "0.5", 54, 2, 5), (3, "1.1", "0.6", 60, 2, 5)]:
+                frame = pd.DataFrame([{"id": 42, "now_cost": 50, "total_points": gameweek, "minutes": gameweek * 90, "starts": starts, "bonus": bonus, "bps": bps, "selected_by_percent": 10, "expected_goals": xg, "expected_assists": xa}])
                 frame.attrs["current_gameweek"] = gameweek
                 upsert_fpl_bootstrap_gameweek_observations(con, "2026-27", frame, f"gw{gameweek}")
             rows = con.execute("SELECT gameweek, xg, xa FROM player_underlying_gameweeks ORDER BY gameweek").fetchall()
-            gameweeks = con.execute("SELECT gameweek, minutes, starts, bps FROM player_gameweeks ORDER BY gameweek").fetchall()
+            gameweeks = con.execute("SELECT gameweek, minutes, starts, bonus, bps FROM player_gameweeks ORDER BY gameweek").fetchall()
         self.assertEqual([dict(row) for row in rows], [{"gameweek": 1, "xg": 0.4, "xa": 0.2}, {"gameweek": 2, "xg": 0.4, "xa": 0.3}, {"gameweek": 3, "xg": 0.3, "xa": 0.1}])
-        self.assertEqual([dict(row) for row in gameweeks], [{"gameweek": 1, "minutes": 90, "starts": 1, "bps": 30}, {"gameweek": 2, "minutes": 90, "starts": 1, "bps": 24}, {"gameweek": 3, "minutes": 90, "starts": 0, "bps": 6}])
+        self.assertEqual([dict(row) for row in gameweeks], [{"gameweek": 1, "minutes": 90, "starts": 1, "bonus": 2, "bps": 30}, {"gameweek": 2, "minutes": 90, "starts": 1, "bonus": 3, "bps": 24}, {"gameweek": 3, "minutes": 90, "starts": 0, "bonus": 0, "bps": 6}])
 
     def test_fpl_bootstrap_uses_official_starts_under_60_minutes(self):
         players = pd.DataFrame([{"id": 42, "now_cost": 50, "total_points": 1, "minutes": 55, "starts": 1, "selected_by_percent": 10, "expected_goals": "0", "expected_assists": "0"}])

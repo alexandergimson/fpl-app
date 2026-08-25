@@ -241,6 +241,16 @@ CREATE TABLE IF NOT EXISTS model_runs (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS current_prediction_snapshots (
+  model_run_id INTEGER NOT NULL,
+  season TEXT NOT NULL,
+  gameweek INTEGER NOT NULL,
+  player_id INTEGER NOT NULL,
+  prediction_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (model_run_id, player_id)
+);
+
 CREATE TABLE IF NOT EXISTS frozen_player_gameweek_par (
   season TEXT NOT NULL,
   player_id INTEGER NOT NULL,
