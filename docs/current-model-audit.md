@@ -26,8 +26,9 @@
 - `frozen_player_gameweek_par` stores immutable historical Par rows by player and FPL Gameweek; `fixture_id = 0` is the canonical gameweek-level row.
 - `player_cumulative_observations` stores FPL bootstrap cumulative totals so current-season xG/xA can be differenced safely.
 - `game_underlying_xpts` stores derived provider-neutral process components from raw underlying rows.
-- `tracked_snapshots` stores Return Delta, Performance Delta, Forward Delta compatibility value, Value Balance, projections, model version and component-version provenance.
-- Most tables already carry `source`, `fetched_at` and `data_period`; richer model-run IDs remain future work.
+- `model_runs` stores model version, component versions and data cutoff for saved prediction batches.
+- `tracked_snapshots` stores Return Delta, Performance Delta, Forward Delta compatibility value, Value Balance, projections and a `model_run_id` back to the model state that generated them.
+- Most tables already carry `source`, `fetched_at` and `data_period`.
 
 ## Known Limitations
 

@@ -52,21 +52,35 @@ def snapshot_tracked(con: sqlite3.Connection, season: str, par_season: str = "20
     if not con.execute("SELECT 1 FROM tracked_players WHERE season = ? LIMIT 1", (season,)).fetchone():
         return 0
     rows = tracked_players(con, season, par_season)
+    existing = {
+        row["player_id"]
+        for row in con.execute(
+            "SELECT player_id FROM tracked_snapshots WHERE season = ? AND gameweek = ?",
+            (season, gw),
+        )
+    }
+    rows_to_insert = [row for row in rows if row["player_id"] not in existing]
+    data_cutoff = con.execute("SELECT MAX(fetched_at) AS fetched_at FROM players WHERE season = ?", (season,)).fetchone()["fetched_at"]
+    component_versions = json.dumps(COMPONENT_VERSIONS, sort_keys=True)
+    model_run_id = None
+    if rows_to_insert:
+        model_run_id = create_model_run(con, season, gw, MODEL_VERSION, component_versions, data_cutoff)
     con.executemany(
         """
         INSERT OR IGNORE INTO tracked_snapshots (
-          season, player_id, gameweek, price, market_mean, value_par,
+          season, player_id, gameweek, model_run_id, price, market_mean, value_par,
           value_balance, return_delta, performance_delta,
           actual_ppg, neutral_xppg, next_3_xppg, next_6_xppg, buy_delta,
           ownership, start_probability, expected_minutes, projection_confidence,
           fixture_factor_6, xg90, xa90, model_version, component_versions, data_cutoff, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
                 season,
                 row["player_id"],
                 gw,
+                model_run_id,
                 row["current_price"],
                 row["market_mean"],
                 row["value_par"],
@@ -86,11 +100,11 @@ def snapshot_tracked(con: sqlite3.Connection, season: str, par_season: str = "20
                 row["xg90"],
                 row["xa90"],
                 MODEL_VERSION,
-                json.dumps(COMPONENT_VERSIONS, sort_keys=True),
-                con.execute("SELECT MAX(fetched_at) AS fetched_at FROM players WHERE season = ?", (season,)).fetchone()["fetched_at"],
+                component_versions,
+                data_cutoff,
                 row["status"],
             )
-            for row in rows
+            for row in rows_to_insert
         ],
     )
     con.commit()
@@ -98,6 +112,17 @@ def snapshot_tracked(con: sqlite3.Connection, season: str, par_season: str = "20
         "SELECT COUNT(*) AS n FROM tracked_snapshots WHERE season = ? AND gameweek = ?",
         (season, gw),
     ).fetchone()["n"]
+
+
+def create_model_run(con: sqlite3.Connection, season: str, gameweek: int, model_version: str, component_versions: str, data_cutoff: str | None) -> int:
+    cursor = con.execute(
+        """
+        INSERT INTO model_runs (season, gameweek, model_version, component_versions, data_cutoff)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (season, gameweek, model_version, component_versions, data_cutoff),
+    )
+    return int(cursor.lastrowid)
 
 
 def tracked_snapshots(con: sqlite3.Connection, season: str, player_id: int) -> list[dict]:

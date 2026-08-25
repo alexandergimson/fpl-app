@@ -60,7 +60,7 @@ type PlayerDetail = {
   recent_gameweeks: { gameweek: number; total_points: number; minutes: number; value: number }[];
   minutes_history: { start_probability: number; expected_minutes_if_starting: number; substitute_probability: number; expected_minutes_if_sub: number; reason: string; created_at: string }[];
   role_history: { penalties: number; direct_free_kicks: number; corners: number; indirect_free_kicks: number; reason: string; created_at: string }[];
-  tracked_snapshots: { gameweek: number; buy_delta: number; price: number; return_delta?: number | null; performance_delta?: number | null; forward_delta?: number | null; value_balance?: number | null }[];
+  tracked_snapshots: { gameweek: number; model_run_id?: number | null; buy_delta: number; price: number; return_delta?: number | null; performance_delta?: number | null; forward_delta?: number | null; value_balance?: number | null }[];
 };
 
 type Alert = { id: number; kind: string; message: string; created_at: string };

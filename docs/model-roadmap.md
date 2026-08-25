@@ -15,10 +15,11 @@
 - Underlying attacking and DefCon rates are shrunk toward position averages with a deterministic 900-minute prior; bonus and save rates use the same baseline pattern.
 - Team strength uses rolling team xG/xGA shrunk toward league average, with FPL fixture difficulty as the no-data fallback.
 - Minutes use a hurdle profile: start probability, conditional starter minutes, substitute probability, substitute minutes and P(60+).
+- Model runs are recorded for saved prediction batches, and tracked snapshots link back to the run that generated them.
 
 ## Next Phases
 
-1. Add formal model-run IDs when multiple trained/challenger models exist.
+1. Add calibrated challenger models only when they can beat the deterministic baseline in walk-forward backtests.
 
 ## Promotion Rule
 

@@ -153,7 +153,7 @@ Projection confidence combines hurdle-profile minutes security, available underl
 
 ## Tracking Momentum
 
-Tracked-player momentum is `latest snapshot buy_delta - previous snapshot buy_delta`, where `buy_delta` stores the Forward Delta compatibility value. Snapshots also store Return Delta, Performance Delta and Value Balance.
+Tracked-player momentum is `latest snapshot buy_delta - previous snapshot buy_delta`, where `buy_delta` stores the Forward Delta compatibility value. Snapshots also store Return Delta, Performance Delta, Value Balance and a model run ID that points to the component versions and data cutoff used for that saved prediction batch.
 
 Alerts are generated from tracked snapshots and deduped by season, player, gameweek and alert kind. Current v1 alerts focus on large buy-delta movement and price movement.
 
