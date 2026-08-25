@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 from backend.models.config import prior_weight_for_gw
-from backend.services.goalkeepers import save_rates
+from backend.services.goalkeepers import observed_save_rates
 from backend.services.ingestion_runs import latest_health_events, latest_ingestion_runs
 from backend.services.underlying import performance_evidence_state, player_underlying_rates, team_defensive_xga
 
@@ -50,7 +50,7 @@ def data_status(con: sqlite3.Connection, season: str) -> dict:
     historical_weight, current_weight = prior_weight_for_gw(current_gameweek or 0)
     performance_rates = player_underlying_rates(con, season)
     team_xga = team_defensive_xga(con, season)
-    saves = save_rates(con, season)
+    saves = observed_save_rates(con, season)
     performance_coverage = {"missing": 0, "partial": 0, "sufficient": 0}
     position_coverage = {position: {"missing": 0, "partial": 0, "sufficient": 0} for position in ("GK", "DEF", "MID", "FWD")}
     player_rows = con.execute("SELECT player_id, team_id, position FROM players WHERE season = ?", (season,)).fetchall()

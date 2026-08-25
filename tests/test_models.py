@@ -14,7 +14,7 @@ from backend.jobs.refresh import refresh_all
 from backend.services.valuation import captain_adjusted_delta, captaincy_weight, player_status, projection_confidence, selling_price
 from backend.services.boards import breakout_board, buy_board, freeze_player_gameweek_pars, infer_gameweeks, trap_board, value_balance_and_return_delta
 from backend.services.bonus import bonus_rates, bonus_xppg
-from backend.services.goalkeepers import save_rates, save_xppg
+from backend.services.goalkeepers import observed_save_rates, save_rates, save_xppg
 from backend.data.db import connect
 from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, upcoming_expected_opponent_goals, upcoming_fixture_factors
 from backend.services.history import future_frozen_par, future_points, player_totals_as_of
@@ -30,7 +30,7 @@ from backend.services.roles import add_role_override, latest_role_overrides, rol
 from backend.ingestion.loaders import replace_fixtures, replace_fpl_player_underlying, replace_player_underlying, upsert_fpl_bootstrap_gameweek_observations
 from backend.ingestion.loaders import replace_team_underlying, snapshot_prices
 from backend.services.prices import price_movements
-from backend.services.underlying import attacking_xppg, defcon_xppg, performance_evidence_state, player_underlying_rates, regressed_rate, underlying_xpts_components
+from backend.services.underlying import attacking_xppg, defcon_xppg, performance_evidence_state, player_underlying_rates, regressed_rate, team_defensive_xga, underlying_xpts_components
 from backend.services.team_strength import shrink_rate, team_strengths
 from backend.services.price_par import blended_par_for, current_curve_points
 
@@ -95,8 +95,66 @@ class ModelTests(unittest.TestCase):
     def test_regressed_rate_shrinks_to_prior(self):
         self.assertEqual(regressed_rate(1.0, 900, 0.5), 0.75)
 
+    def test_player_history_prior_beats_position_prior(self):
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO players VALUES
+                ('2025-26', 11, 1001, 'High Old', '', '', 1, 'OLD', 'FWD', 6.0, 0, 900, 0, 'a', 'test', 'now', 'test'),
+                ('2025-26', 12, 1002, 'Low Old', '', '', 1, 'OLD', 'FWD', 6.0, 0, 900, 0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 1, 1001, 'High New', '', '', 1, 'NEW', 'FWD', 6.0, 0, 90, 0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 2, 1002, 'Low New', '', '', 1, 'NEW', 'FWD', 6.0, 0, 90, 0, 'a', 'test', 'now', 'test')
+                """
+            )
+            replace_player_underlying(con, "2025-26", pd.DataFrame([{"player_id": 11, "gameweek": 1, "minutes": 900, "xg": 10.0, "xa": 0.0}, {"player_id": 12, "gameweek": 1, "minutes": 900, "xg": 0.0, "xa": 0.0}]), "test", "now")
+            replace_player_underlying(con, "2026-27", pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 0.0, "xa": 0.0}, {"player_id": 2, "gameweek": 1, "minutes": 90, "xg": 0.0, "xa": 0.0}]), "test", "now")
+            rates = player_underlying_rates(con, "2026-27")
+        self.assertEqual(rates[1]["prior_source"], "player_history")
+        self.assertGreater(rates[1]["xg90"], rates[2]["xg90"])
+
+    def test_current_underlying_eventually_dominates_player_prior(self):
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO players VALUES
+                ('2025-26', 11, 1001, 'Old', '', '', 1, 'OLD', 'FWD', 6.0, 0, 900, 0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 1, 1001, 'New', '', '', 1, 'NEW', 'FWD', 6.0, 0, 2000, 0, 'a', 'test', 'now', 'test')
+                """
+            )
+            replace_player_underlying(con, "2025-26", pd.DataFrame([{"player_id": 11, "gameweek": 1, "minutes": 900, "xg": 10.0, "xa": 0.0}]), "test", "now")
+            replace_player_underlying(con, "2026-27", pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 2000, "xg": 0.0, "xa": 0.0}]), "test", "now")
+            rates = player_underlying_rates(con, "2026-27")
+        self.assertLess(rates[1]["xg90"], 0.35)
+
+    def test_underlying_rates_fallback_to_position_prior(self):
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO players VALUES
+                ('2026-27', 1, NULL, 'No Prior', '', '', 1, 'NEW', 'FWD', 6.0, 0, 90, 0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 2, NULL, 'Peer', '', '', 1, 'NEW', 'FWD', 6.0, 0, 90, 0, 'a', 'test', 'now', 'test')
+                """
+            )
+            replace_player_underlying(con, "2026-27", pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 0.0, "xa": 0.0}, {"player_id": 2, "gameweek": 1, "minutes": 90, "xg": 1.0, "xa": 0.0}]), "test", "now")
+            rates = player_underlying_rates(con, "2026-27")
+        self.assertEqual(rates[1]["prior_source"], "position_current")
+        self.assertEqual(rates[1]["prior_minutes"], 0)
+
     def test_team_strength_rate_shrinks_to_prior(self):
         self.assertEqual(shrink_rate(2.0, 6, 1.0), 1.5)
+
+    def test_team_defensive_xga_is_shrunk_to_league(self):
+        with connect(":memory:") as con:
+            replace_team_underlying(
+                con,
+                "2026-27",
+                pd.DataFrame([{"team_id": 1, "gameweek": 1, "xg": 1.0, "xga": 0.2}, {"team_id": 2, "gameweek": 1, "xg": 1.0, "xga": 2.4}]),
+                "test",
+                "now",
+            )
+            xga = team_defensive_xga(con, "2026-27")
+        self.assertGreater(xga[1], 0.2)
+        self.assertLess(xga[1], 1.3)
 
     def test_bonus_xppg_scales_by_minutes(self):
         self.assertEqual(bonus_xppg(45, 1.0), 0.5)
@@ -451,6 +509,25 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(row["performance_data_state"], "sufficient")
         self.assertEqual(row["performance_delta"], 0.0)
 
+    def test_performance_delta_excludes_market_mean_fudge(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "FWD", 7.0, 10.0, 3.0, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'No Fudge', '', '', 1, 'TST', 'FWD',
+                  7.0, 0, 90, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            replace_player_underlying(con, "2026-27", pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 0.25, "xa": 0.0}]), "test", "now")
+            row = buy_board(con, "2026-27", "2026-27", 1, 1)[0]
+        self.assertEqual(row["process_xppg_regressed"], 3.0)
+        self.assertEqual(row["performance_delta"], 0.0)
+
     def test_defender_underlying_without_complete_defensive_process_is_partial(self):
         with connect(":memory:") as con:
             con.execute(
@@ -525,6 +602,39 @@ class ModelTests(unittest.TestCase):
             row = buy_board(con, "2026-27", "2026-27", 1, 1)[0]
         self.assertEqual(row["performance_data_state"], "sufficient")
         self.assertIsInstance(row["performance_delta"], float)
+
+    def test_goalkeeper_performance_uses_observed_saves_not_future_prior(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "GK", 4.5, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES
+                ('2026-27', 1, NULL, 'Zero Saves', '', '', 1, 'TST', 'GK', 4.5, 0, 90, 10.0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 2, NULL, 'Many Saves', '', '', 2, 'OTH', 'GK', 4.5, 0, 90, 10.0, 'a', 'test', 'now', 'test')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2026-27', 1, 1, 1, 2, 1, 2, 90, 1, 0, 0, 0, 1, 0, 0, 0, NULL, NULL, NULL, 4.5, 'test', 'now', 'test'),
+                ('2026-27', 2, 1, 2, 1, 0, 5, 90, 1, 0, 0, 0, 1, 6, 0, 0, NULL, NULL, NULL, 4.5, 'test', 'now', 'test')
+                """
+            )
+            replace_player_underlying(con, "2026-27", pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 0.0, "xa": 0.0}]), "test", "now")
+            replace_team_underlying(con, "2026-27", pd.DataFrame([{"team_id": 1, "gameweek": 1, "xg": 1.0, "xga": 0.8}]), "understat", "now")
+            observed = observed_save_rates(con, "2026-27")
+            row = {item["player"]: item for item in buy_board(con, "2026-27", "2026-27", 1, 10)}["Zero Saves"]
+        self.assertEqual(observed[1], 0)
+        self.assertEqual(row["save_xppg"], 0.0)
+        self.assertGreater(row["neutral_xppg"], row["process_xppg_regressed"])
 
     def test_history_as_of_prevents_future_leakage(self):
         with connect(":memory:") as con:
@@ -1152,6 +1262,28 @@ class ModelTests(unittest.TestCase):
         dataset = FakeUnderstat().team_underlying("2026-27", teams, fixtures)
         self.assertEqual(dataset.source, "understat")
         self.assertEqual(dataset.frame.to_dict("records"), [{"team_id": 2, "gameweek": 1, "is_home": 0, "xg": 0.7, "xga": 2.1}])
+
+    def test_understat_promoted_team_aliases_map_to_fpl_names(self):
+        class FakeUnderstat(UnderstatProvider):
+            def _json(self, season):
+                return {
+                    "teams": {
+                        "1": {"title": "Coventry", "history": [{"h_a": "h", "date": "2026-08-15 15:00:00", "xG": "1.0", "xGA": "1.1"}]},
+                        "2": {"title": "Hull", "history": [{"h_a": "h", "date": "2026-08-16 15:00:00", "xG": "1.2", "xGA": "1.3"}]},
+                        "3": {"title": "Ipswich", "history": [{"h_a": "h", "date": "2026-08-17 15:00:00", "xG": "1.4", "xGA": "1.5"}]},
+                    }
+                }, "understat", "now"
+
+        teams = pd.DataFrame([{"id": 1, "name": "Coventry City"}, {"id": 2, "name": "Hull City"}, {"id": 3, "name": "Ipswich Town"}])
+        fixtures = pd.DataFrame(
+            [
+                {"event": 1, "kickoff_time": "2026-08-15T15:00:00Z", "team_h": 1, "team_a": 99},
+                {"event": 1, "kickoff_time": "2026-08-16T15:00:00Z", "team_h": 2, "team_a": 99},
+                {"event": 1, "kickoff_time": "2026-08-17T15:00:00Z", "team_h": 3, "team_a": 99},
+            ]
+        )
+        dataset = FakeUnderstat().team_underlying("2026-27", teams, fixtures)
+        self.assertEqual(set(dataset.frame["team_id"]), {1, 2, 3})
 
     def test_team_strength_uses_rolling_window(self):
         with connect(":memory:") as con:

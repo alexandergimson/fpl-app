@@ -106,6 +106,9 @@ class OfficialFplProvider:
 
 
 UNDERSTAT_TEAM_ALIASES = {
+    "Coventry": "Coventry City",
+    "Hull": "Hull City",
+    "Ipswich": "Ipswich Town",
     "Manchester City": "Man City",
     "Manchester United": "Man Utd",
     "Newcastle United": "Newcastle",

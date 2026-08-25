@@ -6,12 +6,12 @@ from backend.models.price_par import ParPoint
 from backend.models.projections import role_xppg
 from backend.services.bonus import bonus_rates, bonus_xppg
 from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, upcoming_expected_opponent_goals, upcoming_fixture_factors
-from backend.services.goalkeepers import save_rates, save_xppg
+from backend.services.goalkeepers import observed_save_rates, save_rates, save_xppg
 from backend.services.history import player_totals_as_of
 from backend.services.minutes import baseline_minutes_profiles, fallback_minutes_profile, latest_minutes_overrides, minutes_profile
 from backend.services.price_par import blended_par_for, current_curve_points
 from backend.services.roles import ROLE_KEYS, latest_role_overrides
-from backend.services.underlying import PERFORMANCE_MODEL_VERSION, attacking_xppg, defcon_xppg, performance_confidence, performance_evidence_state, player_underlying_rates, team_defensive_xga
+from backend.services.underlying import PERFORMANCE_MODEL_VERSION, attacking_xppg, clean_sheet_process_xppg, defcon_xppg, performance_confidence, performance_evidence_state, player_underlying_rates, team_defensive_xga
 from backend.services.valuation import captain_adjusted_delta, player_status, projection_confidence
 
 
@@ -217,6 +217,7 @@ def buy_board(
     team_xga = team_defensive_xga(con, season, as_of_gw)
     bonus90_by_player = bonus_rates(con, season, as_of_gw)
     saves90_by_player = save_rates(con, season, as_of_gw)
+    observed_saves90_by_player = observed_save_rates(con, season, as_of_gw)
     overrides = latest_minutes_overrides(con, season)
     roles = latest_role_overrides(con, season)
     current_par_points = current_curve_points(con, season, as_of_gw) if as_of_gw is not None else None
@@ -289,17 +290,20 @@ def buy_board(
             minutes_confidence = max(minutes_confidence, 0.75)
         rates = underlying.get(row["player_id"])
         bonus = bonus_xppg(expected_minutes, bonus90_by_player.get(row["player_id"], 0.0))
-        saves = save_xppg(row["position"], expected_minutes, saves90_by_player.get(row["player_id"], 0.0))
+        projected_saves = save_xppg(row["position"], expected_minutes, saves90_by_player.get(row["player_id"], 0.0))
+        observed_saves = save_xppg(row["position"], expected_minutes, observed_saves90_by_player.get(row["player_id"], 0.0))
         own_xga = team_xga.get(row["team_id"])
-        process_clean_sheet = clean_sheet_horizon_ev([own_xga], row["position"], expected_minutes, 1, minute_profile["probability_of_60"]) if own_xga is not None else 0.0
+        process_clean_sheet = clean_sheet_process_xppg(row["position"], expected_minutes, own_xga, minute_profile["probability_of_60"]) if own_xga is not None else 0.0
+        performance_xppg = None
         if rates:
             appearance = min(2.0, 2.0 * expected_minutes / 90)
             attack = attacking_xppg(row["position"], expected_minutes, rates["xg90"], rates["xa90"])
             defcon = defcon_xppg(row["position"], expected_minutes, rates["cbit90"], rates["cbirt90"])
-            neutral_xppg = appearance + attack + process_clean_sheet + defcon + bonus + saves + max(0.0, market_mean - 2.0) * 0.25
+            performance_xppg = appearance + attack + process_clean_sheet + defcon + bonus + observed_saves
+            neutral_xppg = performance_xppg - observed_saves + projected_saves
         else:
             defcon = 0.0
-        performance_data_state = performance_evidence_state(row["position"], rates, own_xga is not None, row["player_id"] in saves90_by_player)
+        performance_data_state = performance_evidence_state(row["position"], rates, own_xga is not None, row["player_id"] in observed_saves90_by_player)
         role = roles.get(row["player_id"])
         role_boost = role_xppg(row["position"], expected_minutes, role)
         neutral_xppg += role_boost
@@ -314,7 +318,7 @@ def buy_board(
         buy_delta_3 = next_3_xppg - value_par
         buy_delta_6 = next_6_xppg - value_par
         value_balance, return_delta = value_balance_and_return_delta(points, played, value_par, frozen_pars.get(row["player_id"]))
-        performance_delta = neutral_xppg - value_par if performance_data_state == "sufficient" else None
+        performance_delta = performance_xppg - value_par if performance_data_state == "sufficient" and performance_xppg is not None else None
         historical_delta = return_delta
         value_trend = buy_delta_6 - previous_deltas.get(row["player_id"], buy_delta_6)
         captain_delta = captain_adjusted_delta(next_6_xppg, value_par, price)
@@ -332,7 +336,8 @@ def buy_board(
                 "value_balance": round(value_balance, 2) if value_balance is not None else None,
                 "actual_ppg": round(actual, 2) if actual is not None else None,
                 "neutral_xppg": round(neutral_xppg, 2),
-                "underlying_xppg": round(neutral_xppg, 2),
+                "underlying_xppg": round(performance_xppg if performance_xppg is not None else neutral_xppg, 2),
+                "process_xppg_regressed": round(performance_xppg, 2) if performance_xppg is not None else None,
                 "next_3_xppg": round(next_3_xppg, 2),
                 "next_6_xppg": round(next_6_xppg, 2),
                 "buy_delta_3": round(buy_delta_3, 2),
@@ -345,6 +350,8 @@ def buy_board(
                 "performance_sample_gameweeks": int(rates["underlying_gameweeks"]) if rates else 0,
                 "performance_sample_minutes": int(rates["underlying_minutes"]) if rates else 0,
                 "performance_model_version": PERFORMANCE_MODEL_VERSION,
+                "prior_source": rates["prior_source"] if rates else None,
+                "prior_minutes": int(rates["prior_minutes"]) if rates else 0,
                 "forward_delta": round(buy_delta_6, 2),
                 "value_trend": round(value_trend, 2),
                 "price_trend": round(price_trends.get(row["player_id"], 0.0) or 0.0, 2),
@@ -360,7 +367,7 @@ def buy_board(
                 "clean_sheet_xppg_6": round(clean_sheet_6, 2),
                 "defcon_xppg": round(defcon, 2),
                 "bonus_xppg": round(bonus, 2),
-                "save_xppg": round(saves, 2),
+                "save_xppg": round(observed_saves, 2),
                 "expected_opponent_goals_6": round(sum((opponent_goals + [1.35] * 6)[:6]) / 6, 2),
                 "role_override_reason": role["reason"] if role else None,
                 **{key: role[key] if role else 0 for key in ROLE_KEYS},

@@ -18,6 +18,14 @@ class ModelConfig:
     sell_delta: float = -0.5
     confidence_high: float = 0.75
     confidence_medium: float = 0.5
+    player_attack_prior_minutes: int = 900
+    team_defence_prior_matches: int = 6
+    gk_save_prior_minutes: int = 900
+
+
+PLAYER_ATTACK_PRIOR_MINUTES = ModelConfig().player_attack_prior_minutes
+TEAM_DEFENCE_PRIOR_MATCHES = ModelConfig().team_defence_prior_matches
+GK_SAVE_PRIOR_MINUTES = ModelConfig().gk_save_prior_minutes
 
 
 CURRENT_BLEND_WEIGHTS = [

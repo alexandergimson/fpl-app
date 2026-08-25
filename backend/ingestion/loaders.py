@@ -178,19 +178,26 @@ def set_state(con: sqlite3.Connection, season: str, key: str, value: str) -> Non
 
 def replace_player_gameweeks(con: sqlite3.Connection, season: str, gameweeks: pd.DataFrame, source: str, fetched_at: str) -> int:
     con.execute("DELETE FROM player_gameweeks WHERE season = ?", (season,))
+    con.execute("DELETE FROM player_underlying_gameweeks WHERE season = ? AND source = ?", (season, source))
     rows = []
+    underlying = []
     for row in gameweeks.itertuples(index=False):
         data = row._asdict()
+        xg = float(data["expected_goals"]) if pd.notna(data.get("expected_goals")) else 0.0
+        xa = float(data["expected_assists"]) if pd.notna(data.get("expected_assists")) else 0.0
+        player_id = int(data["element"])
+        gameweek = int(data["round"])
+        minutes = int(data.get("minutes") or 0)
         rows.append(
             (
                 season,
-                int(data["element"]),
-                int(data["round"]),
+                player_id,
+                gameweek,
                 int(data["fixture"]) if pd.notna(data.get("fixture")) else None,
                 int(data["opponent_team"]) if pd.notna(data.get("opponent_team")) else None,
                 1 if data.get("was_home") else 0,
                 int(data.get("total_points") or 0),
-                int(data.get("minutes") or 0),
+                minutes,
                 int(data.get("starts") or 0),
                 int(data.get("goals_scored") or 0),
                 int(data.get("assists") or 0),
@@ -208,6 +215,8 @@ def replace_player_gameweeks(con: sqlite3.Connection, season: str, gameweeks: pd
                 season,
             )
         )
+        if "expected_goals" in data and "expected_assists" in data and (minutes > 0 or xg > 0 or xa > 0):
+            underlying.append((season, player_id, gameweek, minutes, xg, xa, source, fetched_at, season))
     con.executemany(
         """
         INSERT OR REPLACE INTO player_gameweeks (
@@ -219,7 +228,17 @@ def replace_player_gameweeks(con: sqlite3.Connection, season: str, gameweeks: pd
         """,
         rows,
     )
+    con.executemany(
+        """
+        INSERT OR REPLACE INTO player_underlying_gameweeks (
+          season, player_id, gameweek, minutes, xg, xa, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        underlying,
+    )
     con.commit()
+    if underlying:
+        rebuild_game_underlying_xpts(con, season, source)
     return len(rows)
 
 

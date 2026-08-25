@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import sqlite3
 
+from backend.models.config import PLAYER_ATTACK_PRIOR_MINUTES, TEAM_DEFENCE_PRIOR_MATCHES
+from backend.models.projections import clean_sheet_ev
+
 
 GOAL_POINTS = {"GK": 6, "DEF": 6, "MID": 5, "FWD": 4}
-PRIOR_MINUTES = 900
-PERFORMANCE_MODEL_VERSION = "performance_evidence_v1"
+PERFORMANCE_MODEL_VERSION = "performance_evidence_v2"
 
 
-def regressed_rate(raw: float, minutes: int, prior: float, prior_minutes: int = PRIOR_MINUTES) -> float:
+def regressed_rate(raw: float, minutes: int, prior: float, prior_minutes: int = PLAYER_ATTACK_PRIOR_MINUTES) -> float:
     return (raw * minutes + prior * prior_minutes) / (minutes + prior_minutes) if minutes > 0 else prior
 
 
@@ -34,6 +36,30 @@ def player_underlying_rates(con: sqlite3.Connection, season: str, through_gw: in
         }
         for row in position_rows
     }
+    prior_season = f"{int(season[:4]) - 1}-{str(int(season[:4]))[-2:]}" if season[:4].isdigit() else ""
+    prior_rows = con.execute(
+        """
+        SELECT cur.player_id, SUM(u.minutes) AS minutes, SUM(u.xg) AS xg, SUM(u.xa) AS xa,
+               SUM(u.cbit) AS cbit, SUM(u.cbirt) AS cbirt
+        FROM players cur
+        JOIN players prev ON prev.code = cur.code AND prev.season = ?
+        JOIN player_underlying_gameweeks u ON u.season = prev.season AND u.player_id = prev.player_id
+        WHERE cur.season = ? AND cur.code IS NOT NULL
+        GROUP BY cur.player_id
+        """,
+        (prior_season, season),
+    ).fetchall()
+    player_priors = {
+        row["player_id"]: {
+            "xg90": ((row["xg"] or 0) / row["minutes"] * 90) if (row["minutes"] or 0) > 0 else 0.0,
+            "xa90": ((row["xa"] or 0) / row["minutes"] * 90) if (row["minutes"] or 0) > 0 else 0.0,
+            "cbit90": ((row["cbit"] or 0) / row["minutes"] * 90) if (row["minutes"] or 0) > 0 else 0.0,
+            "cbirt90": ((row["cbirt"] or 0) / row["minutes"] * 90) if (row["minutes"] or 0) > 0 else 0.0,
+            "minutes": row["minutes"] or 0,
+        }
+        for row in prior_rows
+        if (row["minutes"] or 0) > 0
+    }
     rows = con.execute(
         f"""
         SELECT u.player_id, p.position, COUNT(DISTINCT u.gameweek) AS gameweeks,
@@ -50,16 +76,20 @@ def player_underlying_rates(con: sqlite3.Connection, season: str, through_gw: in
         minutes = row["minutes"] or 0
         if minutes <= 0:
             continue
-        prior = position_rates.get(row["position"], {})
+        player_prior = player_priors.get(row["player_id"])
+        prior = player_prior or position_rates.get(row["position"], {})
+        prior_minutes = min(PLAYER_ATTACK_PRIOR_MINUTES, int(prior.get("minutes", PLAYER_ATTACK_PRIOR_MINUTES)))
         rates[row["player_id"]] = {
-            "xg90": regressed_rate((row["xg"] or 0) / minutes * 90, minutes, prior.get("xg90", 0.0)),
-            "xa90": regressed_rate((row["xa"] or 0) / minutes * 90, minutes, prior.get("xa90", 0.0)),
-            "cbit90": regressed_rate((row["cbit"] or 0) / minutes * 90, minutes, prior.get("cbit90", 0.0)),
-            "cbirt90": regressed_rate((row["cbirt"] or 0) / minutes * 90, minutes, prior.get("cbirt90", 0.0)),
+            "xg90": regressed_rate((row["xg"] or 0) / minutes * 90, minutes, prior.get("xg90", 0.0), prior_minutes),
+            "xa90": regressed_rate((row["xa"] or 0) / minutes * 90, minutes, prior.get("xa90", 0.0), prior_minutes),
+            "cbit90": regressed_rate((row["cbit"] or 0) / minutes * 90, minutes, prior.get("cbit90", 0.0), prior_minutes),
+            "cbirt90": regressed_rate((row["cbirt"] or 0) / minutes * 90, minutes, prior.get("cbirt90", 0.0), prior_minutes),
             "raw_xg": row["xg"] or 0.0,
             "raw_xa": row["xa"] or 0.0,
             "raw_cbit": row["cbit"] or 0.0,
             "raw_cbirt": row["cbirt"] or 0.0,
+            "prior_source": "player_history" if player_prior else "position_current",
+            "prior_minutes": int(prior.get("minutes", 0)) if player_prior else 0,
             "underlying_minutes": minutes,
             "underlying_gameweeks": row["gameweeks"] or 0,
         }
@@ -71,14 +101,24 @@ def team_defensive_xga(con: sqlite3.Connection, season: str, through_gw: int | N
     params = (season, through_gw) if through_gw is not None else (season,)
     rows = con.execute(
         f"""
-        SELECT team_id, AVG(xga) AS xga
+        SELECT team_id, COUNT(*) AS matches, AVG(xga) AS xga
         FROM team_underlying_gameweeks
         WHERE season = ? {clause}
         GROUP BY team_id
         """,
         params,
     ).fetchall()
-    return {row["team_id"]: row["xga"] for row in rows if row["xga"] is not None}
+    league = sum(row["xga"] or 0 for row in rows) / len(rows) if rows else 1.35
+    return {
+        row["team_id"]: ((row["xga"] or league) * row["matches"] + league * TEAM_DEFENCE_PRIOR_MATCHES) / (row["matches"] + TEAM_DEFENCE_PRIOR_MATCHES)
+        for row in rows
+        if row["xga"] is not None
+    }
+
+
+def clean_sheet_process_xppg(position: str, expected_minutes: float, expected_goals_against: float | None, probability_of_60: float) -> float:
+    points = 4 if position in {"GK", "DEF"} else 1 if position == "MID" else 0
+    return clean_sheet_ev(expected_goals_against if expected_goals_against is not None else 1.35, points, probability_of_60) if points else 0.0
 
 
 def performance_confidence(sample_minutes: int) -> str:
