@@ -102,6 +102,38 @@ tbody tr:hover {
   font-size: 15px;
 }
 
+.state {
+  border-radius: 4px;
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 800;
+  margin-right: 6px;
+  min-width: 62px;
+  padding: 3px 5px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.state-sufficient {
+  background: #d9fbe8;
+  color: #06603f;
+}
+
+.state-partial {
+  background: #fff4cc;
+  color: #8a5a00;
+}
+
+.state-missing {
+  background: #eef1f5;
+  color: #64748b;
+}
+
+td small {
+  color: #5b6b64;
+  font-size: 12px;
+}
+
 .health {
   border-radius: 4px;
   display: inline-block;

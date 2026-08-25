@@ -19,12 +19,15 @@ type BoardRow = {
   return_delta: number | null;
   neutral_xppg: number;
   underlying_xppg: number;
+  process_xppg_regressed?: number | null;
   performance_delta: number | null;
   performance_data_state: "missing" | "partial" | "sufficient";
   performance_confidence: "LOW" | "MEDIUM" | "HIGH";
   performance_sample_gameweeks?: number;
   performance_sample_minutes?: number;
   performance_model_version?: string;
+  prior_source?: "player_history" | "position_current" | null;
+  prior_minutes?: number;
   next_3_xppg: number;
   next_6_xppg: number;
   buy_delta_6: number;
@@ -159,8 +162,15 @@ function valueTone(value: number | null | undefined) {
 }
 
 function performanceTitle(row: BoardRow) {
-  if (row.performance_delta == null) return "Not enough underlying performance data yet.";
-  return `${row.performance_data_state} evidence from ${row.performance_sample_gameweeks ?? 0} GW, ${row.performance_sample_minutes ?? 0} minutes.`;
+  const prior = row.prior_source === "player_history" ? `Player-history prior, ${row.prior_minutes ?? 0} prior minutes.` : row.prior_source === "position_current" ? "Position fallback prior." : "No prior.";
+  const sample = `${row.performance_data_state} evidence from ${row.performance_sample_gameweeks ?? 0} GW, ${row.performance_sample_minutes ?? 0} minutes.`;
+  return row.performance_delta == null ? `No numeric Performance Delta yet. ${sample} ${prior}` : `${sample} Process xPPG ${metric(row.process_xppg_regressed)}. ${prior}`;
+}
+
+function priorLabel(row: BoardRow) {
+  if (row.prior_source === "player_history") return `Player prior (${row.prior_minutes ?? 0}m)`;
+  if (row.prior_source === "position_current") return "Position prior";
+  return "No prior";
 }
 
 function SortButton({ label, sortKey, active, direction, onSort, title }: { label: string; sortKey: SortKey; active: boolean; direction: "asc" | "desc"; onSort: (key: SortKey) => void; title?: string }) {
@@ -448,6 +458,7 @@ function App() {
               <tr>
                 <th>Player</th><th>Team</th><th>Pos</th><th><SortButton label="Price" sortKey="current_price" active={sortKey === "current_price"} direction={sortDirection} onSort={changeSort} /></th>
                 <th title={tooltipText.performance_delta}><SortButton label="Performance Δ" sortKey="performance_delta" active={sortKey === "performance_delta"} direction={sortDirection} onSort={changeSort} /></th>
+                <th>Process</th>
                 <th title={tooltipText.forward_delta}><SortButton label="Forward Δ" sortKey="forward_delta" active={sortKey === "forward_delta"} direction={sortDirection} onSort={changeSort} /></th>
                 <th>Track</th>
               </tr>
@@ -457,11 +468,12 @@ function App() {
                 <tr key={`player-${row.player_id}`}>
                   <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td><td>{row.team}</td><td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td>
                   <td title={performanceTitle(row)} className={valueTone(row.performance_delta)}>{signedMetric(row.performance_delta)}</td>
+                  <td title={performanceTitle(row)}><span className={`state state-${row.performance_data_state}`}>{row.performance_data_state}</span><small>{metric(row.process_xppg_regressed)}</small></td>
                   <td className={`delta ${row.forward_delta >= 0 ? "positive" : "negative"}`}>{row.forward_delta >= 0 ? "+" : ""}{row.forward_delta.toFixed(2)}</td>
                   <td>{trackedIds.has(row.player_id) ? <button className="action" onClick={() => untrack(row)}>Untrack</button> : <button className="action" onClick={() => track(row)}>Track</button>}</td>
                 </tr>
               ))}
-              {visiblePlayers.length === 0 && <tr><td colSpan={7}>No players match these filters.</td></tr>}
+              {visiblePlayers.length === 0 && <tr><td colSpan={8}>No players match these filters.</td></tr>}
             </tbody>
           </table>
         </article>
@@ -473,6 +485,7 @@ function App() {
               <span>{detail.current.team}</span><span>{detail.current.position}</span><span>£{detail.current.current_price.toFixed(1)}</span>
               <span className={detail.current.return_delta == null ? "" : detail.current.return_delta >= 0 ? "positive" : "negative"}>Return Δ {metric(detail.current.return_delta)}</span>
               <span title={performanceTitle(detail.current)} className={valueTone(detail.current.performance_delta)}>Performance Δ {signedMetric(detail.current.performance_delta)}</span>
+              <span title={performanceTitle(detail.current)}>Process {metric(detail.current.process_xppg_regressed)}</span><span>{detail.current.performance_data_state}</span><span>{priorLabel(detail.current)}</span>
               <span className={detail.current.forward_delta >= 0 ? "positive" : "negative"}>Forward Δ {detail.current.forward_delta >= 0 ? "+" : ""}{detail.current.forward_delta.toFixed(2)}</span>
               <span className={detail.current.value_balance == null ? "" : detail.current.value_balance >= 0 ? "positive" : "negative"}>Balance {metric(detail.current.value_balance)}</span>
               <span>Par {detail.current.value_par.toFixed(2)}</span><span>Mean {detail.current.market_mean.toFixed(2)}</span><span>Actual {metric(detail.current.actual_ppg)}</span>
