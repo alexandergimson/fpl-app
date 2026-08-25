@@ -44,7 +44,7 @@ If current-season samples are missing or too thin for a position/price, the hist
 
 Value Par is the hurdle rate for a good FPL player at the same position and current price.
 
-Frozen GW Par is the Value Par that applied to a player for an already-completed Gameweek. It is stored immutably in `frozen_player_gameweek_par` when gameweek rows exist.
+Frozen GW Par is the Value Par that applied to a player for an already-completed FPL Gameweek. It is stored immutably in `frozen_player_gameweek_par` as one row per player per Gameweek, using `fixture_id = 0` for the canonical row. Double Gameweeks still produce one frozen Par for that FPL Gameweek.
 
 Value Balance is:
 
@@ -57,10 +57,10 @@ If frozen Pars are not available yet, realised Value Balance and Return Delta re
 Return Delta is:
 
 ```text
-Value Balance / completed team fixtures
+Value Balance / completed team FPL Gameweeks
 ```
 
-If the team has not completed a league fixture yet, Actual PPG, Value Balance and Return Delta are null and the UI displays `-`. If the team has played and the player did not appear, actual points are zero and Return Delta is negative against Par.
+If the team has not completed an FPL Gameweek yet, Actual PPG, Value Balance and Return Delta are null and the UI displays `-`. If the team has played and the player did not appear, actual points are zero and Return Delta is negative against Par.
 
 Performance Delta is:
 

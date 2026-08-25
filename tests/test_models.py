@@ -294,6 +294,45 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(row["value_balance"], -3.5)
         self.assertEqual(row["return_delta"], -3.5)
 
+    def test_double_gameweek_counts_as_one_fpl_gameweek(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO fixtures VALUES
+                ('2026-27', 1, 1, '', 1, 2, 3, 3, 1, 'test', 'now', 'test'),
+                ('2026-27', 2, 1, '', 1, 3, 3, 3, 1, 'test', 'now', 'test')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Double', '', '', 1, 'TST', 'MID',
+                  5.0, 12, 180, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO frozen_player_gameweek_par (
+                  season, player_id, gameweek, fixture_id, price, position, value_par,
+                  par_model_version, source, source_version, data_cutoff
+                ) VALUES
+                ('2026-27', 1, 1, 1, 5.0, 'MID', 3.5, 'legacy', 'test', 'test', 'then'),
+                ('2026-27', 1, 1, 2, 5.0, 'MID', 3.5, 'legacy', 'test', 'test', 'then')
+                """
+            )
+            self.assertEqual(freeze_player_gameweek_pars(con, "2026-27", "2026-27"), 1)
+            frozen_rows = con.execute("SELECT fixture_id FROM frozen_player_gameweek_par").fetchall()
+            row = buy_board(con, "2026-27", "2026-27", 1, 1)[0]
+        self.assertEqual([row["fixture_id"] for row in frozen_rows], [0])
+        self.assertEqual(row["actual_ppg"], 12.0)
+        self.assertEqual(row["value_balance"], 8.5)
+        self.assertEqual(row["return_delta"], 8.5)
+
     def test_return_delta_uses_frozen_pars_when_available(self):
         with connect(":memory:") as con:
             for price, par in ((5.0, 3.5), (6.0, 4.5)):

@@ -42,9 +42,12 @@ def team_completed_fixtures(con: sqlite3.Connection, season: str, as_of_gw: int 
         f"""
         SELECT team_id, COUNT(*) AS played
         FROM (
-          SELECT team_h AS team_id FROM fixtures WHERE season = ? AND finished = 1 {clause}
-          UNION ALL
-          SELECT team_a AS team_id FROM fixtures WHERE season = ? AND finished = 1 {clause}
+          SELECT DISTINCT team_id, gameweek
+          FROM (
+            SELECT team_h AS team_id, gameweek FROM fixtures WHERE season = ? AND finished = 1 {clause}
+            UNION ALL
+            SELECT team_a AS team_id, gameweek FROM fixtures WHERE season = ? AND finished = 1 {clause}
+          )
         )
         GROUP BY team_id
         """,
@@ -68,8 +71,12 @@ def frozen_par_summary(con: sqlite3.Connection, season: str, as_of_gw: int | Non
     rows = con.execute(
         f"""
         SELECT player_id, COUNT(*) AS frozen_gameweeks, SUM(value_par) AS frozen_par_total
-        FROM frozen_player_gameweek_par
-        WHERE season = ? {clause}
+        FROM (
+          SELECT player_id, gameweek, MAX(value_par) AS value_par
+          FROM frozen_player_gameweek_par
+          WHERE season = ? {clause}
+          GROUP BY player_id, gameweek
+        )
         GROUP BY player_id
         """,
         params,
@@ -91,31 +98,35 @@ def value_balance_and_return_delta(points: int, played: int | None, value_par: f
 def freeze_player_gameweek_pars(con: sqlite3.Connection, season: str, par_season: str = "2026-27", model_version: str = "par_iso_v1") -> int:
     rows = con.execute(
         """
-        SELECT DISTINCT
-          p.player_id, f.gameweek, f.fixture_id,
-          COALESCE(gw.value, ph.price, p.current_price) AS price,
+        SELECT
+          p.player_id, f.gameweek, 0 AS fixture_id,
+          COALESCE(MAX(gw.value), MAX(ph.price), p.current_price) AS price,
           p.position,
-          COALESCE(gw.fetched_at, ph.fetched_at, f.fetched_at, p.fetched_at) AS fetched_at
+          COALESCE(MAX(gw.fetched_at), MAX(ph.fetched_at), MAX(f.fetched_at), p.fetched_at) AS fetched_at
         FROM players p
         JOIN (
-          SELECT season, fixture_id, gameweek, team_h AS team_id, fetched_at
-          FROM fixtures
-          WHERE season = ? AND finished = 1
-          UNION ALL
-          SELECT season, fixture_id, gameweek, team_a AS team_id, fetched_at
-          FROM fixtures
-          WHERE season = ? AND finished = 1
+          SELECT season, gameweek, team_id, MAX(fetched_at) AS fetched_at
+          FROM (
+            SELECT season, gameweek, team_h AS team_id, fetched_at
+            FROM fixtures
+            WHERE season = ? AND finished = 1
+            UNION ALL
+            SELECT season, gameweek, team_a AS team_id, fetched_at
+            FROM fixtures
+            WHERE season = ? AND finished = 1
+          )
+          GROUP BY season, gameweek, team_id
         ) f ON f.season = p.season AND f.team_id = p.team_id
         LEFT JOIN player_gameweeks gw
           ON gw.season = p.season
           AND gw.player_id = p.player_id
           AND gw.gameweek = f.gameweek
-          AND COALESCE(gw.fixture_id, 0) = f.fixture_id
         LEFT JOIN price_history ph
           ON ph.season = p.season
           AND ph.player_id = p.player_id
           AND ph.gameweek = f.gameweek
         WHERE p.season = ?
+        GROUP BY p.player_id, f.gameweek, p.current_price, p.position, p.fetched_at
         """,
         (season, season, season),
     ).fetchall()
@@ -147,8 +158,25 @@ def freeze_player_gameweek_pars(con: sqlite3.Connection, season: str, par_season
         """,
         inserts,
     )
+    inserted = con.total_changes - before
+    con.execute(
+        """
+        DELETE FROM frozen_player_gameweek_par
+        WHERE season = ?
+          AND fixture_id != 0
+          AND EXISTS (
+            SELECT 1
+            FROM frozen_player_gameweek_par canonical
+            WHERE canonical.season = frozen_player_gameweek_par.season
+              AND canonical.player_id = frozen_player_gameweek_par.player_id
+              AND canonical.gameweek = frozen_player_gameweek_par.gameweek
+              AND canonical.fixture_id = 0
+          )
+        """,
+        (season,),
+    )
     con.commit()
-    return con.total_changes - before
+    return inserted
 
 
 def buy_board(
