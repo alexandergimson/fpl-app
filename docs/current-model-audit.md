@@ -29,7 +29,7 @@
 
 ## Known Limitations
 
-- Frozen Pars are populated from stored `player_gameweeks`, so current live data needs gameweek history ingest before true frozen-Par accounting is complete.
-- If frozen Pars are missing for a player/team fixture set, boards fall back to today's Value Par times completed team fixtures.
+- Frozen Pars are populated from completed team fixtures, so DNPs are included even when no `player_gameweeks` row exists.
+- If frozen Pars are missing for a player/team fixture set, realised Value Balance and Return Delta stay null instead of falling back to today's Value Par.
 - Underlying xPPG is still the v1 deterministic blend, not the later empirical-Bayes player ability model.
 - Team strength is a rolling/fallback baseline, not the state-space challenger.

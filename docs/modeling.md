@@ -52,7 +52,7 @@ Value Balance is:
 actual FPL points - sum(frozen GW Pars)
 ```
 
-If frozen Pars are not available yet, the board falls back to today's Value Par multiplied by team completed fixtures. That fallback keeps the live app usable, but frozen Pars are the authoritative source once populated.
+If frozen Pars are not available yet, realised Value Balance and Return Delta remain null. The board does not use today's Value Par to rewrite historical outcomes.
 
 Return Delta is:
 

@@ -81,7 +81,9 @@ def value_balance_and_return_delta(points: int, played: int | None, value_par: f
     if not played:
         return None, None
     frozen_count = int(frozen["frozen_gameweeks"]) if frozen and frozen.get("frozen_gameweeks") is not None else 0
-    frozen_total = float(frozen["frozen_par_total"]) if frozen and frozen_count == played else value_par * played
+    if frozen_count != played:
+        return None, None
+    frozen_total = float(frozen["frozen_par_total"])
     balance = points - frozen_total
     return balance, balance / played
 
@@ -90,13 +92,32 @@ def freeze_player_gameweek_pars(con: sqlite3.Connection, season: str, par_season
     rows = con.execute(
         """
         SELECT DISTINCT
-          gw.player_id, gw.gameweek, COALESCE(gw.fixture_id, 0) AS fixture_id,
-          COALESCE(gw.value, p.current_price) AS price, p.position, gw.fetched_at
-        FROM player_gameweeks gw
-        JOIN players p ON p.season = gw.season AND p.player_id = gw.player_id
-        WHERE gw.season = ?
+          p.player_id, f.gameweek, f.fixture_id,
+          COALESCE(gw.value, ph.price, p.current_price) AS price,
+          p.position,
+          COALESCE(gw.fetched_at, ph.fetched_at, f.fetched_at, p.fetched_at) AS fetched_at
+        FROM players p
+        JOIN (
+          SELECT season, fixture_id, gameweek, team_h AS team_id, fetched_at
+          FROM fixtures
+          WHERE season = ? AND finished = 1
+          UNION ALL
+          SELECT season, fixture_id, gameweek, team_a AS team_id, fetched_at
+          FROM fixtures
+          WHERE season = ? AND finished = 1
+        ) f ON f.season = p.season AND f.team_id = p.team_id
+        LEFT JOIN player_gameweeks gw
+          ON gw.season = p.season
+          AND gw.player_id = p.player_id
+          AND gw.gameweek = f.gameweek
+          AND COALESCE(gw.fixture_id, 0) = f.fixture_id
+        LEFT JOIN price_history ph
+          ON ph.season = p.season
+          AND ph.player_id = p.player_id
+          AND ph.gameweek = f.gameweek
+        WHERE p.season = ?
         """,
-        (season,),
+        (season, season, season),
     ).fetchall()
     inserts = []
     for row in rows:

@@ -11,7 +11,7 @@ import pandas as pd
 from backend.ingestion.providers import Dataset
 from backend.jobs.refresh import refresh_all
 from backend.services.valuation import captain_adjusted_delta, captaincy_weight, player_status, projection_confidence, selling_price
-from backend.services.boards import breakout_board, buy_board, freeze_player_gameweek_pars, infer_gameweeks, trap_board
+from backend.services.boards import breakout_board, buy_board, freeze_player_gameweek_pars, infer_gameweeks, trap_board, value_balance_and_return_delta
 from backend.services.bonus import bonus_rates, bonus_xppg
 from backend.services.goalkeepers import save_rates, save_xppg
 from backend.data.db import connect
@@ -250,6 +250,7 @@ class ModelTests(unittest.TestCase):
                 ('2026-27', 4, NULL, 'Four', '', '', 3, 'THR', 'MID', 5.0, 8, 180, 10.0, 'a', 'test', 'now', 'test')
                 """
             )
+            self.assertEqual(freeze_player_gameweek_pars(con, "2026-27", "2026-27"), 4)
             rows = {row["player"]: row for row in buy_board(con, "2026-27", "2026-27", 10, 10)}
         self.assertIsNone(rows["NotPlayedYet"]["actual_ppg"])
         self.assertIsNone(rows["NotPlayedYet"]["historical_delta"])
@@ -261,6 +262,30 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(rows["Four"]["return_delta"], 0.5)
         self.assertEqual(rows["Four"]["value_balance"], 1.0)
         self.assertAlmostEqual(rows["Four"]["performance_delta"], rows["Four"]["neutral_xppg"] - rows["Four"]["value_par"], places=2)
+
+    def test_return_delta_requires_frozen_pars(self):
+        self.assertEqual(value_balance_and_return_delta(6, 1, 4.0), (None, None))
+
+    def test_frozen_pars_include_team_played_dnps(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "DEF", 4.5, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute("INSERT INTO fixtures VALUES ('2026-27', 1, 1, '', 1, 2, 3, 3, 1, 'test', 'now', 'test')")
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Bench', '', '', 1, 'TST', 'DEF',
+                  4.5, 0, 0, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            self.assertEqual(freeze_player_gameweek_pars(con, "2026-27", "2026-27"), 1)
+            row = buy_board(con, "2026-27", "2026-27", 1, 1)[0]
+        self.assertEqual(row["actual_ppg"], 0.0)
+        self.assertEqual(row["value_balance"], -3.5)
+        self.assertEqual(row["return_delta"], -3.5)
 
     def test_return_delta_uses_frozen_pars_when_available(self):
         with connect(":memory:") as con:
