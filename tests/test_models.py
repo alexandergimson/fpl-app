@@ -26,7 +26,7 @@ from backend.services.player_detail import player_detail, recent_gameweeks
 from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, list_alerts
 from backend.services.minutes import add_minutes_override, latest_minutes_overrides
 from backend.services.roles import add_role_override, latest_role_overrides, role_history
-from backend.ingestion.loaders import replace_fixtures, replace_fpl_player_underlying, replace_player_underlying
+from backend.ingestion.loaders import replace_fixtures, replace_fpl_player_underlying, replace_player_underlying, upsert_fpl_bootstrap_gameweek_observations
 from backend.ingestion.loaders import replace_team_underlying, snapshot_prices
 from backend.services.prices import price_movements
 from backend.services.underlying import attacking_xppg, defcon_xppg, player_underlying_rates, underlying_xpts_components
@@ -335,6 +335,33 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(row["value_balance"], 2.0)
         self.assertEqual(row["return_delta"], 1.0)
         self.assertEqual(row["historical_delta"], row["return_delta"])
+
+    def test_actual_points_do_not_change_performance_delta(self):
+        def row_for(points: int):
+            con = connect(":memory:")
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute("INSERT INTO fixtures VALUES ('2026-27', 1, 1, '', 1, 2, 3, 3, 1, 'test', 'now', 'test')")
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'SameProcess', '', '', 1, 'TST', 'MID',
+                  5.0, ?, 90, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """,
+                (points,),
+            )
+            replace_player_underlying(con, "2026-27", pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 0.2, "xa": 0.1}]), "test", "now")
+            result = buy_board(con, "2026-27", "2026-27", 1, 1)[0]
+            con.close()
+            return result
+
+        haul = row_for(12)
+        blank = row_for(2)
+        self.assertNotEqual(haul["actual_ppg"], blank["actual_ppg"])
+        self.assertEqual(haul["performance_delta"], blank["performance_delta"])
 
     def test_history_as_of_prevents_future_leakage(self):
         with connect(":memory:") as con:
@@ -696,16 +723,35 @@ class ModelTests(unittest.TestCase):
             players.attrs["current_gameweek"] = 0
             self.assertEqual(replace_fpl_player_underlying(con, "2026-27", players, "now"), 0)
             players.attrs["current_gameweek"] = 1
-            self.assertEqual(replace_fpl_player_underlying(con, "2026-27", players, "then"), 1)
+            self.assertEqual(replace_fpl_player_underlying(con, "2026-27", players, "then"), 2)
             players.attrs["current_gameweek"] = 2
             count = replace_fpl_player_underlying(con, "2026-27", players, "now")
-            row = con.execute("SELECT player_id, gameweek, minutes, xg, xa, source FROM player_underlying_gameweeks WHERE gameweek = 2").fetchone()
-            xpts = con.execute("SELECT player_id, gameweek, goal_ev, assist_ev, source FROM game_underlying_xpts WHERE gameweek = 2").fetchone()
+            row = con.execute("SELECT player_id, gameweek, minutes, xg, xa, source FROM player_underlying_gameweeks WHERE gameweek = 1").fetchone()
+            xpts = con.execute("SELECT player_id, gameweek, goal_ev, assist_ev, source FROM game_underlying_xpts WHERE gameweek = 1").fetchone()
             rows = con.execute("SELECT COUNT(*) AS n FROM player_underlying_gameweeks").fetchone()["n"]
-        self.assertEqual(count, 1)
-        self.assertEqual(rows, 2)
-        self.assertEqual(dict(row), {"player_id": 42, "gameweek": 2, "minutes": 180, "xg": 1.2, "xa": 0.4, "source": "official_fpl_bootstrap"})
-        self.assertEqual(dict(xpts), {"player_id": 42, "gameweek": 2, "goal_ev": 6.0, "assist_ev": 1.2, "source": "official_fpl_bootstrap"})
+            gameweek_rows = con.execute("SELECT COUNT(*) AS n FROM player_gameweeks WHERE gameweek = 2").fetchone()["n"]
+        self.assertEqual(count, 2)
+        self.assertEqual(rows, 1)
+        self.assertEqual(gameweek_rows, 2)
+        self.assertEqual(dict(row), {"player_id": 42, "gameweek": 1, "minutes": 180, "xg": 1.2, "xa": 0.4, "source": "official_fpl_bootstrap"})
+        self.assertEqual(dict(xpts), {"player_id": 42, "gameweek": 1, "goal_ev": 6.0, "assist_ev": 1.2, "source": "official_fpl_bootstrap"})
+
+    def test_fpl_bootstrap_cumulative_underlying_is_differenced_by_gameweek(self):
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 42, NULL, 'Diff', '', '', 1, 'TST', 'MID',
+                  5.0, 0, 0, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            for gameweek, xg, xa in [(1, "0.4", "0.2"), (2, "0.8", "0.5"), (3, "1.1", "0.6")]:
+                frame = pd.DataFrame([{"id": 42, "now_cost": 50, "total_points": gameweek, "minutes": gameweek * 90, "selected_by_percent": 10, "expected_goals": xg, "expected_assists": xa}])
+                frame.attrs["current_gameweek"] = gameweek
+                upsert_fpl_bootstrap_gameweek_observations(con, "2026-27", frame, f"gw{gameweek}")
+            rows = con.execute("SELECT gameweek, xg, xa FROM player_underlying_gameweeks ORDER BY gameweek").fetchall()
+        self.assertEqual([dict(row) for row in rows], [{"gameweek": 1, "xg": 0.4, "xa": 0.2}, {"gameweek": 2, "xg": 0.4, "xa": 0.3}, {"gameweek": 3, "xg": 0.3, "xa": 0.1}])
 
     def test_role_override_boosts_board_projection(self):
         with connect(":memory:") as con:

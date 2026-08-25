@@ -10,6 +10,7 @@ SOURCES = {
     "players": "Players",
     "fixtures": "Fixtures",
     "price_par_points": "Price Par",
+    "player_cumulative_observations": "FPL Cumulative",
     "player_gameweeks": "Gameweeks",
     "player_underlying_gameweeks": "Player xG/xA",
     "game_underlying_xpts": "Underlying xPts",

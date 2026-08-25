@@ -265,19 +265,74 @@ def replace_player_underlying(con: sqlite3.Connection, season: str, metrics: pd.
 
 
 def replace_fpl_player_underlying(con: sqlite3.Connection, season: str, players: pd.DataFrame, fetched_at: str) -> int:
+    return upsert_fpl_bootstrap_gameweek_observations(con, season, players, fetched_at)
+
+
+def upsert_fpl_bootstrap_gameweek_observations(con: sqlite3.Connection, season: str, players: pd.DataFrame, fetched_at: str) -> int:
     gameweek = int(players.attrs.get("current_gameweek") or 0)
     if gameweek <= 0:
         return 0
     source = "official_fpl_bootstrap"
-    rows = []
+    cumulative = []
+    gameweeks = []
+    underlying = []
+    previous = {
+        row["player_id"]: row
+        for row in con.execute(
+            """
+            SELECT c.*
+            FROM player_cumulative_observations c
+            JOIN (
+              SELECT player_id, MAX(gameweek) AS gameweek
+              FROM player_cumulative_observations
+              WHERE season = ? AND source = ? AND gameweek < ?
+              GROUP BY player_id
+            ) latest ON latest.player_id = c.player_id AND latest.gameweek = c.gameweek
+            WHERE c.season = ? AND c.source = ?
+            """,
+            (season, source, gameweek, season, source),
+        )
+    }
     for row in players.itertuples(index=False):
         data = row._asdict()
+        player_id = int(data["id"])
+        points = int(data.get("total_points") or 0)
         minutes = int(data.get("minutes") or 0)
         xg = float(data.get("expected_goals") or 0)
         xa = float(data.get("expected_assists") or 0)
-        if minutes <= 0 or (xg == 0 and xa == 0):
+        ownership = float(data["selected_by_percent"]) if pd.notna(data.get("selected_by_percent")) else None
+        price = float(data["now_cost"]) / 10 if pd.notna(data.get("now_cost")) else None
+        cumulative.append((season, player_id, gameweek, points, minutes, xg, xa, ownership, price, source, fetched_at, season))
+        prev = previous.get(player_id)
+        gw_points = points - (prev["total_points"] if prev else 0)
+        gw_minutes = minutes - (prev["minutes"] if prev else 0)
+        gw_xg = xg - (prev["xg"] if prev else 0.0)
+        gw_xa = xa - (prev["xa"] if prev else 0.0)
+        if gw_points < 0 or gw_minutes < 0 or gw_xg < -0.0001 or gw_xa < -0.0001:
             continue
-        rows.append((season, int(data["id"]), gameweek, minutes, xg, xa, source, fetched_at, season))
+        gameweeks.append((season, player_id, gameweek, 0, None, 0, gw_points, gw_minutes, 1 if gw_minutes >= 60 else 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, price, source, fetched_at, season))
+        if gw_minutes > 0 or gw_xg > 0 or gw_xa > 0:
+            underlying.append((season, player_id, gameweek, gw_minutes, round(gw_xg, 4), round(gw_xa, 4), source, fetched_at, season))
+    con.executemany(
+        """
+        INSERT OR REPLACE INTO player_cumulative_observations (
+          season, player_id, gameweek, total_points, minutes, xg, xa,
+          ownership, current_price, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        cumulative,
+    )
+    con.executemany(
+        """
+        INSERT OR REPLACE INTO player_gameweeks (
+          season, player_id, gameweek, fixture_id, opponent_team, was_home,
+          total_points, minutes, starts, goals_scored, assists, clean_sheets,
+          goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+          value, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        gameweeks,
+    )
     con.execute("DELETE FROM player_underlying_gameweeks WHERE season = ? AND source = ? AND gameweek = ?", (season, source, gameweek))
     con.executemany(
         """
@@ -285,11 +340,11 @@ def replace_fpl_player_underlying(con: sqlite3.Connection, season: str, players:
           season, player_id, gameweek, minutes, xg, xa, source, fetched_at, data_period
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        rows,
+        underlying,
     )
     con.commit()
     rebuild_game_underlying_xpts(con, season, source)
-    return len(rows)
+    return len(gameweeks)
 
 
 def replace_team_underlying(con: sqlite3.Connection, season: str, metrics: pd.DataFrame, source: str, fetched_at: str) -> int:

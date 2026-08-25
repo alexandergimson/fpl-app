@@ -226,9 +226,8 @@ def buy_board(
         )
         actual = actual_ppg(points, row["team_id"], completed_by_team, actual_fallback)
         played = completed_by_team.get(row["team_id"]) if row["team_id"] is not None else actual_fallback
-        projection_ppg = actual if actual is not None else market_mean
         minutes_confidence = min(1.0, minutes / max(1, denominator * 90))
-        neutral_xppg = projection_ppg * (0.35 + 0.65 * minutes_confidence) + market_mean * (1 - minutes_confidence) * 0.35
+        neutral_xppg = market_mean * (0.35 + 0.65 * minutes_confidence)
         expected_minutes = minutes / max(1, denominator)
         override = overrides.get(row["player_id"])
         if override:
@@ -241,7 +240,7 @@ def buy_board(
             appearance = min(2.0, 2.0 * expected_minutes / 90)
             attack = attacking_xppg(row["position"], expected_minutes, rates["xg90"], rates["xa90"])
             defcon = defcon_xppg(row["position"], expected_minutes, rates["cbit90"], rates["cbirt90"])
-            neutral_xppg = max(neutral_xppg * 0.5, appearance + attack + defcon + bonus + saves + max(0.0, market_mean - 2.0) * 0.25)
+            neutral_xppg = appearance + attack + defcon + bonus + saves + max(0.0, market_mean - 2.0) * 0.25
         else:
             defcon = 0.0
         role = roles.get(row["player_id"])

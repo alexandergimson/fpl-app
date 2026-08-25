@@ -65,8 +65,10 @@ If the team has not completed a league fixture yet, Actual PPG, Value Balance an
 Performance Delta is:
 
 ```text
-Underlying xPPG - current Value Par
+process-only Underlying xPPG - current Value Par
 ```
+
+Performance Delta does not use actual FPL points, actual goals or actual assists. Return Delta owns realised outcomes; Performance Delta owns process.
 
 Forward Delta is:
 
@@ -82,8 +84,8 @@ The main UI uses progressive disclosure: Squad shows Player, Position, Price, Re
 
 The first market table uses a deliberately plain projection:
 
-- Actual PPG supplies realised current-season production once the player's team has completed fixtures
-- minutes confidence shrinks that production toward the position/price Market Mean
+- Market Mean supplies the baseline when process data is missing
+- minutes confidence scales that baseline toward likely role
 - official fixtures supply Next 3 and Next 6 horizons
 - FPL fixture difficulty applies a small temporary multiplier until rolling xG/xGA team strength lands
 
@@ -95,11 +97,11 @@ Manual minutes overrides set start probability, expected starter minutes, substi
 
 ## Underlying Player Data
 
-The official FPL API is the canonical player provider and ID system. Current ingest stores FPL bootstrap xG/xA aggregates in `player_underlying_gameweeks` for GW1+ using `elements.id` as `player_id`.
+The official FPL API is the canonical player provider and ID system. Current ingest stores FPL bootstrap cumulative values in `player_cumulative_observations`, then writes Gameweek-level deltas into `player_gameweeks` and `player_underlying_gameweeks`.
 
 Optional CSV ingestion can still store player gameweek xG/xA rows in `player_underlying_gameweeks` for validation or manual enrichment.
 
-When available, neutral xPPG uses xG/90 and xA/90 to inform attacking expectation. When unavailable, it falls back to the existing minutes-shrunk actual PPG estimate.
+When available, neutral xPPG uses xG/90 and xA/90 to inform attacking expectation. When unavailable, it falls back to a minutes-shrunk Market Mean estimate. It does not fall back to actual FPL points.
 
 Underlying imports also rebuild `game_underlying_xpts`, a provider-neutral derived process table keyed by official FPL player ID, Gameweek and source. It stores appearance EV, goal EV from xG, assist EV from xA, DefCon EV and placeholder zero values for clean-sheet, bonus and save process EVs until those expected-value feeds exist.
 

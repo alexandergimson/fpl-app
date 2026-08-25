@@ -18,12 +18,13 @@
 - Value Par is the position/price P75 historical slot-yield benchmark.
 - Actual PPG is total FPL points divided by completed fixtures for that player's team.
 - Return Delta is Value Balance divided by completed team fixtures.
-- Performance Delta is fixture-neutral Underlying xPPG minus current Value Par.
+- Performance Delta is process-only Underlying xPPG minus current Value Par; actual FPL points do not feed it.
 - Forward Delta is Next-6 projected xPPG minus current Value Par.
 
 ## Schema Notes
 
 - `frozen_player_gameweek_par` stores immutable historical Par rows by player, Gameweek and fixture.
+- `player_cumulative_observations` stores FPL bootstrap cumulative totals so current-season xG/xA can be differenced safely.
 - `game_underlying_xpts` stores derived provider-neutral process components from raw underlying rows.
 - `tracked_snapshots` stores Return Delta, Performance Delta, Forward Delta compatibility value, Value Balance, projections and provenance fields.
 - Most tables already carry `source`, `fetched_at` and `data_period`; richer model-run IDs remain future work.

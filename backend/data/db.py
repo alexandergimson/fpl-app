@@ -92,6 +92,22 @@ CREATE TABLE IF NOT EXISTS player_gameweeks (
   PRIMARY KEY (season, player_id, gameweek, fixture_id)
 );
 
+CREATE TABLE IF NOT EXISTS player_cumulative_observations (
+  season TEXT NOT NULL,
+  player_id INTEGER NOT NULL,
+  gameweek INTEGER NOT NULL,
+  total_points INTEGER NOT NULL DEFAULT 0,
+  minutes INTEGER NOT NULL DEFAULT 0,
+  xg REAL NOT NULL DEFAULT 0,
+  xa REAL NOT NULL DEFAULT 0,
+  ownership REAL,
+  current_price REAL,
+  source TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  data_period TEXT NOT NULL,
+  PRIMARY KEY (season, player_id, gameweek, source)
+);
+
 CREATE TABLE IF NOT EXISTS player_underlying_gameweeks (
   season TEXT NOT NULL,
   player_id INTEGER NOT NULL,
