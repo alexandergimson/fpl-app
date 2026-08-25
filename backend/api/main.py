@@ -9,7 +9,7 @@ except ImportError:  # pragma: no cover
 from backend.data.db import connect
 from backend.ingestion.providers import OfficialFplProvider
 from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, list_alerts
-from backend.services.boards import breakout_board, buy_board, trap_board
+from backend.services.boards import breakout_board, buy_board, paginated_players, player_forward_lineage, player_performance_lineage, trap_board
 from backend.services.minutes import add_minutes_override, override_history
 from backend.services.player_detail import player_detail
 from backend.services.prices import price_movements
@@ -71,6 +71,16 @@ if FastAPI:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    @app.get("/players/{player_id}/performance-lineage")
+    def get_player_performance_lineage(player_id: int, season: str = "2026-27", par_season: str = "2026-27"):
+        with connect() as con:
+            return player_performance_lineage(con, season, player_id, par_season)
+
+    @app.get("/players/{player_id}/forward-lineage")
+    def get_player_forward_lineage(player_id: int, season: str = "2026-27", par_season: str = "2026-27"):
+        with connect() as con:
+            return player_forward_lineage(con, season, player_id, par_season)
+
     @app.get("/players/{player_id}")
     def get_player(player_id: int, season: str = "2026-27", par_season: str = "2026-27"):
         with connect() as con:
@@ -95,9 +105,22 @@ if FastAPI:
         gameweeks_played: int | None = None,
         limit: int = 2000,
         as_of_gw: int | None = None,
+        page: int = 1,
+        page_size: int = 15,
+        position: str = "ALL",
+        min_price: float | None = None,
+        max_price: float | None = None,
+        tracked: bool = False,
+        confidence: str = "ALL",
+        sort: str = "forward_delta",
+        direction: str = "desc",
+        search: str = "",
+        quick_filter: str = "ALL",
     ):
         with connect() as con:
-            return buy_board(con, season, par_season, gameweeks_played, limit, as_of_gw)
+            if limit != 2000:
+                return buy_board(con, season, par_season, gameweeks_played, limit, as_of_gw)
+            return paginated_players(con, season, par_season, gameweeks_played, page, page_size, position, min_price, max_price, tracked, confidence, sort, direction, search, quick_filter)
 
     @app.get("/breakout-board")
     def get_breakout_board(

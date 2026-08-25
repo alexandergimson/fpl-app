@@ -102,6 +102,72 @@ tbody tr:hover {
   font-size: 15px;
 }
 
+.delta-wrap {
+  display: inline-block;
+  position: relative;
+}
+
+.delta-trigger {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px dotted currentColor;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  padding: 1px 0;
+}
+
+.delta-trigger:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: 3px;
+}
+
+.popover {
+  background: #ffffff;
+  border: 1px solid #9fb9ad;
+  border-radius: 6px;
+  box-shadow: 0 16px 36px rgba(23, 32, 29, 0.18);
+  color: #17201d;
+  display: block;
+  font-size: 13px;
+  left: 50%;
+  min-width: 260px;
+  padding: 12px;
+  position: absolute;
+  text-align: left;
+  top: 24px;
+  transform: translateX(-50%);
+  white-space: normal;
+  z-index: 20;
+}
+
+.popover h4 {
+  color: #12382f;
+  font-size: 12px;
+  margin: 10px 0 5px;
+  text-transform: uppercase;
+}
+
+.popover p {
+  margin: 4px 0;
+}
+
+.popover-grid,
+.line {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 1fr auto;
+}
+
+.line {
+  padding: 2px 0;
+}
+
+.muted {
+  color: #77857f;
+}
+
 .state {
   border-radius: 4px;
   display: inline-block;
@@ -229,6 +295,20 @@ td small {
   margin-bottom: 12px;
 }
 
+.pagination {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin: 8px 0 12px;
+}
+
+.pagination span {
+  color: #5b6b64;
+  margin-right: auto;
+}
+
 .toolbar input,
 .toolbar select,
 .role-form input[type="number"],
@@ -282,6 +362,11 @@ td small {
 .action:hover,
 .link:hover {
   background: #e3f5ee;
+}
+
+.action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .primary {

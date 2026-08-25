@@ -312,6 +312,7 @@ def buy_board(
             performance_xppg = parts["game_underlying_xpts"]
             neutral_xppg = performance_xppg - observed_saves + projected_saves
         else:
+            parts = None
             defcon = 0.0
         role = roles.get(row["player_id"])
         role_boost = role_xppg(row["position"], expected_minutes, role)
@@ -369,6 +370,7 @@ def buy_board(
                 "neutral_xppg": round(neutral_xppg, 2),
                 "underlying_xppg": round(performance_xppg if performance_xppg is not None else neutral_xppg, 2),
                 "process_xppg_regressed": round(performance_xppg, 2) if performance_xppg is not None else None,
+                "performance_components": {key: round(value, 2) for key, value in parts.items() if key != "game_underlying_xpts"} if parts else None,
                 "next_3_xppg": round(next_3_xppg, 2),
                 "next_6_xppg": round(next_6_xppg, 2),
                 "buy_delta_3": round(buy_delta_3, 2),
@@ -420,6 +422,139 @@ def buy_board(
             }
         )
     return sorted(board, key=lambda item: item["buy_delta_6"], reverse=True)[:limit]
+
+
+TABLE_FIELDS = {
+    "player_id",
+    "player",
+    "team",
+    "position",
+    "current_price",
+    "return_delta",
+    "performance_delta",
+    "performance_data_state",
+    "forward_delta",
+    "tracked",
+}
+
+
+def paginated_players(
+    con: sqlite3.Connection,
+    season: str,
+    par_season: str = "2026-27",
+    gameweeks_played: int | None = None,
+    page: int = 1,
+    page_size: int = 15,
+    position: str = "ALL",
+    min_price: float | None = None,
+    max_price: float | None = None,
+    tracked: bool = False,
+    confidence: str = "ALL",
+    sort: str = "forward_delta",
+    direction: str = "desc",
+    search: str = "",
+    quick_filter: str = "ALL",
+):
+    rows = buy_board(con, season, par_season, gameweeks_played, 2000)
+    tracked_ids = {row["player_id"] for row in con.execute("SELECT player_id FROM tracked_players WHERE season = ?", (season,))}
+    query = search.strip().lower()
+    if position != "ALL":
+        rows = [row for row in rows if row["position"] == position]
+    if min_price is not None:
+        rows = [row for row in rows if row["current_price"] >= min_price]
+    if max_price is not None:
+        rows = [row for row in rows if row["current_price"] <= max_price]
+    if tracked:
+        rows = [row for row in rows if row["player_id"] in tracked_ids]
+    if confidence != "ALL":
+        rows = [row for row in rows if ("HIGH" if row["projection_confidence"] >= 0.7 else "MEDIUM" if row["projection_confidence"] >= 0.45 else "LOW") == confidence]
+    if quick_filter == "ABOVE_PAR":
+        rows = [row for row in rows if row["forward_delta"] >= 0]
+    if quick_filter == "BELOW_PAR":
+        rows = [row for row in rows if row["forward_delta"] < 0]
+    if quick_filter == "EMERGING":
+        rows = [row for row in rows if row["is_emerging"]]
+    if quick_filter == "REGRESSION_RISK":
+        rows = [row for row in rows if row["is_regression_risk"]]
+    if quick_filter == "TRACKED":
+        rows = [row for row in rows if row["player_id"] in tracked_ids]
+    if query:
+        rows = [row for row in rows if query in row["player"].lower() or query in row["team"].lower()]
+    reverse = direction != "asc"
+    rows = sorted(rows, key=lambda row: row.get(sort) if row.get(sort) is not None else (-9999 if reverse else 9999), reverse=reverse)
+    total = len(rows)
+    page_size = max(1, min(100, page_size))
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * page_size
+    page_rows = [({key: row.get(key) for key in TABLE_FIELDS} | {"tracked": row["player_id"] in tracked_ids}) for row in rows[start : start + page_size]]
+    return {"players": page_rows, "page": page, "page_size": page_size, "total": total, "total_pages": total_pages}
+
+
+def player_performance_lineage(con: sqlite3.Connection, season: str, player_id: int, par_season: str = "2026-27"):
+    row = next((item for item in buy_board(con, season, par_season, None, 2000) if item["player_id"] == player_id), None)
+    if not row:
+        return None
+    components = row.get("performance_components") or {}
+    missing = []
+    if row["performance_data_state"] == "missing":
+        missing.append("No current player-process observation from official FPL.")
+    if row["performance_data_state"] == "partial":
+        missing.append("Defensive process data is incomplete.")
+    return {
+        "player_id": player_id,
+        "performance_delta": row["performance_delta"],
+        "underlying_xppg": row["process_xppg_regressed"],
+        "value_par": row["value_par"],
+        "state": row["performance_data_state"],
+        "confidence": row["performance_confidence"],
+        "sample_gameweeks": row["performance_sample_gameweeks"],
+        "sample_minutes": row["performance_sample_minutes"],
+        "prior": {"source": row["prior_source"], "confidence": row["prior_confidence"]},
+        "components": {
+            "appearance": components.get("appearance_ev", 0.0),
+            "goal": components.get("goal_ev", 0.0),
+            "assist": components.get("assist_ev", 0.0),
+            "clean_sheet": components.get("clean_sheet_process_ev", 0.0),
+            "defcon": components.get("defcon_ev", 0.0),
+            "bonus": components.get("bonus_process_ev", 0.0),
+            "saves": components.get("save_process_ev", 0.0),
+            "deductions": components.get("deduction_process_ev", 0.0),
+        },
+        "available_observations": ["official FPL player process"] if row["performance_data_state"] == "sufficient" else [],
+        "missing_required_observations": missing,
+        "forward_available": row["forward_delta"] is not None,
+        "note": "Based on underlying process, not actual FPL points.",
+    }
+
+
+def player_forward_lineage(con: sqlite3.Connection, season: str, player_id: int, par_season: str = "2026-27"):
+    row = next((item for item in buy_board(con, season, par_season, None, 2000) if item["player_id"] == player_id), None)
+    if not row:
+        return None
+    teams = {team["team_id"]: team["short_name"] for team in con.execute("SELECT team_id, short_name FROM teams WHERE season = ?", (season,))}
+    return {
+        "player_id": player_id,
+        "forward_delta": row["forward_delta"],
+        "next_6_xppg": row["next_6_xppg"],
+        "value_par": row["value_par"],
+        "gameweeks": [
+            {
+                "gameweek": gw["gameweek"],
+                "projected_points": gw["total_xpts"],
+                "fixtures": [
+                    {
+                        "opponent": teams.get(fixture.get("opponent_team_id"), str(fixture.get("opponent_team_id"))),
+                        "home_away": "H" if fixture.get("is_home") else "A",
+                        "expected_minutes": row["expected_minutes"],
+                        "total_xpts": fixture.get("total_fixture_xpts"),
+                    }
+                    for fixture in gw["fixtures"]
+                ],
+            }
+            for gw in row.get("fixture_projection", [])
+        ],
+    }
 
 
 def breakout_board(

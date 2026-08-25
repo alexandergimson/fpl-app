@@ -13,7 +13,7 @@ import pandas as pd
 from backend.ingestion.providers import Dataset, UnderstatProvider
 from backend.jobs.refresh import refresh_all
 from backend.services.valuation import captain_adjusted_delta, captaincy_weight, player_status, projection_confidence, selling_price
-from backend.services.boards import breakout_board, buy_board, freeze_player_gameweek_pars, infer_gameweeks, trap_board, value_balance_and_return_delta
+from backend.services.boards import breakout_board, buy_board, freeze_player_gameweek_pars, infer_gameweeks, paginated_players, player_forward_lineage, player_performance_lineage, trap_board, value_balance_and_return_delta
 from backend.services.bonus import bonus_rates, bonus_xppg
 from backend.services.goalkeepers import observed_save_rates, save_rates, save_xppg
 from backend.data.db import connect
@@ -339,6 +339,34 @@ class ModelTests(unittest.TestCase):
             factors = upcoming_fixture_factors(con, "2026-27", 1, 3)
         self.assertEqual(factors, [1.08, 1.16])
         self.assertAlmostEqual(adjusted_horizon_ppg(5, factors, 3), 5.4)
+
+    def test_paginated_players_filters_and_sorts_before_pagination(self):
+        with connect(":memory:") as con:
+            for position in ("MID", "FWD"):
+                con.execute(
+                    "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    ("2026-27", "test", position, 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+                )
+            rows = [
+                ("2026-27", player_id, None, f"P{player_id:02d}", "", "", 1, "TST", "MID" if player_id <= 18 else "FWD", 4.0 + player_id / 10, 0, 0, 0, "a", "test", "now", "test")
+                for player_id in range(1, 21)
+            ]
+            con.executemany("INSERT INTO players VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+            track_player(con, "2026-27", 19)
+            page1 = paginated_players(con, "2026-27")
+            page2 = paginated_players(con, "2026-27", page=2)
+            cheap = paginated_players(con, "2026-27", page=1, page_size=5, sort="current_price", direction="asc")
+            mids = paginated_players(con, "2026-27", position="MID", page_size=100)
+            max_price = paginated_players(con, "2026-27", max_price=4.5, page_size=100)
+            tracked_page = paginated_players(con, "2026-27", tracked=True)
+        self.assertEqual(len(page1["players"]), 15)
+        self.assertEqual(page1["total"], 20)
+        self.assertEqual(page1["total_pages"], 2)
+        self.assertEqual(len(page2["players"]), 5)
+        self.assertEqual([row["player"] for row in cheap["players"]], ["P01", "P02", "P03", "P04", "P05"])
+        self.assertEqual(mids["total"], 18)
+        self.assertEqual(max_price["total"], 5)
+        self.assertEqual(tracked_page["players"][0]["player_id"], 19)
 
     def test_buy_board_includes_fixture_adjustment(self):
         with connect(":memory:") as con:
@@ -1439,6 +1467,69 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(row["xg90"], 1.0)
         self.assertEqual(row["defcon_xppg"], 2.0)
         self.assertGreater(row["bonus_xppg"], 0)
+
+    def test_lineage_helpers_return_performance_and_forward_details(self):
+        with connect(":memory:") as con:
+            con.execute("INSERT INTO app_state VALUES ('2026-27', 'current_gameweek', '1', CURRENT_TIMESTAMP)")
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "FWD", 6.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO teams VALUES
+                ('2026-27', 1, 'Team', 'TST', 'test', 'now', 'test'),
+                ('2026-27', 2, 'Opponent', 'OPP', 'test', 'now', 'test')
+                """
+            )
+            con.execute("INSERT INTO fixtures VALUES ('2026-27', 1, 2, '', 1, 2, 3, 3, 0, 'test', 'now', 'test')")
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Lineage', '', '', 1, 'TST', 'FWD',
+                  6.0, 0, 90, 0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2026-27', 1, 1, 1, 2, 1, 5, 90, 1, 0, 0, 0, 0, 0, 3, 45, NULL, NULL, NULL, 6.0, 'test', 'now', 'test')
+                """
+            )
+            replace_player_underlying(con, "2026-27", pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 1.0, "xa": 0.5, "cbirt": 12}]), "test", "now")
+            performance = player_performance_lineage(con, "2026-27", 1)
+            forward = player_forward_lineage(con, "2026-27", 1)
+        self.assertEqual(performance["components"]["goal"], 4.0)
+        self.assertEqual(performance["components"]["assist"], 1.5)
+        self.assertEqual(performance["note"], "Based on underlying process, not actual FPL points.")
+        self.assertEqual(len(forward["gameweeks"]), 6)
+        self.assertEqual(forward["gameweeks"][0]["fixtures"][0]["opponent"], "OPP")
+
+    def test_missing_performance_lineage_explains_thiago_case(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "FWD", 8.0, 4.23, 4.23, 5, 0, "LOW", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 106, NULL, 'Thiago', 'Igor Thiago', 'Nascimento Rodrigues', 1, 'BRE', 'FWD',
+                  8.0, 0, 82, 17.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            lineage = player_performance_lineage(con, "2026-27", 106)
+        self.assertIsNone(lineage["performance_delta"])
+        self.assertEqual(lineage["state"], "missing")
+        self.assertIn("No current player-process observation from official FPL.", lineage["missing_required_observations"])
+        self.assertTrue(lineage["forward_available"])
 
     def test_player_underlying_rates_are_regressed_by_position(self):
         with connect(":memory:") as con:

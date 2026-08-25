@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import "./style.css";
@@ -78,6 +78,30 @@ type PlayerDetail = {
 
 type Alert = { id: number; kind: string; message: string; created_at: string };
 type PriceMovement = { player_id: number; player: string; team: string; position: string; first_price: number; latest_price: number; price_change: number; gameweek?: number | null };
+type PlayersPage = { players: BoardRow[]; page: number; page_size: number; total: number; total_pages: number };
+type PerformanceLineage = {
+  player_id: number;
+  performance_delta: number | null;
+  underlying_xppg: number | null;
+  value_par: number;
+  state: string;
+  confidence: string;
+  sample_gameweeks?: number;
+  sample_minutes?: number;
+  prior: { source?: string | null; confidence?: string | null };
+  components: Record<string, number>;
+  available_observations: string[];
+  missing_required_observations: string[];
+  forward_available: boolean;
+  note: string;
+};
+type ForwardLineage = {
+  player_id: number;
+  forward_delta: number;
+  next_6_xppg: number;
+  value_par: number;
+  gameweeks: { gameweek: number; projected_points: number; fixtures: { opponent: string; home_away: string; expected_minutes: number; total_xpts: number }[] }[];
+};
 type DataStatus = {
   season: string;
   current_gameweek?: number | null;
@@ -187,6 +211,114 @@ function priorLabel(row: BoardRow) {
   return "No prior";
 }
 
+function DeltaPopover({
+  row,
+  kind,
+  performanceCache,
+  forwardCache,
+  setPerformanceCache,
+  setForwardCache,
+  selectPlayer,
+}: {
+  row: BoardRow;
+  kind: "performance" | "forward";
+  performanceCache: Record<number, PerformanceLineage | "error" | "loading">;
+  forwardCache: Record<number, ForwardLineage | "error" | "loading">;
+  setPerformanceCache: React.Dispatch<React.SetStateAction<Record<number, PerformanceLineage | "error" | "loading">>>;
+  setForwardCache: React.Dispatch<React.SetStateAction<Record<number, ForwardLineage | "error" | "loading">>>;
+  selectPlayer: (row: BoardRow) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  const isPerformance = kind === "performance";
+  const cache = isPerformance ? performanceCache[row.player_id] : forwardCache[row.player_id];
+  const value = isPerformance ? row.performance_delta : row.forward_delta;
+  const label = `${isPerformance ? "Performance" : "Forward"} Delta for ${row.player}`;
+
+  function load() {
+    setOpen(true);
+    if (cache) return;
+    if (isPerformance) {
+      setPerformanceCache((current) => ({ ...current, [row.player_id]: "loading" }));
+      fetch(`${API}/players/${row.player_id}/performance-lineage?season=2026-27`)
+        .then((response) => response.json())
+        .then((lineage) => setPerformanceCache((current) => ({ ...current, [row.player_id]: lineage })))
+        .catch(() => setPerformanceCache((current) => ({ ...current, [row.player_id]: "error" })));
+    } else {
+      setForwardCache((current) => ({ ...current, [row.player_id]: "loading" }));
+      fetch(`${API}/players/${row.player_id}/forward-lineage?season=2026-27`)
+        .then((response) => response.json())
+        .then((lineage) => setForwardCache((current) => ({ ...current, [row.player_id]: lineage })))
+        .catch(() => setForwardCache((current) => ({ ...current, [row.player_id]: "error" })));
+    }
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function close(event: MouseEvent) {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  return (
+    <span className="delta-wrap" ref={wrapRef} onMouseLeave={() => setOpen(false)}>
+      <button
+        type="button"
+        className={`delta-trigger ${valueTone(value)}`}
+        aria-label={label}
+        aria-expanded={open}
+        onMouseEnter={load}
+        onFocus={load}
+        onClick={() => (open ? setOpen(false) : load())}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setOpen(false);
+        }}
+      >
+        {signedMetric(value)}
+      </button>
+      {open && (
+        <span className="popover" role="dialog" aria-label={`${label} details`}>
+          {cache === "loading" || !cache ? <span className="note">Loading details...</span> : cache === "error" ? <span className="note">{isPerformance ? "Performance details unavailable." : "Projection details unavailable."}</span> : isPerformance ? (
+            <PerformancePopover lineage={cache as PerformanceLineage} />
+          ) : (
+            <ForwardPopover lineage={cache as ForwardLineage} onDetail={() => selectPlayer(row)} />
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function PerformancePopover({ lineage }: { lineage: PerformanceLineage }) {
+  return (
+    <>
+      <div className="popover-grid"><span>Performance Δ</span><strong>{signedMetric(lineage.performance_delta)}</strong><span>Underlying xPPG</span><strong>{metric(lineage.underlying_xppg)}</strong><span>Current Par</span><strong>{metric(lineage.value_par)}</strong><span>State</span><strong>{lineage.state}</strong></div>
+      <h4>Process components</h4>
+      {Object.entries(lineage.components).map(([key, value]) => <div className={value ? "line" : "line muted"} key={key}><span>{key.replace(/_/g, " ")}</span><strong>{metric(value)}</strong></div>)}
+      <h4>Evidence</h4>
+      <p>{lineage.sample_gameweeks ?? 0} GW · {lineage.sample_minutes ?? 0} mins</p>
+      <p>Available: {lineage.available_observations.length ? lineage.available_observations.join(", ") : "none"}</p>
+      <p>Prior: {(lineage.prior.source ?? "none").replace(/_/g, " ")} · Confidence: {lineage.confidence}</p>
+      {lineage.missing_required_observations.map((item) => <p className="note" key={item}>{item}</p>)}
+      {lineage.performance_delta == null && lineage.forward_available && <p className="note">Forward projection can still use historical priors and future fixtures.</p>}
+      <p className="note">{lineage.note}</p>
+    </>
+  );
+}
+
+function ForwardPopover({ lineage, onDetail }: { lineage: ForwardLineage; onDetail: () => void }) {
+  return (
+    <>
+      <div className="popover-grid"><span>Forward Δ</span><strong>{signedMetric(lineage.forward_delta)}</strong><span>Next-6 xPPG</span><strong>{metric(lineage.next_6_xppg)}</strong><span>Current Par</span><strong>{metric(lineage.value_par)}</strong></div>
+      <h4>Outlook</h4>
+      {lineage.gameweeks.map((gw) => <div className="line" key={gw.gameweek}><span>GW{gw.gameweek}</span><strong>{metric(gw.projected_points)}{gw.fixtures.length ? ` · ${gw.fixtures.map((f) => `${f.opponent} (${f.home_away})`).join(", ")}` : " · Blank GW"}</strong></div>)}
+      <button className="action" type="button" onClick={onDetail}>View detail</button>
+    </>
+  );
+}
+
 function SortButton({ label, sortKey, active, direction, onSort, title }: { label: string; sortKey: SortKey; active: boolean; direction: "asc" | "desc"; onSort: (key: SortKey) => void; title?: string }) {
   return (
     <button className="sort" title={title} onClick={() => onSort(sortKey)}>
@@ -198,6 +330,8 @@ function SortButton({ label, sortKey, active, direction, onSort, title }: { labe
 export function App() {
   const [points, setPoints] = useState<ParPoint[]>([]);
   const [players, setPlayers] = useState<BoardRow[]>([]);
+  const [playersPage, setPlayersPage] = useState<PlayersPage>({ players: [], page: 1, page_size: 15, total: 0, total_pages: 1 });
+  const [playersLoading, setPlayersLoading] = useState(false);
   const [tracked, setTracked] = useState<BoardRow[]>([]);
   const [squad, setSquad] = useState<BoardRow[]>([]);
   const [detail, setDetail] = useState<PlayerDetail | null>(null);
@@ -218,6 +352,9 @@ export function App() {
   const [sortKey, setSortKey] = useState<SortKey>("forward_delta");
   const [sortDirection, setSortDirection] = useState<"desc" | "asc">("desc");
   const [sortOption, setSortOption] = useState<SortOption>("BEST_VALUE");
+  const [page, setPage] = useState(1);
+  const [performanceLineage, setPerformanceLineage] = useState<Record<number, PerformanceLineage | "error" | "loading">>({});
+  const [forwardLineage, setForwardLineage] = useState<Record<number, ForwardLineage | "error" | "loading">>({});
   const [roleForm, setRoleForm] = useState({ penalties: false, direct_free_kicks: false, corners: false, indirect_free_kicks: false, reason: "" });
   const [minutesForm, setMinutesForm] = useState({ start_probability: "0.8", expected_minutes_if_starting: "75", substitute_probability: "0.2", expected_minutes_if_sub: "20", reason: "" });
 
@@ -230,7 +367,6 @@ export function App() {
 
   function loadData() {
     fetch(`${API}/price-par`).then((response) => response.json()).then(setPoints).catch(() => setPoints([]));
-    fetch(`${API}/all-players?season=2026-27&limit=2000`).then((response) => response.json()).then(setPlayers).catch(() => setPlayers([]));
     fetch(`${API}/tracked-players?season=2026-27`).then((response) => response.json()).then(setTracked).catch(() => setTracked([]));
     fetch(`${API}/alerts?season=2026-27`).then((response) => response.json()).then(setAlerts).catch(() => setAlerts([]));
     fetch(`${API}/price-movements?season=2026-27&limit=10`).then((response) => response.json()).then(setPriceMovements).catch(() => setPriceMovements([]));
@@ -240,6 +376,35 @@ export function App() {
   }
 
   useEffect(loadData, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams({
+      season: "2026-27",
+      page: page.toString(),
+      page_size: "15",
+      sort: sortKey,
+      direction: sortDirection,
+      position,
+      search,
+      quick_filter: quickFilter,
+      confidence,
+    });
+    if (minPrice) params.set("min_price", minPrice);
+    if (maxPrice) params.set("max_price", maxPrice);
+    if (trackedOnly) params.set("tracked", "true");
+    setPlayersLoading(true);
+    fetch(`${API}/all-players?${params}`)
+      .then((response) => response.json())
+      .then((result: PlayersPage) => {
+        setPlayersPage(result);
+        setPlayers(result.players);
+      })
+      .catch(() => {
+        setPlayersPage({ players: [], page: 1, page_size: 15, total: 0, total_pages: 1 });
+        setPlayers([]);
+      })
+      .finally(() => setPlayersLoading(false));
+  }, [page, sortKey, sortDirection, position, minPrice, maxPrice, trackedOnly, search, quickFilter, confidence]);
 
   useEffect(() => {
     if (!detail?.current) return;
@@ -262,7 +427,7 @@ export function App() {
 
   const trackedIds = useMemo(() => new Set(tracked.map((row) => row.player_id)), [tracked]);
   const squadIds = useMemo(() => new Set(squad.map((row) => row.player_id)), [squad]);
-  const positions = ["ALL", ...[...new Set(players.map((row) => row.position))].sort()];
+  const positions = ["ALL", "GK", "DEF", "MID", "FWD"];
   const squadSummary = useMemo(() => {
     const counts = { STRONG: 0, HEALTHY: 0, WATCH: 0, REVIEW: 0 };
     squad.forEach((row) => counts[row.squad_health as keyof typeof counts]++);
@@ -275,29 +440,13 @@ export function App() {
     };
   }, [squad, trackedIds]);
 
-  const visiblePlayers = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    const min = Number(minPrice);
-    const max = Number(maxPrice);
-    return players
-      .filter((row) => position === "ALL" || row.position === position)
-      .filter((row) => !trackedOnly || trackedIds.has(row.player_id))
-      .filter((row) => !minPrice || row.current_price >= min)
-      .filter((row) => !maxPrice || row.current_price <= max)
-      .filter((row) => confidence === "ALL" || confidenceLabel(row.projection_confidence) === confidence)
-      .filter((row) => quickFilter === "ALL" || (quickFilter === "ABOVE_PAR" && row.forward_delta >= 0) || (quickFilter === "BELOW_PAR" && row.forward_delta < 0) || (quickFilter === "EMERGING" && row.is_emerging) || (quickFilter === "REGRESSION_RISK" && row.is_regression_risk) || (quickFilter === "TRACKED" && trackedIds.has(row.player_id)))
-      .filter((row) => !query || row.player.toLowerCase().includes(query) || row.team.toLowerCase().includes(query))
-      .sort((a, b) => {
-        const av = a[sortKey] ?? (sortDirection === "desc" ? -Infinity : Infinity);
-        const bv = b[sortKey] ?? (sortDirection === "desc" ? -Infinity : Infinity);
-        return (av - bv) * (sortDirection === "desc" ? -1 : 1);
-      });
-  }, [players, position, trackedOnly, minPrice, maxPrice, confidence, quickFilter, trackedIds, search, sortKey, sortDirection]);
+  const visiblePlayers = players;
 
   const recentTrend = detail?.recent_gameweeks.map((row) => ({ ...row, price: row.value })) ?? [];
   const snapshotTrend = detail?.tracked_snapshots ?? [];
 
   function changeSort(key: SortKey) {
+    setPage(1);
     if (sortKey === key) setSortDirection(sortDirection === "desc" ? "asc" : "desc");
     else {
       setSortKey(key);
@@ -306,6 +455,7 @@ export function App() {
   }
 
   function changeSortOption(option: SortOption) {
+    setPage(1);
     setSortOption(option);
     if (option === "CHEAPEST") {
       setSortKey("current_price");
@@ -431,8 +581,8 @@ export function App() {
                   <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td>
                   <td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td>
                   <td className={row.return_delta == null ? "" : row.return_delta >= 0 ? "positive" : "negative"}>{metric(row.return_delta)}</td>
-                  <td title={performanceTitle(row)} className={valueTone(row.performance_delta)}>{signedMetric(row.performance_delta)}</td>
-                  <td className={`delta ${row.forward_delta >= 0 ? "positive" : "negative"}`}>{row.forward_delta >= 0 ? "+" : ""}{row.forward_delta.toFixed(2)}</td>
+                  <td><DeltaPopover row={row} kind="performance" performanceCache={performanceLineage} forwardCache={forwardLineage} setPerformanceCache={setPerformanceLineage} setForwardCache={setForwardLineage} selectPlayer={selectPlayer} /></td>
+                  <td><DeltaPopover row={row} kind="forward" performanceCache={performanceLineage} forwardCache={forwardLineage} setPerformanceCache={setPerformanceLineage} setForwardCache={setForwardLineage} selectPlayer={selectPlayer} /></td>
                   <td>{trackedIds.has(row.player_id) ? <button className="action" onClick={() => untrack(row)}>Untrack</button> : <button className="action" onClick={() => track(row)}>Track</button>}</td>
                   <td><button className="action" onClick={() => viewMarket(row)}>Explore {row.position}</button> <button className="action" onClick={() => removeSquadPlayer(row)}>Remove</button></td>
                 </tr>
@@ -452,21 +602,22 @@ export function App() {
               ["EMERGING", "Emerging"],
               ["REGRESSION_RISK", "Regression Risk"],
               ["TRACKED", "Tracked"],
-            ].map(([value, label]) => <button key={value} className={quickFilter === value ? "action primary" : "action"} onClick={() => setQuickFilter(value)}>{label}</button>)}
+            ].map(([value, label]) => <button key={value} className={quickFilter === value ? "action primary" : "action"} onClick={() => { setQuickFilter(value); setPage(1); }}>{label}</button>)}
           </div>
           <div className="toolbar">
-            <input aria-label="Search players" placeholder="Search player or team" value={search} onChange={(event) => setSearch(event.target.value)} />
-            <select aria-label="Position filter" value={position} onChange={(event) => setPosition(event.target.value)}>{positions.map((option) => <option key={option} value={option}>{option}</option>)}</select>
-            <input aria-label="Minimum price" type="number" step="0.1" placeholder="Min £" value={minPrice} onChange={(event) => setMinPrice(event.target.value)} />
-            <input aria-label="Maximum price" type="number" step="0.1" placeholder="Max £" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} />
-            <select aria-label="Confidence filter" value={confidence} onChange={(event) => setConfidence(event.target.value)}><option value="ALL">All confidence</option><option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option></select>
+            <input aria-label="Search players" placeholder="Search player or team" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} />
+            <select aria-label="Position filter" value={position} onChange={(event) => { setPosition(event.target.value); setPage(1); }}>{positions.map((option) => <option key={option} value={option}>{option}</option>)}</select>
+            <input aria-label="Minimum price" type="number" step="0.1" placeholder="Min £" value={minPrice} onChange={(event) => { setMinPrice(event.target.value); setPage(1); }} />
+            <input aria-label="Maximum price" type="number" step="0.1" placeholder="Max £" value={maxPrice} onChange={(event) => { setMaxPrice(event.target.value); setPage(1); }} />
+            <select aria-label="Confidence filter" value={confidence} onChange={(event) => { setConfidence(event.target.value); setPage(1); }}><option value="ALL">All confidence</option><option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option></select>
             <select aria-label="Sort players" value={sortOption} onChange={(event) => changeSortOption(event.target.value as SortOption)}>
               <option value="BEST_VALUE">Best Value</option>
               <option value="PERFORMANCE">Best Process</option>
               <option value="CHEAPEST">Cheapest</option>
             </select>
-            <label className="check"><input type="checkbox" checked={trackedOnly} onChange={(event) => setTrackedOnly(event.target.checked)} /> Tracked only</label>
+            <label className="check"><input type="checkbox" checked={trackedOnly} onChange={(event) => { setTrackedOnly(event.target.checked); setPage(1); }} /> Tracked only</label>
           </div>
+          <div className="pagination"><span>Showing {playersPage.total ? (playersPage.page - 1) * playersPage.page_size + 1 : 0}–{Math.min(playersPage.page * playersPage.page_size, playersPage.total)} of {playersPage.total}</span><button className="action" disabled={playersPage.page <= 1 || playersLoading} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</button>{Array.from({ length: Math.min(5, playersPage.total_pages) }, (_, index) => Math.max(1, Math.min(playersPage.total_pages - 4, playersPage.page - 2)) + index).map((value) => <button key={value} className={value === playersPage.page ? "action primary" : "action"} disabled={playersLoading} onClick={() => setPage(value)}>{value}</button>)}<button className="action" disabled={playersPage.page >= playersPage.total_pages || playersLoading} onClick={() => setPage((value) => Math.min(playersPage.total_pages, value + 1))}>Next</button></div>
           <table>
             <thead>
               <tr>
@@ -478,16 +629,17 @@ export function App() {
               </tr>
             </thead>
             <tbody>
-              {visiblePlayers.map((row) => (
+              {playersLoading && <tr><td colSpan={8}>Loading players...</td></tr>}
+              {!playersLoading && visiblePlayers.map((row) => (
                 <tr key={`player-${row.player_id}`}>
                   <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td><td>{row.team}</td><td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td>
-                  <td title={performanceTitle(row)} className={valueTone(row.performance_delta)}>{signedMetric(row.performance_delta)}</td>
+                  <td><DeltaPopover row={row} kind="performance" performanceCache={performanceLineage} forwardCache={forwardLineage} setPerformanceCache={setPerformanceLineage} setForwardCache={setForwardLineage} selectPlayer={selectPlayer} /></td>
                   <td title={performanceTitle(row)}><span className={`state state-${row.performance_data_state}`}>{row.performance_data_state}</span><small>{metric(row.process_xppg_regressed)}</small></td>
-                  <td className={`delta ${row.forward_delta >= 0 ? "positive" : "negative"}`}>{row.forward_delta >= 0 ? "+" : ""}{row.forward_delta.toFixed(2)}</td>
+                  <td><DeltaPopover row={row} kind="forward" performanceCache={performanceLineage} forwardCache={forwardLineage} setPerformanceCache={setPerformanceLineage} setForwardCache={setForwardLineage} selectPlayer={selectPlayer} /></td>
                   <td>{trackedIds.has(row.player_id) ? <button className="action" onClick={() => untrack(row)}>Untrack</button> : <button className="action" onClick={() => track(row)}>Track</button>}</td>
                 </tr>
               ))}
-              {visiblePlayers.length === 0 && <tr><td colSpan={8}>No players match these filters.</td></tr>}
+              {!playersLoading && visiblePlayers.length === 0 && <tr><td colSpan={8}>No players match these filters.</td></tr>}
             </tbody>
           </table>
         </article>
