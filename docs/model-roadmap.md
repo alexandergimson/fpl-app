@@ -13,12 +13,12 @@
 - Walk-forward backtests evaluate future excess points versus future frozen GW Pars and report frozen-Par coverage.
 - Tracked snapshots store model version plus component-version metadata for Par, data, minutes, role, team strength, underlying and projection logic.
 - Underlying attacking and DefCon rates are shrunk toward position averages with a deterministic 900-minute prior; bonus and save rates use the same baseline pattern.
+- Team strength uses rolling team xG/xGA shrunk toward league average, with FPL fixture difficulty as the no-data fallback.
 
 ## Next Phases
 
-1. Upgrade team strength to rolling xG/xGA with shrinkage and explicit model versions.
-2. Replace heuristic minutes with start probability, conditional starter minutes, sub probability, sub minutes and P(60+).
-3. Add formal model-run IDs when multiple trained/challenger models exist.
+1. Replace heuristic minutes with start probability, conditional starter minutes, sub probability, sub minutes and P(60+).
+2. Add formal model-run IDs when multiple trained/challenger models exist.
 
 ## Promotion Rule
 

@@ -5,6 +5,7 @@ import sqlite3
 
 from backend.services.boards import buy_board
 from backend.services.fixtures import current_gameweek
+from backend.services.team_strength import TEAM_STRENGTH_VERSION
 
 MODEL_VERSION = "v1"
 COMPONENT_VERSIONS = {
@@ -13,7 +14,7 @@ COMPONENT_VERSIONS = {
     "par": "par_iso_v1",
     "projection": "component_projection_v1",
     "role": "role_overrides_v1",
-    "team_strength": "fixture_difficulty_v1",
+    "team_strength": TEAM_STRENGTH_VERSION,
     "underlying": "regressed_underlying_xpts_v1",
 }
 

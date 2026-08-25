@@ -31,7 +31,7 @@ from backend.ingestion.loaders import replace_fixtures, replace_fpl_player_under
 from backend.ingestion.loaders import replace_team_underlying, snapshot_prices
 from backend.services.prices import price_movements
 from backend.services.underlying import attacking_xppg, defcon_xppg, player_underlying_rates, regressed_rate, underlying_xpts_components
-from backend.services.team_strength import team_strengths
+from backend.services.team_strength import shrink_rate, team_strengths
 from backend.services.price_par import blended_par_for, current_curve_points
 
 
@@ -92,6 +92,9 @@ class ModelTests(unittest.TestCase):
 
     def test_regressed_rate_shrinks_to_prior(self):
         self.assertEqual(regressed_rate(1.0, 900, 0.5), 0.75)
+
+    def test_team_strength_rate_shrinks_to_prior(self):
+        self.assertEqual(shrink_rate(2.0, 6, 1.0), 1.5)
 
     def test_bonus_xppg_scales_by_minutes(self):
         self.assertEqual(bonus_xppg(45, 1.0), 0.5)
@@ -899,6 +902,24 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(count, 2)
         self.assertGreater(strengths[2]["defensive_weakness"], 1)
         self.assertGreater(factors[0], 1)
+
+    def test_team_strength_uses_rolling_window(self):
+        with connect(":memory:") as con:
+            replace_team_underlying(
+                con,
+                "2026-27",
+                pd.DataFrame(
+                    [
+                        {"team_id": 1, "gameweek": 1, "xg": 1.0, "xga": 10.0},
+                        {"team_id": 1, "gameweek": 7, "xg": 1.0, "xga": 1.0},
+                        {"team_id": 2, "gameweek": 7, "xg": 1.0, "xga": 2.0},
+                    ]
+                ),
+                "test",
+                "now",
+            )
+            strengths = team_strengths(con, "2026-27", 7)
+        self.assertLess(strengths[1]["defensive_weakness"], strengths[2]["defensive_weakness"])
 
     def test_expected_opponent_goals_use_team_strength(self):
         with connect(":memory:") as con:

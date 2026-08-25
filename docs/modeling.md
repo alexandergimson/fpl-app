@@ -109,7 +109,7 @@ Underlying imports also rebuild `game_underlying_xpts`, a provider-neutral deriv
 
 Optional team xG/xGA CSV ingestion stores rows in `team_underlying_gameweeks`.
 
-When available, fixture adjustment uses opponent defensive weakness from team xGA relative to league average. When unavailable, it falls back to the small FPL fixture-difficulty multiplier.
+When available, fixture adjustment uses rolling opponent defensive weakness from team xGA relative to league average, shrunk toward league average with a six-match prior. When unavailable, it falls back to the small FPL fixture-difficulty multiplier.
 
 Understat is the intended first automated team-strength enrichment provider, but it is not wired until team xG/xGA ingestion is added.
 
@@ -117,7 +117,7 @@ Understat is the intended first automated team-strength enrichment provider, but
 
 GK, DEF and MID projections now estimate clean-sheet EV separately from attacking fixture adjustment.
 
-Upcoming expected opponent goals come from opponent attack strength, own defensive weakness and a 1.35 league-average goals prior. When team xG/xGA is unavailable, FPL fixture difficulty supplies a small fallback. Clean-sheet probability uses:
+Upcoming expected opponent goals come from rolling opponent attack strength, own defensive weakness and a 1.35 league-average goals prior. Team attack and defensive weakness are shrunk toward league average; when team xG/xGA is unavailable, FPL fixture difficulty supplies a small fallback. Clean-sheet probability uses:
 
 ```text
 P(clean sheet) = exp(-expected opponent goals)
