@@ -699,6 +699,43 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(result["status"], "SUCCESS")
         self.assertEqual(status["latest_ingestion_runs"][0]["kind"], "refresh")
 
+    def test_refresh_uses_finished_fixture_gameweek_when_bootstrap_lags(self):
+        players = pd.DataFrame(
+            [
+                {
+                    "id": 1,
+                    "code": 1,
+                    "web_name": "Refresh",
+                    "first_name": "",
+                    "second_name": "",
+                    "team": 1,
+                    "team_code": 1,
+                    "element_type": 3,
+                    "now_cost": 50,
+                    "total_points": 0,
+                    "minutes": 0,
+                    "selected_by_percent": 10,
+                    "status": "a",
+                }
+            ]
+        )
+        players.attrs["teams"] = pd.DataFrame([{"id": 1, "name": "Team", "short_name": "TST"}])
+        players.attrs["current_gameweek"] = 0
+        fixtures = pd.DataFrame(
+            [{"id": 1, "event": 1, "kickoff_time": "", "team_h": 1, "team_a": 2, "team_h_difficulty": 3, "team_a_difficulty": 3, "finished": True}]
+        )
+        provider = type("Provider", (), {
+            "bootstrap": lambda self, season: Dataset(players, "test", "2026-08-21T10:00:00Z", season),
+            "fixtures": lambda self, season: Dataset(fixtures, "test", "2026-08-21T10:00:00Z", season),
+        })
+        with TemporaryDirectory() as tmp, patch("backend.jobs.refresh.OfficialFplProvider", provider):
+            db_path = str(Path(tmp) / "refresh.sqlite")
+            result = refresh_all("2026-27", "2026-27", db_path)
+            with connect(db_path) as con:
+                gameweek = con.execute("SELECT value FROM app_state WHERE season = '2026-27' AND key = 'current_gameweek'").fetchone()["value"]
+        self.assertEqual(result["gameweek"], 1)
+        self.assertEqual(gameweek, "1")
+
     def test_provisional_finished_fixture_counts_as_completed(self):
         fixtures = pd.DataFrame(
             [{"id": 1, "event": 1, "kickoff_time": "", "team_h": 1, "team_a": 7, "team_h_difficulty": 2, "team_a_difficulty": 5, "finished": False, "finished_provisional": True}]

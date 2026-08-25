@@ -10,6 +10,17 @@ from backend.services.squad import get_team_id, import_public_squad
 from backend.services.tracking import snapshot_tracked
 
 
+def latest_finished_fixture_gameweek(fixtures) -> int:
+    frame = fixtures.frame
+    if "event" not in frame:
+        return 0
+    mask = frame["finished"].fillna(False).astype(bool) if "finished" in frame else False
+    if "finished_provisional" in frame:
+        mask = mask | frame["finished_provisional"].fillna(False).astype(bool)
+    events = frame.loc[mask, "event"].dropna()
+    return int(events.max()) if not events.empty else 0
+
+
 def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: str | None = None) -> dict:
     provider = OfficialFplProvider()
     with connect(db_path) if db_path else connect() as con:
@@ -17,7 +28,7 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
     try:
         dataset = provider.bootstrap(season)
         fixtures = provider.fixtures(season)
-        gameweek = int(dataset.frame.attrs.get("current_gameweek", 0) or 0)
+        gameweek = max(int(dataset.frame.attrs.get("current_gameweek", 0) or 0), latest_finished_fixture_gameweek(fixtures))
         with connect(db_path) if db_path else connect() as con:
             players = upsert_players(con, season, dataset.frame, dataset.source, dataset.fetched_at)
             prices = snapshot_prices(con, season, dataset.frame, dataset.source, dataset.fetched_at)
