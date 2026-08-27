@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.ingestion.derived_metrics import blank_gameweeks, double_gameweeks, shot_summaries
+from backend.ingestion.mappers import map_understat_players
 from backend.ingestion.normalizers import normalise_fixture, normalise_manager, normalise_player, normalise_shot, normalise_team
 from backend.ingestion.providers import OfficialFplProvider, UnderstatProvider
 from backend.ingestion.types import FplContext
@@ -67,6 +68,8 @@ def build_fpl_context(
     current_gw = int(bootstrap.frame.attrs.get("current_gameweek") or 0)
     next_gw = bootstrap.frame.attrs.get("next_gameweek")
     gw_deadline = bootstrap.frame.attrs.get("next_deadline")
+    manager_history = fpl.entry_history(manager_id, season)
+    chip_history = manager_history.frame.attrs.get("chips", [])
     if authenticated:
         picks_dataset = fpl.my_team(manager_id, season)
         entry = picks_dataset.frame.attrs.get("transfers", {})
@@ -78,6 +81,26 @@ def build_fpl_context(
     shot_by_player, shot_by_team = shot_summaries(shots)
     team_underlying = team_understat_summary(understat.team_underlying(season, teams_frame, fixtures_dataset.frame).frame.to_dict("records"))
     teams_by_id = {int(row["id"]): row for row in teams_raw}
+    fpl_mapping_rows = [
+        {
+            "player_id": int(row["id"]),
+            "player_name": f"{row.get('first_name') or ''} {row.get('second_name') or ''}".strip(),
+            "web_name": row.get("web_name"),
+            "first_name": row.get("first_name"),
+            "second_name": row.get("second_name"),
+            "team_name": teams_by_id.get(int(row.get("team") or 0), {}).get("name"),
+            "team": teams_by_id.get(int(row.get("team") or 0), {}).get("name"),
+        }
+        for row in elements
+    ]
+    shot_player_ids = map_understat_players(fpl_mapping_rows, [{"player_name": shot["player"], "team": shot["team"]} for shot in shots])
+    shot_by_player_id = {}
+    for name, summary in shot_by_player.items():
+        player_id = shot_player_ids.get(name)
+        if player_id is not None:
+            current = shot_by_player_id.setdefault(player_id, {"shots": 0, "shots_in_box": 0, "high_quality_chances": 0, "key_passes": 0, "high_quality_chances_created": 0})
+            for key, value in summary.items():
+                current[key] += value
     teams = []
     for row in teams_raw:
         team_id = int(row["id"])
@@ -89,7 +112,8 @@ def build_fpl_context(
         history_by_player[player_id] = fpl.element_summary(player_id, season).frame.to_dict("records") if hasattr(fpl, "element_summary") else []
     players = []
     for row in elements:
-        player = normalise_player(row, teams_by_id, history_by_player.get(int(row["id"]), []), shot_by_player.get(row.get("web_name") or ""))
+        player_id = int(row["id"])
+        player = normalise_player(row, teams_by_id, history_by_player.get(player_id, []), shot_by_player_id.get(player_id))
         player["next_5_fixtures"] = next_fixtures(player["team_id"], fixtures_raw, teams_by_id, next_gw or current_gw or None)
         players.append(player)
     fixtures = [normalise_fixture(row) for row in fixtures_raw]
@@ -104,7 +128,7 @@ def build_fpl_context(
         "players": players,
         "teams": teams,
         "fixtures": fixtures,
-        "manager": normalise_manager(manager_id, entry, picks_dataset.frame.to_dict("records"), transfers, authenticated),
+        "manager": normalise_manager(manager_id, entry, picks_dataset.frame.to_dict("records"), transfers, authenticated, chip_history),
         "shots": shots,
         "current_gw": current_gw or None,
         "next_gw": next_gw,

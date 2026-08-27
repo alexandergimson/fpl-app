@@ -63,6 +63,59 @@ class PlayerContext(TypedDict, total=False):
     team_name: str
     position: str
     current_price: float | None
+    price_change_event: float | None
+    price_change_season: float | None
+    price_change_percent: float | None
+    price_change_hourly_rate: float | None
+    price_change_projections: JsonValue
+    price_change_locked_until: JsonValue
+    price_change_calibrating: JsonValue
+    selected_by_percent: float | None
+    status: str | None
+    chance_of_playing_this_round: int | None
+    chance_of_playing_next_round: int | None
+    availability_percent: int | None
+    news: str
+    total_minutes: int
+    starts: int
+    minutes_per_game: float | None
+    total_points: int
+    points_per_game: float | None
+    form: float | None
+    expected_points_this_gw: float | None
+    expected_points_next_gw: float | None
+    bps: int
+    ict_index: float | None
+    influence: float | None
+    creativity: float | None
+    threat: float | None
+    goals: int
+    assists: int
+    expected_goals: float | None
+    expected_assists: float | None
+    expected_goal_involvements: float | None
+    expected_goals_per_90: float | None
+    expected_assists_per_90: float | None
+    expected_goal_involvements_per_90: float | None
+    shots: int
+    shots_in_box: int
+    high_quality_chances: int
+    high_quality_chances_created: int
+    key_passes: int
+    penalties_order: JsonValue
+    direct_freekicks_order: JsonValue
+    corners_and_indirect_freekicks_order: JsonValue
+    clean_sheets: int
+    goals_conceded: int
+    saves: int
+    penalties_saved: int
+    expected_goals_conceded: float | None
+    expected_goals_conceded_per_90: float | None
+    defensive_contribution: float | None
+    defensive_contribution_per_90: float | None
+    transfers_in_event: int
+    transfers_out_event: int
+    net_transfers: int
     next_5_fixtures: list[dict[str, JsonValue]]
 
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 from backend.ingestion.config import HIGH_QUALITY_XG_THRESHOLD, POSITIONS, understat_shot_in_box
 from backend.ingestion.derived_metrics import minutes_per_game, net_transfers
 
+CHIP_ALLOWANCES = {"wildcard": 2, "freehit": 1, "bboost": 1, "3xc": 1}
+
 
 def price(value: int | float | str | None) -> float | None:
     return None if value is None else round(float(value) / 10, 1)
@@ -124,10 +126,13 @@ def normalise_fixture(raw: dict) -> dict:
     }
 
 
-def normalise_manager(manager_id: int, entry: dict, picks: list[dict], transfers: list[dict], authenticated: bool = False) -> dict:
-    chip_plays = entry.get("chip_plays") or []
-    played_chips = {row.get("name") for row in chip_plays if isinstance(row, dict)}
-    all_chips = {"wildcard", "freehit", "bboost", "3xc"}
+def normalise_manager(manager_id: int, entry: dict, picks: list[dict], transfers: list[dict], authenticated: bool = False, chip_history: list[dict] | None = None) -> dict:
+    used: dict[str, int] = {}
+    for row in chip_history or []:
+        name = row.get("name") if isinstance(row, dict) else None
+        if name:
+            used[name] = used.get(name, 0) + 1
+    chips_remaining = [name for name, allowed in CHIP_ALLOWANCES.items() for _ in range(max(0, allowed - used.get(name, 0)))]
     return {
         "manager_id": manager_id,
         "context_type": "authenticated" if authenticated else "public",
@@ -142,7 +147,7 @@ def normalise_manager(manager_id: int, entry: dict, picks: list[dict], transfers
         "transfer_history": transfers,
         "captain": next((int(row["element"]) for row in picks if row.get("is_captain")), None),
         "vice_captain": next((int(row["element"]) for row in picks if row.get("is_vice_captain")), None),
-        "chips_remaining": sorted(all_chips - played_chips) if chip_plays else [],
+        "chips_remaining": sorted(chips_remaining),
         "overall_rank": entry.get("overall_rank"),
         "current_gw": entry.get("current_event"),
         "next_gw": entry.get("next_event"),

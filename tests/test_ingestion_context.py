@@ -82,8 +82,13 @@ class FakeFpl:
 
     def entry_picks(self, manager_id, gameweek, season):
         picks = pd.DataFrame([{"element": 1, "is_captain": True, "is_vice_captain": False}])
-        picks.attrs["entry_history"] = {"transfers": 1, "event_transfers_cost": 4, "overall_rank": 123, "current_event": gameweek, "next_event": 2, "chip_plays": [{"name": "wildcard"}]}
+        picks.attrs["entry_history"] = {"transfers": 1, "event_transfers_cost": 4, "overall_rank": 123, "current_event": gameweek, "next_event": 2}
         return Dataset(picks, "fake", "now", season)
+
+    def entry_history(self, manager_id, season):
+        history = pd.DataFrame([{"event": 1}])
+        history.attrs["chips"] = [{"name": "wildcard"}, {"name": "3xc"}]
+        return Dataset(history, "fake", "now", season)
 
     def entry_transfers(self, manager_id, season):
         return Dataset(pd.DataFrame([{"element_in": 1, "element_out": 2}]), "fake", "now", season)
@@ -94,13 +99,13 @@ class FakeFpl:
 
     def my_team(self, manager_id, season):
         picks = pd.DataFrame([{"element": 1, "purchase_price": 90, "selling_price": 93, "is_captain": True, "is_vice_captain": False}])
-        picks.attrs["transfers"] = {"bank": 15, "value": 1005, "free_transfers": 1, "chip_plays": [{"name": "wildcard"}]}
+        picks.attrs["transfers"] = {"bank": 15, "value": 1005, "free_transfers": 1}
         return Dataset(picks, "fake", "now", season)
 
 
 class FakeUnderstat:
     def shots(self, season):
-        return Dataset(pd.DataFrame([{"player": "Saka", "team": "Arsenal", "opponent": "Chelsea", "minute": 10, "xG": 0.4, "X": 0.9, "Y": 0.5, "result": "Goal", "situation": "OpenPlay", "player_assisted": "Odegaard"}]), "fake", "now", season)
+        return Dataset(pd.DataFrame([{"player": "Bukayo Saka", "team": "Arsenal", "opponent": "Chelsea", "minute": 10, "xG": 0.4, "X": 0.9, "Y": 0.5, "result": "Goal", "situation": "OpenPlay", "player_assisted": "Odegaard"}]), "fake", "now", season)
 
     def team_underlying(self, season, teams, fixtures):
         return Dataset(pd.DataFrame([{"team_id": 1, "gameweek": 1, "xg": 1.8, "xga": 0.6}, {"team_id": 1, "gameweek": 2, "xg": 1.2, "xga": 1.1}]), "fake", "now", season)
@@ -164,7 +169,7 @@ class IngestionContextTests(unittest.TestCase):
         self.assertEqual(context["players"][0]["next_5_fixtures"][0]["opponent"], None)
         self.assertEqual(context["manager"]["purchase_prices"], {})
         self.assertIsNone(context["manager"]["free_transfers"])
-        self.assertEqual(context["manager"]["chips_remaining"], ["3xc", "bboost", "freehit"])
+        self.assertEqual(context["manager"]["chips_remaining"], ["bboost", "freehit", "wildcard"])
         self.assertEqual(context["teams"][0]["double_gw"], [2])
         self.assertEqual(context["teams"][0]["team_xg"], 3.0)
         self.assertEqual(context["teams"][0]["team_xga"], 1.7)
@@ -174,12 +179,20 @@ class IngestionContextTests(unittest.TestCase):
         self.assertEqual(context["shots"][0]["high_quality_chance"], True)
         self.assertEqual(fpl.summaries, 1)
 
+    def test_context_maps_understat_full_name_shots_to_fpl_player_id(self):
+        context = build_fpl_context(123, "2026-27", FakeFpl(), FakeUnderstat())
+        saka = context["players"][0]
+        self.assertEqual(saka["player_name"], "Saka")
+        self.assertEqual(saka["shots"], 1)
+        self.assertEqual(saka["high_quality_chances"], 1)
+
     def test_authenticated_context_has_private_economics(self):
         context = build_fpl_context(123, "2026-27", FakeFpl(), FakeUnderstat(), authenticated=True)
         self.assertEqual(context["manager"]["context_type"], "authenticated")
         self.assertEqual(context["manager"]["purchase_prices"][1], 9.0)
         self.assertEqual(context["manager"]["selling_prices"][1], 9.3)
         self.assertEqual(context["manager"]["free_transfers"], 1)
+        self.assertEqual(context["manager"]["chips_remaining"], ["bboost", "freehit", "wildcard"])
 
     def test_real_understat_provider_exposes_shot_rows(self):
         dataset = RealUnderstatFixture().shots("2026-27")

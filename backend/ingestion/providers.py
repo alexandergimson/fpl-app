@@ -117,7 +117,10 @@ class OfficialFplProvider:
     def entry_history(self, team_id: int, season: str = "2026-27") -> Dataset:
         url = FPL_ENTRY_HISTORY.format(team_id=team_id)
         payload, source, fetched_at = self._json(url, f"{season}-entry-{team_id}-history.json")
-        return Dataset(pd.DataFrame(payload.get("current", [])), source, fetched_at, season)
+        history = pd.DataFrame(payload.get("current", []))
+        history.attrs["chips"] = payload.get("chips", [])
+        history.attrs["past"] = payload.get("past", [])
+        return Dataset(history, source, fetched_at, season)
 
     def entry_picks(self, team_id: int, gameweek: int, season: str = "2026-27") -> Dataset:
         url = FPL_ENTRY_PICKS.format(team_id=team_id, gameweek=gameweek)
