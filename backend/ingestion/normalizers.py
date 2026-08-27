@@ -33,6 +33,13 @@ def normalise_player(raw: dict, teams: dict[int, dict], history: list[dict] | No
         "team_name": team.get("name") or raw.get("team_name") or "",
         "position": POSITIONS.get(int(raw.get("element_type") or 0), str(raw.get("element_type"))),
         "current_price": price(raw.get("now_cost")),
+        "price_change_event": price(raw.get("cost_change_event")),
+        "price_change_season": price(raw.get("cost_change_start")),
+        "price_change_percent": decimal(raw.get("price_change_percent")),
+        "price_change_hourly_rate": decimal(raw.get("price_change_hourly_rate")),
+        "price_change_projections": raw.get("price_change_projections"),
+        "price_change_locked_until": raw.get("price_change_locked_until"),
+        "price_change_calibrating": raw.get("price_change_calibrating"),
         "selected_by_percent": decimal(raw.get("selected_by_percent")),
         "status": raw.get("status"),
         "chance_of_playing_this_round": raw.get("chance_of_playing_this_round"),
@@ -90,6 +97,8 @@ def normalise_team(raw: dict, understat: dict | None = None) -> dict:
         "team_short_name": raw.get("short_name") or "",
         "team_xg": extra.get("team_xg", 0.0),
         "team_xga": extra.get("team_xga", 0.0),
+        "team_xg_last_5": extra.get("team_xg_last_5", 0.0),
+        "team_xga_last_5": extra.get("team_xga_last_5", 0.0),
         "team_shots_conceded": extra.get("team_shots_conceded", 0),
         "team_high_quality_chances_conceded": extra.get("team_high_quality_chances_conceded", 0),
         "strength_attack_home": raw.get("strength_attack_home"),
@@ -115,22 +124,28 @@ def normalise_fixture(raw: dict) -> dict:
     }
 
 
-def normalise_manager(manager_id: int, entry: dict, picks: list[dict], transfers: list[dict]) -> dict:
+def normalise_manager(manager_id: int, entry: dict, picks: list[dict], transfers: list[dict], authenticated: bool = False) -> dict:
+    chip_plays = entry.get("chip_plays") or []
+    played_chips = {row.get("name") for row in chip_plays if isinstance(row, dict)}
+    all_chips = {"wildcard", "freehit", "bboost", "3xc"}
     return {
         "manager_id": manager_id,
+        "context_type": "authenticated" if authenticated else "public",
         "current_squad": [int(row["element"]) for row in picks],
-        "purchase_prices": {int(row["element"]): price(row.get("purchase_price")) for row in picks},
-        "selling_prices": {int(row["element"]): price(row.get("selling_price")) for row in picks},
-        "bank": price(entry.get("bank")),
-        "team_value": price(entry.get("value")),
-        "free_transfers": entry.get("free_transfers"),
+        "purchase_prices": {int(row["element"]): price(row.get("purchase_price")) for row in picks if row.get("purchase_price") is not None} if authenticated else {},
+        "selling_prices": {int(row["element"]): price(row.get("selling_price")) for row in picks if row.get("selling_price") is not None} if authenticated else {},
+        "bank": price(entry.get("bank")) if authenticated else None,
+        "team_value": price(entry.get("value")) if authenticated else None,
+        "free_transfers": entry.get("free_transfers") if authenticated else None,
         "transfers_made_this_gw": entry.get("transfers"),
         "transfer_cost_this_gw": entry.get("event_transfers_cost"),
         "transfer_history": transfers,
         "captain": next((int(row["element"]) for row in picks if row.get("is_captain")), None),
         "vice_captain": next((int(row["element"]) for row in picks if row.get("is_vice_captain")), None),
+        "chips_remaining": sorted(all_chips - played_chips) if chip_plays else [],
         "overall_rank": entry.get("overall_rank"),
         "current_gw": entry.get("current_event"),
+        "next_gw": entry.get("next_event"),
         "gw_deadline": entry.get("deadline_time"),
     }
 

@@ -25,6 +25,7 @@ FPL_ENTRY = "https://fantasy.premierleague.com/api/entry/{team_id}/"
 FPL_ENTRY_TRANSFERS = "https://fantasy.premierleague.com/api/entry/{team_id}/transfers/"
 FPL_MY_TEAM = "https://fantasy.premierleague.com/api/my-team/{team_id}/"
 UNDERSTAT_LEAGUE_DATA = "https://understat.com/getLeagueData/{league}/{year}"
+UNDERSTAT_MATCH = "https://understat.com/match/{match_id}"
 
 
 @dataclass(frozen=True)
@@ -101,7 +102,12 @@ class OfficialFplProvider:
         teams = pd.DataFrame(payload["teams"])
         events = pd.DataFrame(payload["events"])
         elements.attrs["teams"] = teams
-        elements.attrs["current_gameweek"] = int(events.loc[events["finished"], "id"].max()) if events["finished"].any() else 0
+        current = events.loc[events["is_current"], "id"] if "is_current" in events else pd.Series(dtype=int)
+        next_event = events.loc[events["is_next"], "id"] if "is_next" in events else pd.Series(dtype=int)
+        deadline = events.loc[events["is_next"], "deadline_time"] if "is_next" in events and "deadline_time" in events else pd.Series(dtype=str)
+        elements.attrs["current_gameweek"] = int(current.iloc[0]) if not current.empty else 0
+        elements.attrs["next_gameweek"] = int(next_event.iloc[0]) if not next_event.empty else None
+        elements.attrs["next_deadline"] = str(deadline.iloc[0]) if not deadline.empty else None
         return Dataset(elements, source, fetched_at, season)
 
     def fixtures(self, season: str = "2026-27") -> Dataset:
@@ -176,6 +182,50 @@ class UnderstatProvider:
             if cached.exists():
                 return json.loads(cached.read_text()), str(cached), datetime.fromtimestamp(cached.stat().st_mtime, timezone.utc).isoformat()
             raise
+
+    def _match_json(self, match_id: str):
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        cached = self.cache_dir / f"understat-match-{match_id}.json"
+        if cached.exists():
+            return json.loads(cached.read_text()), str(cached), datetime.fromtimestamp(cached.stat().st_mtime, timezone.utc).isoformat()
+        request = Request(UNDERSTAT_MATCH.format(match_id=match_id), headers={"User-Agent": "Mozilla/5.0"})
+        with urlopen(request, timeout=60) as response:
+            page = response.read().decode("utf-8")
+        match = re.search(r"var shotsData\s*=\s*JSON.parse\('(.+?)'\)", page)
+        if not match:
+            raise ValueError(f"shotsData not found for Understat match {match_id}")
+        payload = json.loads(match.group(1).encode("utf-8").decode("unicode_escape"))
+        cached.write_text(json.dumps(payload))
+        return payload, UNDERSTAT_MATCH.format(match_id=match_id), datetime.now(timezone.utc).isoformat()
+
+    def shots(self, season: str) -> Dataset:
+        payload, source, fetched_at = self._json(season)
+        rows = []
+        for match in payload.get("dates", []):
+            if not match.get("isResult"):
+                continue
+            match_id = str(match.get("id"))
+            home = match.get("h", {}).get("title") or ""
+            away = match.get("a", {}).get("title") or ""
+            shots, source, fetched_at = self._match_json(match_id)
+            for side, team, opponent in (("h", home, away), ("a", away, home)):
+                for shot in shots.get(side, []):
+                    rows.append(
+                        {
+                            "player": shot.get("player") or "",
+                            "team": UNDERSTAT_TEAM_ALIASES.get(team, team),
+                            "opponent": UNDERSTAT_TEAM_ALIASES.get(opponent, opponent),
+                            "match": match_id,
+                            "minute": int(shot.get("minute") or 0),
+                            "xG": float(shot.get("xG") or 0),
+                            "X": float(shot.get("X") or 0),
+                            "Y": float(shot.get("Y") or 0),
+                            "result": shot.get("result"),
+                            "situation": shot.get("situation"),
+                            "player_assisted": shot.get("player_assisted"),
+                        }
+                    )
+        return Dataset(pd.DataFrame(rows), source, fetched_at, season)
 
     def team_underlying(self, season: str, teams: pd.DataFrame, fixtures: pd.DataFrame) -> Dataset:
         payload, source, fetched_at = self._json(season)
