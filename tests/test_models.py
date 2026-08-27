@@ -1217,6 +1217,38 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(manager["chips_remaining"], ["freehit"])
         self.assertEqual(manager["deadline"], "2026-08-29T10:00:00Z")
 
+    def test_missing_canonical_context_stays_null(self):
+        with connect(":memory:") as con:
+            con.execute("INSERT INTO app_state VALUES ('2026-27', 'current_gameweek', '1', CURRENT_TIMESTAMP)")
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute("INSERT INTO players VALUES ('2026-27', 1, NULL, 'Nulls', '', '', 1, 'TST', 'MID', 5.0, 10, 90, 10.0, 'a', 'test', 'now', 'test')")
+            materialize_canonical_context(
+                con,
+                "2026-27",
+                {
+                    "players": [{"player_id": 1, "next_5_fixtures": []}],
+                    "teams": [{"team_id": 1}],
+                    "fixtures": [],
+                    "manager": {"manager_id": 123, "context_type": "public", "bank": None, "free_transfers": None},
+                    "shots": [],
+                    "current_gw": 1,
+                    "next_gw": 2,
+                    "gw_deadline": None,
+                },
+            )
+            cursor = con.execute("INSERT INTO model_runs (season, gameweek, model_version, component_versions, data_cutoff) VALUES ('2026-27', 1, 'baseline_v3', '{}', 'now')")
+            materialize_current_market(con, "2026-27", model_run_id=int(cursor.lastrowid), data_cutoff="now")
+            detail = player_detail(con, "2026-27", 1)
+            manager = manager_context(con, "2026-27")
+        self.assertIsNone(detail["current"]["shots"])
+        self.assertIsNone(detail["current"]["high_quality_chances"])
+        self.assertIsNone(detail["current"]["team_context"]["team_xg"])
+        self.assertIsNone(detail["current"]["team_context"]["team_shots_conceded"])
+        self.assertIsNone(manager["chips_remaining"])
+
     def test_player_detail_includes_recent_history(self):
         with connect(":memory:") as con:
             con.execute(

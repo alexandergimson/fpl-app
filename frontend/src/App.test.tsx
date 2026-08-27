@@ -80,7 +80,7 @@ let detailResponse: unknown = {};
 
 beforeEach(() => {
   squadResponse = [];
-  settingsResponse = { fpl_team_id: null, manager: { bank: null, free_transfers: null, chips_remaining: [], deadline: null, context_type: "public" } };
+  settingsResponse = { fpl_team_id: null, manager: { bank: null, free_transfers: null, chips_remaining: null, deadline: null, context_type: "public" } };
   detailResponse = { current: players[0], projection_breakdown: { fixture_xpts: 3 }, recent_gameweeks: [], minutes_history: [], role_history: [], tracked_snapshots: [] };
   globalThis.ResizeObserver = class {
     observe() {}
@@ -190,7 +190,7 @@ test("renders selected canonical player team and fixture context in detail", asy
   await screen.findByText("Zero");
   fireEvent.click(within(playersArticle()).getByRole("button", { name: "Zero" }));
   expect(await screen.findByText("Shots 3")).toBeInTheDocument();
-  expect(screen.getByText("Big Chances Created 1")).toBeInTheDocument();
+  expect(screen.getByText("HQ Created 1")).toBeInTheDocument();
   expect(screen.getByText("Team Form")).toBeInTheDocument();
   expect(screen.getByText("xG L5")).toBeInTheDocument();
   expect(screen.getByText("Opp Atk")).toBeInTheDocument();
@@ -204,6 +204,34 @@ test("renders manager context without inventing private fields", async () => {
   expect(screen.getAllByText("unavailable").length).toBeGreaterThan(0);
   expect(screen.getByText("freehit, wildcard")).toBeInTheDocument();
   expect(screen.getByText(/29\/08\/2026/)).toBeInTheDocument();
+});
+
+test("renders unavailable canonical metrics as dashes", async () => {
+  detailResponse = {
+    current: row({
+      player_id: 1,
+      player: "Zero",
+      shots: null,
+      shots_in_box: null,
+      high_quality_chances: null,
+      high_quality_chances_created: null,
+      key_passes: null,
+      team_context: { team_xg: null, team_xga: null, team_xg_last_5: null, team_xga_last_5: null, team_shots_conceded: null, team_high_quality_chances_conceded: null },
+    }),
+    projection_breakdown: { fixture_xpts: 3 },
+    recent_gameweeks: [],
+    minutes_history: [],
+    role_history: [],
+    tracked_snapshots: [],
+  };
+  render(<App />);
+  await screen.findByText("Zero");
+  fireEvent.click(within(playersArticle()).getByRole("button", { name: "Zero" }));
+  expect(await screen.findByText("Shots —")).toBeInTheDocument();
+  expect(screen.getByText("HQ Chances —")).toBeInTheDocument();
+  expect(screen.getByText("HQ Created —")).toBeInTheDocument();
+  expect(screen.getAllByText("—").length).toBeGreaterThan(1);
+  expect(screen.getAllByText("unavailable").length).toBeGreaterThan(0);
 });
 
 test("hides locked gain when squad purchase prices are public fallbacks", async () => {

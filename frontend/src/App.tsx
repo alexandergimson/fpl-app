@@ -67,11 +67,11 @@ type BoardRow = {
   fixture_factor_6?: number;
   captain_adjusted_delta?: number;
   opportunity_score?: number;
-  shots: number;
-  shots_in_box: number;
-  high_quality_chances: number;
-  high_quality_chances_created: number;
-  key_passes: number;
+  shots: number | null;
+  shots_in_box: number | null;
+  high_quality_chances: number | null;
+  high_quality_chances_created: number | null;
+  key_passes: number | null;
   penalties: number;
   direct_free_kicks: number;
   corners: number;
@@ -81,12 +81,12 @@ type BoardRow = {
 };
 
 type TeamContext = {
-  team_xg: number;
-  team_xga: number;
-  team_xg_last_5: number;
-  team_xga_last_5: number;
-  team_shots_conceded: number;
-  team_high_quality_chances_conceded: number;
+  team_xg: number | null;
+  team_xga: number | null;
+  team_xg_last_5: number | null;
+  team_xga_last_5: number | null;
+  team_shots_conceded: number | null;
+  team_high_quality_chances_conceded: number | null;
 };
 
 type PlayerDetail = {
@@ -101,7 +101,7 @@ type PlayerDetail = {
 type Alert = { id: number; kind: string; message: string; created_at: string };
 type PriceMovement = { player_id: number; player: string; team: string; position: string; first_price: number; latest_price: number; price_change: number; gameweek?: number | null };
 type PlayersPage = { players: BoardRow[]; page: number; page_size: number; total: number; total_pages: number };
-type ManagerContext = { bank: number | null; free_transfers: number | null; chips_remaining: string[]; deadline: string | null; context_type: string | null };
+type ManagerContext = { bank: number | null; free_transfers: number | null; chips_remaining: string[] | null; deadline: string | null; context_type: string | null };
 type Settings = { fpl_team_id?: number | null; manager?: ManagerContext };
 type PerformanceLineage = {
   player_id: number;
@@ -236,6 +236,16 @@ function valueTone(value: number | null | undefined) {
 
 function fixtureOpponent(fixture: Record<string, number | string | boolean | null>) {
   return fixture.opponent ?? `#${fixture.opponent_team_id}`;
+}
+
+function chipsLabel(chips: string[] | null | undefined) {
+  if (chips == null) return "—";
+  return chips.length;
+}
+
+function chipsNote(chips: string[] | null | undefined) {
+  if (chips == null) return "unavailable";
+  return chips.join(", ") || "none remaining";
 }
 
 function factualFixture(detail: PlayerDetail, fixture: Record<string, number | string | boolean | null>) {
@@ -654,7 +664,7 @@ function loadData() {
             {squadSummary.hasGenuinePurchasePrices && <div className="overview-item"><span>Locked Gain</span><strong className={valueTone(squadSummary.saleValue - squadSummary.purchaseValue)}>{signedMetric(squadSummary.saleValue - squadSummary.purchaseValue)}</strong><small>sale less paid</small></div>}
             <div className="overview-item"><span>Bank</span><strong>{money(manager?.bank)}</strong><small>{manager?.context_type === "authenticated" ? "available" : "unavailable"}</small></div>
             <div className="overview-item"><span>Free Transfers</span><strong>{manager?.free_transfers ?? "—"}</strong><small>{manager?.context_type === "authenticated" ? "live" : "unavailable"}</small></div>
-            <div className="overview-item"><span>Chips</span><strong>{manager?.chips_remaining?.length ?? 0}</strong><small>{manager?.chips_remaining?.join(", ") || "none"}</small></div>
+            <div className="overview-item"><span>Chips</span><strong>{chipsLabel(manager?.chips_remaining)}</strong><small>{chipsNote(manager?.chips_remaining)}</small></div>
             <div className="overview-item"><span>Deadline</span><strong>{formatDate(manager?.deadline)}</strong><small>next GW</small></div>
           </div>
           <table>
@@ -763,7 +773,7 @@ function loadData() {
               <span>{trendLabel(detail.current.value_trend)}</span><span>Conf {confidenceLabel(detail.current.projection_confidence)}</span><span>Own {detail.current.ownership?.toFixed(1) ?? "-"}%</span>
               <span>Exp Min {detail.current.expected_minutes.toFixed(0)}</span><span>Start {Math.round(detail.current.start_probability * 100)}%</span><span>Minutes {detail.current.minutes_confidence}</span>
               <span>Opp xGA6 {metric(detail.current.expected_opponent_goals_6)}</span>{detail.current.fixture_factor_6 != null && <span>Fixture {detail.current.fixture_factor_6.toFixed(2)}x</span>}{detail.current.captain_adjusted_delta != null && <span className={valueTone(detail.current.captain_adjusted_delta)}>Captain Δ {signedMetric(detail.current.captain_adjusted_delta)}</span>}{detail.current.opportunity_score != null && <span>Opportunity {metric(detail.current.opportunity_score)}</span>}
-              <span>Shots {detail.current.shots}</span><span>Box Shots {detail.current.shots_in_box}</span><span>Big Chances {detail.current.high_quality_chances}</span><span>Big Chances Created {detail.current.high_quality_chances_created}</span><span>Key Passes {detail.current.key_passes}</span>
+              <span>Shots {metric(detail.current.shots, 0)}</span><span>Box Shots {metric(detail.current.shots_in_box, 0)}</span><span title="Derived from Understat shots with shot xG >= 0.35.">HQ Chances {metric(detail.current.high_quality_chances, 0)}</span><span title="Derived from assisted Understat shots with shot xG >= 0.35.">HQ Created {metric(detail.current.high_quality_chances_created, 0)}</span><span>Key Passes {metric(detail.current.key_passes, 0)}</span>
               {detail.current.raw_xg != null && <span>Raw xG {detail.current.raw_xg.toFixed(2)}</span>}{detail.current.raw_xa != null && <span>Raw xA {detail.current.raw_xa.toFixed(2)}</span>}{detail.current.xg90 != null && <span>xG90 {detail.current.xg90.toFixed(2)}</span>}{detail.current.xa90 != null && <span>xA90 {detail.current.xa90.toFixed(2)}</span>}{detail.current.role_xppg > 0 && <span>Role +{detail.current.role_xppg.toFixed(2)}</span>}{detail.current.clean_sheet_xppg_6 > 0 && <span>CS {detail.current.clean_sheet_xppg_6.toFixed(2)}</span>}{detail.current.defcon_xppg > 0 && <span>DefCon {detail.current.defcon_xppg.toFixed(2)}</span>}{detail.current.bonus_xppg > 0 && <span>Bonus {detail.current.bonus_xppg.toFixed(2)}</span>}{detail.current.save_xppg > 0 && <span>Saves {detail.current.save_xppg.toFixed(2)}</span>}
             </div>
             {detail.current.team_context && (
@@ -774,8 +784,8 @@ function loadData() {
                   <div className="overview-item"><span>xGA</span><strong>{metric(detail.current.team_context.team_xga)}</strong><small>season</small></div>
                   <div className="overview-item"><span>xG L5</span><strong>{metric(detail.current.team_context.team_xg_last_5)}</strong><small>last 5</small></div>
                   <div className="overview-item"><span>xGA L5</span><strong>{metric(detail.current.team_context.team_xga_last_5)}</strong><small>last 5</small></div>
-                  <div className="overview-item"><span>Shots Conceded</span><strong>{detail.current.team_context.team_shots_conceded}</strong><small>season</small></div>
-                  <div className="overview-item"><span>Big Chances Conceded</span><strong>{detail.current.team_context.team_high_quality_chances_conceded}</strong><small>season</small></div>
+                  <div className="overview-item"><span>Shots Conceded</span><strong>{metric(detail.current.team_context.team_shots_conceded, 0)}</strong><small>season</small></div>
+                  <div className="overview-item"><span title="Derived from Understat shots with shot xG >= 0.35.">HQ Conceded</span><strong>{metric(detail.current.team_context.team_high_quality_chances_conceded, 0)}</strong><small>season</small></div>
                 </div>
               </>
             )}

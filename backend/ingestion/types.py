@@ -41,12 +41,12 @@ class TeamContext(TypedDict):
     team_id: int
     team_name: str
     team_short_name: str
-    team_xg: float
-    team_xga: float
-    team_xg_last_5: float
-    team_xga_last_5: float
-    team_shots_conceded: int
-    team_high_quality_chances_conceded: int
+    team_xg: float | None
+    team_xga: float | None
+    team_xg_last_5: float | None
+    team_xga_last_5: float | None
+    team_shots_conceded: int | None
+    team_high_quality_chances_conceded: int | None
     strength_attack_home: int | None
     strength_attack_away: int | None
     strength_defence_home: int | None
@@ -97,11 +97,11 @@ class PlayerContext(TypedDict, total=False):
     expected_goals_per_90: float | None
     expected_assists_per_90: float | None
     expected_goal_involvements_per_90: float | None
-    shots: int
-    shots_in_box: int
-    high_quality_chances: int
-    high_quality_chances_created: int
-    key_passes: int
+    shots: int | None
+    shots_in_box: int | None
+    high_quality_chances: int | None
+    high_quality_chances_created: int | None
+    key_passes: int | None
     penalties_order: JsonValue
     direct_freekicks_order: JsonValue
     corners_and_indirect_freekicks_order: JsonValue
@@ -128,7 +128,7 @@ class ManagerContext(TypedDict, total=False):
     bank: float | None
     team_value: float | None
     free_transfers: int | None
-    chips_remaining: list[str]
+    chips_remaining: list[str] | None
 
 
 class FplContext(TypedDict):

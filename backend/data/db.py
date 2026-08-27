@@ -330,11 +330,11 @@ CREATE TABLE IF NOT EXISTS current_forward_lineage (
 CREATE TABLE IF NOT EXISTS current_canonical_player_context (
   season TEXT NOT NULL,
   player_id INTEGER NOT NULL,
-  shots INTEGER NOT NULL DEFAULT 0,
-  shots_in_box INTEGER NOT NULL DEFAULT 0,
-  high_quality_chances INTEGER NOT NULL DEFAULT 0,
-  high_quality_chances_created INTEGER NOT NULL DEFAULT 0,
-  key_passes INTEGER NOT NULL DEFAULT 0,
+  shots INTEGER,
+  shots_in_box INTEGER,
+  high_quality_chances INTEGER,
+  high_quality_chances_created INTEGER,
+  key_passes INTEGER,
   next_5_fixtures_json TEXT NOT NULL DEFAULT '[]',
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (season, player_id)
@@ -343,12 +343,12 @@ CREATE TABLE IF NOT EXISTS current_canonical_player_context (
 CREATE TABLE IF NOT EXISTS current_canonical_team_context (
   season TEXT NOT NULL,
   team_id INTEGER NOT NULL,
-  team_xg REAL NOT NULL DEFAULT 0,
-  team_xga REAL NOT NULL DEFAULT 0,
-  team_xg_last_5 REAL NOT NULL DEFAULT 0,
-  team_xga_last_5 REAL NOT NULL DEFAULT 0,
-  team_shots_conceded INTEGER NOT NULL DEFAULT 0,
-  team_high_quality_chances_conceded INTEGER NOT NULL DEFAULT 0,
+  team_xg REAL,
+  team_xga REAL,
+  team_xg_last_5 REAL,
+  team_xga_last_5 REAL,
+  team_shots_conceded INTEGER,
+  team_high_quality_chances_conceded INTEGER,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (season, team_id)
 );
@@ -359,7 +359,7 @@ CREATE TABLE IF NOT EXISTS current_canonical_manager_context (
   context_type TEXT NOT NULL,
   bank REAL,
   free_transfers INTEGER,
-  chips_remaining_json TEXT NOT NULL DEFAULT '[]',
+  chips_remaining_json TEXT,
   deadline TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -551,6 +551,7 @@ def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
     ensure_columns(con, "player_cumulative_observations", {"bps": "INTEGER NOT NULL DEFAULT 0"})
     ensure_columns(con, "game_underlying_xpts", {"deduction_process_ev": "REAL NOT NULL DEFAULT 0"})
     ensure_columns(con, "squad_players", {"purchase_price_source": "TEXT NOT NULL DEFAULT 'manual'"})
+    migrate_nullable_canonical_context(con)
     ensure_columns(
         con,
         "tracked_snapshots",
@@ -570,6 +571,72 @@ def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
         },
     )
     return con
+
+
+def migrate_nullable_canonical_context(con: sqlite3.Connection) -> None:
+    tables = {
+        "current_canonical_player_context": (
+            {"shots", "shots_in_box", "high_quality_chances", "high_quality_chances_created", "key_passes"},
+            """
+            CREATE TABLE current_canonical_player_context (
+              season TEXT NOT NULL,
+              player_id INTEGER NOT NULL,
+              shots INTEGER,
+              shots_in_box INTEGER,
+              high_quality_chances INTEGER,
+              high_quality_chances_created INTEGER,
+              key_passes INTEGER,
+              next_5_fixtures_json TEXT NOT NULL DEFAULT '[]',
+              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (season, player_id)
+            )
+            """,
+        ),
+        "current_canonical_team_context": (
+            {"team_xg", "team_xga", "team_xg_last_5", "team_xga_last_5", "team_shots_conceded", "team_high_quality_chances_conceded"},
+            """
+            CREATE TABLE current_canonical_team_context (
+              season TEXT NOT NULL,
+              team_id INTEGER NOT NULL,
+              team_xg REAL,
+              team_xga REAL,
+              team_xg_last_5 REAL,
+              team_xga_last_5 REAL,
+              team_shots_conceded INTEGER,
+              team_high_quality_chances_conceded INTEGER,
+              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (season, team_id)
+            )
+            """,
+        ),
+        "current_canonical_manager_context": (
+            {"chips_remaining_json"},
+            """
+            CREATE TABLE current_canonical_manager_context (
+              season TEXT NOT NULL PRIMARY KEY,
+              manager_id INTEGER,
+              context_type TEXT NOT NULL,
+              bank REAL,
+              free_transfers INTEGER,
+              chips_remaining_json TEXT,
+              deadline TEXT,
+              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+        ),
+    }
+    for table, (nullable_columns, create_sql) in tables.items():
+        info = con.execute(f"PRAGMA table_info({table})").fetchall()
+        if not any(row["name"] in nullable_columns and row["notnull"] for row in info):
+            continue
+        old = f"{table}_old_nullable_migration"
+        columns = ", ".join(row["name"] for row in info)
+        con.execute(f"DROP TABLE IF EXISTS {old}")
+        con.execute(f"ALTER TABLE {table} RENAME TO {old}")
+        con.execute(create_sql)
+        con.execute(f"INSERT INTO {table} ({columns}) SELECT {columns} FROM {old}")
+        con.execute(f"DROP TABLE {old}")
+    con.commit()
 
 
 def ensure_columns(con: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:

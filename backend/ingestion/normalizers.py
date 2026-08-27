@@ -27,7 +27,7 @@ def availability_percent(status: str | None, chance_next: int | None) -> int | N
 def normalise_player(raw: dict, teams: dict[int, dict], history: list[dict] | None = None, shot_summary: dict | None = None) -> dict:
     team_id = int(raw.get("team") or 0)
     team = teams.get(team_id, {})
-    shots = shot_summary or {}
+    shots = shot_summary
     return {
         "player_id": int(raw["id"]),
         "player_name": raw.get("web_name") or "",
@@ -69,11 +69,11 @@ def normalise_player(raw: dict, teams: dict[int, dict], history: list[dict] | No
         "expected_goals_per_90": decimal(raw.get("expected_goals_per_90")),
         "expected_assists_per_90": decimal(raw.get("expected_assists_per_90")),
         "expected_goal_involvements_per_90": decimal(raw.get("expected_goal_involvements_per_90")),
-        "shots": shots.get("shots", 0),
-        "shots_in_box": shots.get("shots_in_box", 0),
-        "high_quality_chances": shots.get("high_quality_chances", 0),
-        "high_quality_chances_created": shots.get("high_quality_chances_created", 0),
-        "key_passes": shots.get("key_passes", 0),
+        "shots": shots.get("shots") if shots is not None else None,
+        "shots_in_box": shots.get("shots_in_box") if shots is not None else None,
+        "high_quality_chances": shots.get("high_quality_chances") if shots is not None else None,
+        "high_quality_chances_created": shots.get("high_quality_chances_created") if shots is not None else None,
+        "key_passes": shots.get("key_passes") if shots is not None else None,
         "penalties_order": raw.get("penalties_order"),
         "direct_freekicks_order": raw.get("direct_freekicks_order"),
         "corners_and_indirect_freekicks_order": raw.get("corners_and_indirect_freekicks_order"),
@@ -92,17 +92,17 @@ def normalise_player(raw: dict, teams: dict[int, dict], history: list[dict] | No
 
 
 def normalise_team(raw: dict, understat: dict | None = None) -> dict:
-    extra = understat or {}
+    extra = understat
     return {
         "team_id": int(raw["id"]),
         "team_name": raw.get("name") or "",
         "team_short_name": raw.get("short_name") or "",
-        "team_xg": extra.get("team_xg", 0.0),
-        "team_xga": extra.get("team_xga", 0.0),
-        "team_xg_last_5": extra.get("team_xg_last_5", 0.0),
-        "team_xga_last_5": extra.get("team_xga_last_5", 0.0),
-        "team_shots_conceded": extra.get("team_shots_conceded", 0),
-        "team_high_quality_chances_conceded": extra.get("team_high_quality_chances_conceded", 0),
+        "team_xg": extra.get("team_xg") if extra is not None else None,
+        "team_xga": extra.get("team_xga") if extra is not None else None,
+        "team_xg_last_5": extra.get("team_xg_last_5") if extra is not None else None,
+        "team_xga_last_5": extra.get("team_xga_last_5") if extra is not None else None,
+        "team_shots_conceded": extra.get("team_shots_conceded") if extra is not None else None,
+        "team_high_quality_chances_conceded": extra.get("team_high_quality_chances_conceded") if extra is not None else None,
         "strength_attack_home": raw.get("strength_attack_home"),
         "strength_attack_away": raw.get("strength_attack_away"),
         "strength_defence_home": raw.get("strength_defence_home"),
