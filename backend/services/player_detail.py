@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 
 from backend.services.boards import buy_board
@@ -23,9 +24,26 @@ def recent_gameweeks(con: sqlite3.Connection, season: str, player_id: int, limit
     return [dict(row) for row in reversed(rows)]
 
 
+def latest_prediction_snapshot(con: sqlite3.Connection, season: str, player_id: int) -> dict | None:
+    row = con.execute(
+        """
+        SELECT snapshots.prediction_json
+        FROM current_prediction_snapshots snapshots
+        JOIN model_runs ON model_runs.id = snapshots.model_run_id
+        WHERE snapshots.season = ? AND snapshots.player_id = ?
+        ORDER BY model_runs.created_at DESC, snapshots.model_run_id DESC
+        LIMIT 1
+        """,
+        (season, player_id),
+    ).fetchone()
+    return json.loads(row["prediction_json"]) if row else None
+
+
 def player_detail(con: sqlite3.Connection, season: str, player_id: int, par_season: str = "2026-27") -> dict | None:
-    rows = buy_board(con, season, par_season, None, 2000)
-    current = next((row for row in rows if row["player_id"] == player_id), None)
+    current = latest_prediction_snapshot(con, season, player_id)
+    if current is None:
+        rows = buy_board(con, season, par_season, None, 2000)
+        current = next((row for row in rows if row["player_id"] == player_id), None)
     if not current:
         return None
     return {

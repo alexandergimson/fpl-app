@@ -1062,6 +1062,33 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(json.loads(snapshot["prediction_json"])["player"], "Freeze")
         self.assertEqual(run["model_version"], "baseline_v3")
 
+    def test_materialized_market_freezes_detail_snapshot(self):
+        with connect(":memory:") as con:
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Frozen Detail', '', '', 1, 'TST', 'MID',
+                  5.0, 10, 90, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            cursor = con.execute(
+                """
+                INSERT INTO model_runs (season, gameweek, model_version, component_versions, data_cutoff)
+                VALUES ('2026-27', 1, 'baseline_v3', '{}', 'now')
+                """
+            )
+            materialize_current_market(con, "2026-27", model_run_id=int(cursor.lastrowid), data_cutoff="now")
+            con.execute("UPDATE players SET web_name = 'Changed Live Name' WHERE player_id = 1")
+            snapshot = con.execute("SELECT prediction_json FROM current_prediction_snapshots").fetchone()
+            detail = player_detail(con, "2026-27", 1)
+        self.assertEqual(json.loads(snapshot["prediction_json"])["player"], "Frozen Detail")
+        self.assertEqual(detail["current"]["player"], "Frozen Detail")
+
     def test_tracked_momentum_uses_latest_two_snapshots(self):
         with connect(":memory:") as con:
             con.execute(

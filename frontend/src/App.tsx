@@ -157,6 +157,7 @@ type SortKey =
 type SortOption = "BEST_VALUE" | "PERFORMANCE" | "CHEAPEST";
 
 const API = "http://127.0.0.1:8000";
+const SEASON = "2026-27";
 const tooltipText = {
   actual_points: "Actual FPL points scored in the relevant Gameweek.",
   value_par: "Expected points for a good FPL pick at this player's price and position.",
@@ -249,13 +250,13 @@ function DeltaPopover({
     if (cache) return;
     if (isPerformance) {
       setPerformanceCache((current) => ({ ...current, [row.player_id]: "loading" }));
-      fetch(`${API}/players/${row.player_id}/performance-lineage?season=2026-27`)
+      fetch(`${API}/players/${row.player_id}/performance-lineage?season=${SEASON}`)
         .then((response) => response.json())
         .then((lineage) => setPerformanceCache((current) => ({ ...current, [row.player_id]: lineage })))
         .catch(() => setPerformanceCache((current) => ({ ...current, [row.player_id]: "error" })));
     } else {
       setForwardCache((current) => ({ ...current, [row.player_id]: "loading" }));
-      fetch(`${API}/players/${row.player_id}/forward-lineage?season=2026-27`)
+      fetch(`${API}/players/${row.player_id}/forward-lineage?season=${SEASON}`)
         .then((response) => response.json())
         .then((lineage) => setForwardCache((current) => ({ ...current, [row.player_id]: lineage })))
         .catch(() => setForwardCache((current) => ({ ...current, [row.player_id]: "error" })));
@@ -385,19 +386,24 @@ export function App() {
   const [minutesForm, setMinutesForm] = useState({ start_probability: "0.8", expected_minutes_if_starting: "75", substitute_probability: "0.2", expected_minutes_if_sub: "20", reason: "" });
 
   function loadSquad() {
-    fetch(`${API}/squad?season=2026-27`)
+    fetch(`${API}/squad?season=${SEASON}`)
       .then((response) => response.json())
       .then(setSquad)
       .catch(() => setSquad([]));
   }
 
 function loadData() {
-  fetch(`${API}/tracked-players?season=2026-27`)
+  fetch(`${API}/price-par?season=${SEASON}`)
+    .then((response) => response.json())
+    .then(setPoints)
+    .catch(() => setPoints([]));
+
+  fetch(`${API}/tracked-players?season=${SEASON}`)
     .then((response) => response.json())
     .then(setTracked)
     .catch(() => setTracked([]));
 
-  fetch(`${API}/settings?season=2026-27`)
+  fetch(`${API}/settings?season=${SEASON}`)
     .then((response) => response.json())
     .then((settings) => setTeamId(settings.fpl_team_id?.toString() ?? ""))
     .catch(() => undefined);
@@ -409,7 +415,7 @@ function loadData() {
 
   useEffect(() => {
     const params = new URLSearchParams({
-      season: "2026-27",
+      season: SEASON,
       page: page.toString(),
       page_size: "15",
       sort: sortKey,
@@ -498,19 +504,19 @@ function loadData() {
   }
 
   function selectPlayer(row: BoardRow) {
-    fetch(`${API}/players/${row.player_id}?season=2026-27`).then((response) => response.json()).then(setDetail).catch(() => setDetail(null));
+    fetch(`${API}/players/${row.player_id}?season=${SEASON}`).then((response) => response.json()).then(setDetail).catch(() => setDetail(null));
   }
 
   function track(row: BoardRow) {
-    fetch(`${API}/tracked-players/${row.player_id}?season=2026-27`, { method: "POST" }).then(loadData).catch(() => undefined);
+    fetch(`${API}/tracked-players/${row.player_id}?season=${SEASON}`, { method: "POST" }).then(loadData).catch(() => undefined);
   }
 
   function untrack(row: BoardRow) {
-    fetch(`${API}/tracked-players/${row.player_id}?season=2026-27`, { method: "DELETE" }).then(loadData).catch(() => undefined);
+    fetch(`${API}/tracked-players/${row.player_id}?season=${SEASON}`, { method: "DELETE" }).then(loadData).catch(() => undefined);
   }
 
   function addSquadPlayer(playerId: number, price: number) {
-    fetch(`${API}/squad/${playerId}?${new URLSearchParams({ season: "2026-27", purchase_price: price.toString() })}`, { method: "POST" }).then(loadSquad).catch(() => undefined);
+    fetch(`${API}/squad/${playerId}?${new URLSearchParams({ season: SEASON, purchase_price: price.toString() })}`, { method: "POST" }).then(loadSquad).catch(() => undefined);
   }
 
   function addSelectedSquadPlayer() {
@@ -519,13 +525,13 @@ function loadData() {
   }
 
   function removeSquadPlayer(row: BoardRow) {
-    fetch(`${API}/squad/${row.player_id}?season=2026-27`, { method: "DELETE" }).then(loadSquad).catch(() => undefined);
+    fetch(`${API}/squad/${row.player_id}?season=${SEASON}`, { method: "DELETE" }).then(loadSquad).catch(() => undefined);
   }
 
   function saveTeamId() {
     if (!teamId) return;
     setTeamMessage("Importing latest public squad...");
-    fetch(`${API}/settings/fpl-team?${new URLSearchParams({ season: "2026-27", team_id: teamId })}`, { method: "POST" })
+    fetch(`${API}/settings/fpl-team?${new URLSearchParams({ season: SEASON, team_id: teamId })}`, { method: "POST" })
       .then((response) => response.json())
       .then((result) => {
         setTeamMessage(`Imported ${result.players} players from public GW${result.gameweek || "-"} picks.`);
@@ -549,14 +555,14 @@ function loadData() {
       corners: roleForm.corners ? "1" : "0",
       indirect_free_kicks: roleForm.indirect_free_kicks ? "1" : "0",
       reason: roleForm.reason || "manual role update",
-      season: "2026-27",
+      season: SEASON,
     });
     fetch(`${API}/role-overrides/${detail.current.player_id}?${params}`, { method: "POST" }).then(() => selectPlayer(detail.current)).catch(() => undefined);
   }
 
   function saveMinutes() {
     if (!detail?.current) return;
-    const params = new URLSearchParams({ ...minutesForm, reason: minutesForm.reason || "manual minutes update", season: "2026-27" });
+    const params = new URLSearchParams({ ...minutesForm, reason: minutesForm.reason || "manual minutes update", season: SEASON });
     fetch(`${API}/minutes-overrides/${detail.current.player_id}?${params}`, { method: "POST" }).then(() => { selectPlayer(detail.current); loadData(); }).catch(() => undefined);
   }
 

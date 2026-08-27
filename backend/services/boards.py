@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 
 from backend.models.price_par import ParPoint
 from backend.models.projections import role_xppg
 from backend.services.bonus import bonus_rates, bonus_xppg
-from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, next_gameweek_fixture_projections, upcoming_expected_opponent_goals, upcoming_fixture_factors
+from backend.services.fixtures import adjusted_horizon_ppg, clean_sheet_horizon_ev, current_gameweek, next_gameweek_fixture_projections, upcoming_expected_opponent_goals, upcoming_fixture_factors
 from backend.services.goalkeepers import observed_save_rates, save_rates, save_xppg
 from backend.services.history import player_totals_as_of
 from backend.services.minutes import baseline_minutes_profiles, fallback_minutes_profile, latest_minutes_overrides, minutes_profile
@@ -506,9 +507,13 @@ def materialize_current_market(
     con.execute("DELETE FROM current_player_metrics WHERE season = ?", (season,))
     con.execute("DELETE FROM current_performance_lineage WHERE season = ?", (season,))
     con.execute("DELETE FROM current_forward_lineage WHERE season = ?", (season,))
+    if model_run_id is not None:
+        con.execute("DELETE FROM current_prediction_snapshots WHERE model_run_id = ?", (model_run_id,))
     metric_rows = []
     performance_rows = []
     forward_rows = []
+    snapshot_rows = []
+    snapshot_gameweek = current_gameweek(con, season) if model_run_id is not None else None
     for row in rows:
         returns = latest_returns.get(row["player_id"], {})
         components = row.get("performance_components") or {}
@@ -568,6 +573,8 @@ def materialize_current_market(
                 model_run_id,
             )
         )
+        if model_run_id is not None:
+            snapshot_rows.append((model_run_id, season, snapshot_gameweek, row["player_id"], json.dumps(row, sort_keys=True)))
         for gw in row.get("fixture_projection", []):
             fixtures = gw.get("fixtures", [])
             if not fixtures:
@@ -621,6 +628,14 @@ def materialize_current_market(
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         forward_rows,
+    )
+    con.executemany(
+        """
+        INSERT INTO current_prediction_snapshots (
+          model_run_id, season, gameweek, player_id, prediction_json
+        ) VALUES (?, ?, ?, ?, ?)
+        """,
+        snapshot_rows,
     )
     con.commit()
     return len(metric_rows)
