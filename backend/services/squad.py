@@ -19,6 +19,7 @@ def upsert_squad_player(
     player_id: int,
     purchase_price: float,
     current_price: float | None = None,
+    purchase_price_source: str = "manual",
 ) -> None:
     if current_price is None:
         row = con.execute(
@@ -28,10 +29,10 @@ def upsert_squad_player(
         current_price = row["current_price"] if row else purchase_price
     con.execute(
         """
-        INSERT OR REPLACE INTO squad_players (season, player_id, purchase_price, current_price, selling_price)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO squad_players (season, player_id, purchase_price, current_price, selling_price, purchase_price_source)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (season, player_id, purchase_price, current_price, selling_price(purchase_price, current_price)),
+        (season, player_id, purchase_price, current_price, selling_price(purchase_price, current_price), purchase_price_source),
     )
     con.commit()
 
@@ -50,7 +51,7 @@ def squad_analysis(con: sqlite3.Connection, season: str, par_season: str = "2026
           m.underlying_xppg, m.underlying_xppg AS process_xppg_regressed,
           m.performance_delta, m.performance_data_state, m.performance_confidence,
           m.next_6_xppg, m.forward_delta, m.expected_minutes, m.projection_confidence,
-          m.value_trend, m.tracked, s.purchase_price, s.selling_price
+          m.value_trend, m.tracked, s.purchase_price, s.selling_price, s.purchase_price_source
         FROM squad_players s
         JOIN current_player_metrics m ON m.season = s.season AND m.player_id = s.player_id
         WHERE s.season = ?
@@ -113,6 +114,6 @@ def import_public_squad(con: sqlite3.Connection, season: str, team_id: int, prov
         player_id = int(row.element)
         price_row = con.execute("SELECT current_price FROM players WHERE season = ? AND player_id = ?", (season, player_id)).fetchone()
         price = float(price_row["current_price"]) if price_row else 0.0
-        upsert_squad_player(con, season, player_id, price, price)
+        upsert_squad_player(con, season, player_id, price, price, "public_current_price_fallback")
     save_team_id(con, season, team_id)
     return {"team_id": team_id, "gameweek": gameweek, "players": len(picks.frame)}

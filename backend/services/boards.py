@@ -257,6 +257,14 @@ def buy_board(
             (season,),
         )
     }
+    canonical_players = {
+        row["player_id"]: dict(row) | {"next_5_fixtures": json.loads(row["next_5_fixtures_json"] or "[]")}
+        for row in con.execute("SELECT * FROM current_canonical_player_context WHERE season = ?", (season,))
+    }
+    canonical_teams = {
+        row["team_id"]: dict(row)
+        for row in con.execute("SELECT * FROM current_canonical_team_context WHERE season = ?", (season,))
+    }
     board = []
     for row in rows:
         if as_of_gw is not None and row["player_id"] not in as_of_totals:
@@ -361,6 +369,8 @@ def buy_board(
         captain_delta = captain_adjusted_delta(next_6_xppg, value_par, price)
         confidence = projection_confidence(minutes_confidence, rates["underlying_minutes"] if rates else 0, row["status"], role is not None)
         opportunity_score = buy_delta_6 * minutes_confidence * confidence
+        canonical_player = canonical_players.get(row["player_id"], {})
+        canonical_team = canonical_teams.get(row["team_id"], {})
         board.append(
             {
                 "player_id": row["player_id"],
@@ -377,6 +387,11 @@ def buy_board(
                 "underlying_xppg": round(performance_xppg if performance_xppg is not None else neutral_xppg, 2),
                 "process_xppg_regressed": round(performance_xppg, 2) if performance_xppg is not None else None,
                 "performance_components": {key: round(value, 2) for key, value in parts.items() if key != "game_underlying_xpts"} if parts else None,
+                "shots": canonical_player.get("shots", 0),
+                "shots_in_box": canonical_player.get("shots_in_box", 0),
+                "high_quality_chances": canonical_player.get("high_quality_chances", 0),
+                "high_quality_chances_created": canonical_player.get("high_quality_chances_created", 0),
+                "key_passes": canonical_player.get("key_passes", 0),
                 "next_3_xppg": round(next_3_xppg, 2),
                 "next_6_xppg": round(next_6_xppg, 2),
                 "buy_delta_3": round(buy_delta_3, 2),
@@ -394,6 +409,15 @@ def buy_board(
                 "prior_minutes": int(rates["prior_minutes"]) if rates else 0,
                 "prior_seasons": rates["prior_seasons"] if rates else None,
                 "prior_model_version": rates["prior_model_version"] if rates else None,
+                "next_5_fixtures": canonical_player.get("next_5_fixtures", []),
+                "team_context": {
+                    "team_xg": canonical_team.get("team_xg", 0),
+                    "team_xga": canonical_team.get("team_xga", 0),
+                    "team_xg_last_5": canonical_team.get("team_xg_last_5", 0),
+                    "team_xga_last_5": canonical_team.get("team_xga_last_5", 0),
+                    "team_shots_conceded": canonical_team.get("team_shots_conceded", 0),
+                    "team_high_quality_chances_conceded": canonical_team.get("team_high_quality_chances_conceded", 0),
+                },
                 "fixture_projection": fixture_projection,
                 "forward_delta": round(buy_delta_6, 2),
                 "value_trend": round(value_trend, 2),

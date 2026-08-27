@@ -43,13 +43,22 @@ function row(overrides: Partial<Record<string, unknown>>) {
     ownership: 1,
     is_emerging: false,
     is_regression_risk: false,
-    status: "WATCH",
+  status: "WATCH",
+    purchase_price_source: "manual",
     role_xppg: 0,
     clean_sheet_xppg_6: 0,
     defcon_xppg: 0,
     bonus_xppg: 0,
     save_xppg: 0,
     expected_opponent_goals_6: 1.35,
+    fixture_factor_6: 1,
+    captain_adjusted_delta: 0,
+    opportunity_score: 0,
+    shots: 0,
+    shots_in_box: 0,
+    high_quality_chances: 0,
+    high_quality_chances_created: 0,
+    key_passes: 0,
     penalties: 0,
     direct_free_kicks: 0,
     corners: 0,
@@ -65,7 +74,14 @@ function json(data: unknown) {
   return Promise.resolve({ json: () => Promise.resolve(data) });
 }
 
+let squadResponse: unknown[] = [];
+let settingsResponse: unknown = {};
+let detailResponse: unknown = {};
+
 beforeEach(() => {
+  squadResponse = [];
+  settingsResponse = { fpl_team_id: null, manager: { bank: null, free_transfers: null, chips_remaining: [], deadline: null, context_type: "public" } };
+  detailResponse = { current: players[0], projection_breakdown: { fixture_xpts: 3 }, recent_gameweeks: [], minutes_history: [], role_history: [], tracked_snapshots: [] };
   globalThis.ResizeObserver = class {
     observe() {}
     unobserve() {}
@@ -93,12 +109,13 @@ beforeEach(() => {
     if (url.includes("/players/1/performance-lineage")) return json({ player_id: 1, performance_delta: 0, underlying_xppg: 3, value_par: 3, state: "sufficient", confidence: "LOW", sample_gameweeks: 1, sample_minutes: 90, prior: { source: "historical_position_price", confidence: "LOW" }, components: { appearance: 2, goal: 0, assist: 0, clean_sheet: 0, defcon: 0, bonus: 0, saves: 0, deductions: 0 }, available_observations: ["official FPL player process"], missing_required_observations: [], forward_available: true, note: "Based on underlying performance, not actual FPL points." }) as Promise<Response>;
     if (url.includes("/players/1/forward-lineage")) return json({ player_id: 1, forward_delta: 0.5, next_6_xppg: 3.5, value_par: 3, gameweeks: [{ gameweek: 2, projected_points: 3.5, fixtures: [{ opponent: "ARS", home_away: "H", expected_minutes: 90, total_xpts: 3.5 }] }] }) as Promise<Response>;
     if (url.includes("/tracked-players")) return json([players[0]]) as Promise<Response>;
-    if (url.includes("/squad")) return json([]) as Promise<Response>;
+    if (url.includes("/squad")) return json(squadResponse) as Promise<Response>;
     if (url.includes("/alerts")) return json([]) as Promise<Response>;
     if (url.includes("/price-movements")) return json([]) as Promise<Response>;
     if (url.includes("/data-status")) return json({ season: "2026-27", health_summary: {}, latest_ingestion_runs: [], latest_health_events: [], sources: [] }) as Promise<Response>;
     if (url.includes("/price-par")) return json([]) as Promise<Response>;
-    if (url.includes("/players/1")) return json({ current: players[0], projection_breakdown: { fixture_xpts: 3 }, recent_gameweeks: [], minutes_history: [], role_history: [], tracked_snapshots: [] }) as Promise<Response>;
+    if (url.includes("/settings")) return json(settingsResponse) as Promise<Response>;
+    if (url.includes("/players/1")) return json(detailResponse) as Promise<Response>;
     return json({}) as Promise<Response>;
   });
 });
@@ -147,6 +164,53 @@ test("sorts, filters, tracks, and opens detail", async () => {
   await waitFor(() => expect(within(playersTable).getByText("Zero")).toBeInTheDocument());
   fireEvent.click(within(playersTable).getByRole("button", { name: "Zero" }));
   expect(await screen.findByText("Projection Breakdown")).toBeInTheDocument();
+});
+
+test("renders selected canonical player team and fixture context in detail", async () => {
+  detailResponse = {
+    current: row({
+      player_id: 1,
+      player: "Zero",
+      shots: 3,
+      shots_in_box: 2,
+      high_quality_chances: 1,
+      high_quality_chances_created: 1,
+      key_passes: 4,
+      team_context: { team_xg: 4, team_xga: 2, team_xg_last_5: 3, team_xga_last_5: 1.5, team_shots_conceded: 12, team_high_quality_chances_conceded: 3 },
+      next_5_fixtures: [{ gameweek: 2, opponent_team_id: 9, opponent: "ARS", home_away: "H", fdr: 2, opponent_attacking_strength: 1100, opponent_defensive_strength: 900 }],
+      fixture_projection: [{ gameweek: 2, total_xpts: 3.5, fixtures: [{ fixture_id: 1, gameweek: 2, opponent_team_id: 9, opponent: "ARS", is_home: true, attack_factor: 1.1, expected_goals_against: 0.9, goal_ev: 0.5, assist_ev: 0.2, clean_sheet_ev: 0.1, defcon_ev: 0, bonus_ev: 0.1, save_ev: 0, total_fixture_xpts: 3.5 }] }],
+    }),
+    projection_breakdown: { fixture_xpts: 3 },
+    recent_gameweeks: [],
+    minutes_history: [],
+    role_history: [],
+    tracked_snapshots: [],
+  };
+  render(<App />);
+  await screen.findByText("Zero");
+  fireEvent.click(within(playersArticle()).getByRole("button", { name: "Zero" }));
+  expect(await screen.findByText("Shots 3")).toBeInTheDocument();
+  expect(screen.getByText("Big Chances Created 1")).toBeInTheDocument();
+  expect(screen.getByText("Team Form")).toBeInTheDocument();
+  expect(screen.getByText("xG L5")).toBeInTheDocument();
+  expect(screen.getByText("Opp Atk")).toBeInTheDocument();
+  expect(screen.getByText("1100")).toBeInTheDocument();
+});
+
+test("renders manager context without inventing private fields", async () => {
+  settingsResponse = { fpl_team_id: 123, manager: { bank: null, free_transfers: null, chips_remaining: ["freehit", "wildcard"], deadline: "2026-08-29T10:00:00Z", context_type: "public" } };
+  render(<App />);
+  expect(await screen.findByText("Bank")).toBeInTheDocument();
+  expect(screen.getAllByText("unavailable").length).toBeGreaterThan(0);
+  expect(screen.getByText("freehit, wildcard")).toBeInTheDocument();
+  expect(screen.getByText(/29\/08\/2026/)).toBeInTheDocument();
+});
+
+test("hides locked gain when squad purchase prices are public fallbacks", async () => {
+  squadResponse = [row({ player_id: 1, player: "Zero", purchase_price: 6, selling_price: 6.2, purchase_price_source: "public_current_price_fallback" })];
+  render(<App />);
+  expect(await screen.findByText("Squad Value")).toBeInTheDocument();
+  expect(screen.queryByText("Locked Gain")).not.toBeInTheDocument();
 });
 
 test("players page renders 15 rows and paginates", async () => {

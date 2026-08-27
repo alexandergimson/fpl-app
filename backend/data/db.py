@@ -327,6 +327,43 @@ CREATE TABLE IF NOT EXISTS current_forward_lineage (
   PRIMARY KEY (season, player_id, gameweek, fixture_id)
 );
 
+CREATE TABLE IF NOT EXISTS current_canonical_player_context (
+  season TEXT NOT NULL,
+  player_id INTEGER NOT NULL,
+  shots INTEGER NOT NULL DEFAULT 0,
+  shots_in_box INTEGER NOT NULL DEFAULT 0,
+  high_quality_chances INTEGER NOT NULL DEFAULT 0,
+  high_quality_chances_created INTEGER NOT NULL DEFAULT 0,
+  key_passes INTEGER NOT NULL DEFAULT 0,
+  next_5_fixtures_json TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (season, player_id)
+);
+
+CREATE TABLE IF NOT EXISTS current_canonical_team_context (
+  season TEXT NOT NULL,
+  team_id INTEGER NOT NULL,
+  team_xg REAL NOT NULL DEFAULT 0,
+  team_xga REAL NOT NULL DEFAULT 0,
+  team_xg_last_5 REAL NOT NULL DEFAULT 0,
+  team_xga_last_5 REAL NOT NULL DEFAULT 0,
+  team_shots_conceded INTEGER NOT NULL DEFAULT 0,
+  team_high_quality_chances_conceded INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (season, team_id)
+);
+
+CREATE TABLE IF NOT EXISTS current_canonical_manager_context (
+  season TEXT NOT NULL PRIMARY KEY,
+  manager_id INTEGER,
+  context_type TEXT NOT NULL,
+  bank REAL,
+  free_transfers INTEGER,
+  chips_remaining_json TEXT NOT NULL DEFAULT '[]',
+  deadline TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_current_player_metrics_forward ON current_player_metrics (season, position, forward_delta);
 CREATE INDEX IF NOT EXISTS idx_current_player_metrics_performance ON current_player_metrics (season, position, performance_delta);
 CREATE INDEX IF NOT EXISTS idx_current_player_metrics_price ON current_player_metrics (season, position, current_price, forward_delta);
@@ -354,6 +391,7 @@ CREATE TABLE IF NOT EXISTS squad_players (
   purchase_price REAL NOT NULL,
   current_price REAL NOT NULL,
   selling_price REAL NOT NULL,
+  purchase_price_source TEXT NOT NULL DEFAULT 'manual',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (season, player_id)
 );
@@ -512,6 +550,7 @@ def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
     )
     ensure_columns(con, "player_cumulative_observations", {"bps": "INTEGER NOT NULL DEFAULT 0"})
     ensure_columns(con, "game_underlying_xpts", {"deduction_process_ev": "REAL NOT NULL DEFAULT 0"})
+    ensure_columns(con, "squad_players", {"purchase_price_source": "TEXT NOT NULL DEFAULT 'manual'"})
     ensure_columns(
         con,
         "tracked_snapshots",

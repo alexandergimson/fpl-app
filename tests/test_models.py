@@ -22,6 +22,7 @@ from backend.services.history import future_frozen_par, future_points, player_to
 from backend.backtests.metrics import evaluate_model, evaluate_rows, mae, ranks, rmse, spearman
 from backend.services.tracking import snapshot_current_predictions, snapshot_tracked, track_player, tracked_momentum, tracked_players, tracked_snapshots, tracking_status, untrack_player
 from backend.services.squad import import_public_squad, remove_squad_player, squad_analysis, squad_health, upsert_squad_player
+from backend.services.canonical_context import manager_context, materialize_canonical_context
 from backend.services.status import data_status
 from backend.services.ingestion_runs import add_health_event, finish_ingestion_run, start_ingestion_run
 from backend.services.player_detail import player_detail, recent_gameweeks
@@ -1152,9 +1153,69 @@ class ModelTests(unittest.TestCase):
                 """
             )
             result = import_public_squad(con, "2026-27", 123, provider)
-            rows = con.execute("SELECT player_id, purchase_price FROM squad_players ORDER BY player_id").fetchall()
+            rows = con.execute("SELECT player_id, purchase_price, purchase_price_source FROM squad_players ORDER BY player_id").fetchall()
         self.assertEqual(result, {"team_id": 123, "gameweek": 2, "players": 2})
-        self.assertEqual([dict(row) for row in rows], [{"player_id": 1, "purchase_price": 5.0}, {"player_id": 2, "purchase_price": 4.5}])
+        self.assertEqual(
+            [dict(row) for row in rows],
+            [
+                {"player_id": 1, "purchase_price": 5.0, "purchase_price_source": "public_current_price_fallback"},
+                {"player_id": 2, "purchase_price": 4.5, "purchase_price_source": "public_current_price_fallback"},
+            ],
+        )
+
+    def test_materialized_canonical_context_flows_to_player_detail(self):
+        with connect(":memory:") as con:
+            con.execute("INSERT INTO app_state VALUES ('2026-27', 'current_gameweek', '1', CURRENT_TIMESTAMP)")
+            con.execute(
+                "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("2026-27", "test", "MID", 5.0, 3.0, 3.5, 5, 0, "HIGH", "test", "now", "test"),
+            )
+            con.execute(
+                """
+                INSERT INTO teams VALUES
+                ('2026-27', 1, 'Team', 'TST', 'test', 'now', 'test'),
+                ('2026-27', 2, 'Opponent', 'OPP', 'test', 'now', 'test')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Canon', '', '', 1, 'TST', 'MID',
+                  5.0, 10, 90, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            con.execute("INSERT INTO fixtures VALUES ('2026-27', 1, 2, '', 1, 2, 2, 4, 0, 'test', 'now', 'test')")
+            replace_player_underlying(con, "2026-27", pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 0.2, "xa": 0.1}]), "official_fpl_bootstrap", "now")
+            materialize_canonical_context(
+                con,
+                "2026-27",
+                {
+                    "players": [{"player_id": 1, "shots": 3, "shots_in_box": 2, "high_quality_chances": 1, "high_quality_chances_created": 1, "key_passes": 4, "next_5_fixtures": [{"gameweek": 2, "opponent_team_id": 2, "opponent": "OPP", "home_away": "H", "fdr": 2, "opponent_attacking_strength": 900, "opponent_defensive_strength": 1100}]}],
+                    "teams": [{"team_id": 1, "team_xg": 4.0, "team_xga": 2.0, "team_xg_last_5": 3.0, "team_xga_last_5": 1.5, "team_shots_conceded": 12, "team_high_quality_chances_conceded": 3}],
+                    "fixtures": [],
+                    "manager": {"manager_id": 123, "context_type": "public", "bank": None, "free_transfers": None, "chips_remaining": ["freehit"]},
+                    "shots": [],
+                    "current_gw": 1,
+                    "next_gw": 2,
+                    "gw_deadline": "2026-08-29T10:00:00Z",
+                },
+            )
+            cursor = con.execute("INSERT INTO model_runs (season, gameweek, model_version, component_versions, data_cutoff) VALUES ('2026-27', 1, 'baseline_v3', '{}', 'now')")
+            materialize_current_market(con, "2026-27", model_run_id=int(cursor.lastrowid), data_cutoff="now")
+            detail = player_detail(con, "2026-27", 1)
+            manager = manager_context(con, "2026-27")
+        self.assertEqual(detail["current"]["shots"], 3)
+        self.assertEqual(detail["current"]["shots_in_box"], 2)
+        self.assertEqual(detail["current"]["high_quality_chances"], 1)
+        self.assertEqual(detail["current"]["high_quality_chances_created"], 1)
+        self.assertEqual(detail["current"]["key_passes"], 4)
+        self.assertEqual(detail["current"]["team_context"]["team_shots_conceded"], 12)
+        self.assertEqual(detail["current"]["next_5_fixtures"][0]["opponent_defensive_strength"], 1100)
+        self.assertIsNone(manager["bank"])
+        self.assertIsNone(manager["free_transfers"])
+        self.assertEqual(manager["chips_remaining"], ["freehit"])
+        self.assertEqual(manager["deadline"], "2026-08-29T10:00:00Z")
 
     def test_player_detail_includes_recent_history(self):
         with connect(":memory:") as con:

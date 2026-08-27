@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 
 from backend.data.db import connect
+from backend.ingestion.context import build_fpl_context
 from backend.ingestion.loaders import replace_fixtures, replace_team_underlying, set_state, snapshot_prices, upsert_fpl_bootstrap_gameweek_observations, upsert_players
 from backend.ingestion.providers import OfficialFplProvider, UnderstatProvider
+from backend.services.canonical_context import materialize_canonical_context
 from backend.services.boards import buy_board, freeze_player_gameweek_pars, materialize_current_market
 from backend.services.alerts import generate_tracked_alerts
 from backend.services.ingestion_runs import add_health_event, finish_ingestion_run, start_ingestion_run
@@ -50,6 +52,11 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
             set_state(con, season, "current_gameweek", str(gameweek))
             team_id = get_team_id(con, season)
             imported_squad = import_public_squad(con, season, team_id, provider)["players"] if team_id else 0
+            try:
+                if team_id:
+                    materialize_canonical_context(con, season, build_fpl_context(team_id, season, provider, understat))
+            except Exception as exc:
+                add_health_event(con, season, run_id, "WARN", "canonical_context_failed", str(exc))
             materialized = 0
             if con.execute("SELECT 1 FROM price_par_points WHERE season = ? LIMIT 1", (par_season,)).fetchone():
                 data_cutoff = con.execute("SELECT MAX(fetched_at) AS fetched_at FROM players WHERE season = ?", (season,)).fetchone()["fetched_at"]

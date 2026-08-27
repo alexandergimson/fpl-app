@@ -10,6 +10,7 @@ from backend.data.db import connect
 from backend.ingestion.providers import OfficialFplProvider
 from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, list_alerts
 from backend.services.boards import breakout_board, buy_board, paginated_players, player_forward_lineage, player_performance_lineage, trap_board
+from backend.services.canonical_context import manager_context
 from backend.services.minutes import add_minutes_override, override_history
 from backend.services.player_detail import player_detail
 from backend.services.prices import price_movements
@@ -180,7 +181,7 @@ if FastAPI:
     @app.get("/settings")
     def get_settings(season: str = "2026-27"):
         with connect() as con:
-            return {"fpl_team_id": get_team_id(con, season)}
+            return {"fpl_team_id": get_team_id(con, season), "manager": manager_context(con, season)}
 
     @app.post("/settings/fpl-team")
     def post_fpl_team(team_id: int, season: str = "2026-27"):
