@@ -410,10 +410,18 @@ class ModelTests(unittest.TestCase):
                 ('2026-27', 2, 2, '', 2, 4, 5, 1, 0, 'test', 'now', 'test')
                 """
             )
+            con.execute(
+                """
+                INSERT INTO teams VALUES
+                ('2026-27', 3, 'Easy Opponent', 'EOP', 'test', 'now', 'test'),
+                ('2026-27', 4, 'Hard Opponent', 'HOP', 'test', 'now', 'test')
+                """
+            )
             replace_player_underlying(con, "2026-27", pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 0.5, "xa": 0.0}, {"player_id": 2, "gameweek": 1, "minutes": 90, "xg": 0.5, "xa": 0.0}]), "test", "now")
             rows = {row["player"]: row for row in buy_board(con, "2026-27", "2026-27", 1, 10)}
         self.assertEqual(rows["Easy"]["performance_delta"], rows["Hard"]["performance_delta"])
         self.assertNotEqual(rows["Easy"]["forward_delta"], rows["Hard"]["forward_delta"])
+        self.assertEqual(rows["Easy"]["fixture_projection"][0]["fixtures"][0]["opponent"], "EOP")
 
     def test_forward_projection_uses_estimated_home_away_effect(self):
         with connect(":memory:") as con:

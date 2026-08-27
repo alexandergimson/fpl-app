@@ -213,6 +213,7 @@ def buy_board(
         """,
         (season,),
     ).fetchall()
+    team_names = {row["team_id"]: row["short_name"] for row in con.execute("SELECT team_id, short_name FROM teams WHERE season = ?", (season,))}
     as_of_totals = player_totals_as_of(con, season, as_of_gw) if as_of_gw is not None else {}
     underlying = player_underlying_rates(con, season, as_of_gw)
     team_xga = team_defensive_xga(con, season, as_of_gw)
@@ -341,6 +342,9 @@ def buy_board(
                 projected_saves,
                 6,
             )
+            for gw in fixture_projection:
+                for fixture in gw["fixtures"]:
+                    fixture["opponent"] = team_names.get(fixture["opponent_team_id"], str(fixture["opponent_team_id"]))
             gw_points = [float(item["total_xpts"]) for item in fixture_projection]
             next_3_xppg = sum(gw_points[:3]) / 3
             next_6_xppg = sum(gw_points[:6]) / 6

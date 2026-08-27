@@ -48,6 +48,7 @@ type BoardRow = {
   status: string;
   squad_health?: string;
   selling_price?: number;
+  purchase_price?: number;
   delta_momentum?: number;
   tracking_status?: string;
   xg90?: number | null;
@@ -60,6 +61,9 @@ type BoardRow = {
   bonus_xppg: number;
   save_xppg: number;
   expected_opponent_goals_6: number;
+  fixture_factor_6?: number;
+  captain_adjusted_delta?: number;
+  opportunity_score?: number;
   penalties: number;
   direct_free_kicks: number;
   corners: number;
@@ -202,9 +206,17 @@ function signedMetric(value: number | null | undefined, digits = 2) {
   return value == null ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
 }
 
+function money(value: number | null | undefined) {
+  return value == null ? "—" : `£${value.toFixed(1)}`;
+}
+
 function valueTone(value: number | null | undefined) {
   if (value == null) return "";
   return value >= 0 ? "positive" : "negative";
+}
+
+function fixtureOpponent(fixture: Record<string, number | string | boolean>) {
+  return fixture.opponent ?? `#${fixture.opponent_team_id}`;
 }
 
 function performanceTitle(row: BoardRow) {
@@ -467,8 +479,14 @@ function loadData() {
   const squadSummary = useMemo(() => {
     const counts = { STRONG: 0, HEALTHY: 0, WATCH: 0, REVIEW: 0 };
     squad.forEach((row) => counts[row.squad_health as keyof typeof counts]++);
+    const squadValue = squad.reduce((sum, row) => sum + row.current_price, 0);
+    const saleValue = squad.reduce((sum, row) => sum + (row.selling_price ?? row.current_price), 0);
+    const purchaseValue = squad.reduce((sum, row) => sum + (row.purchase_price ?? row.current_price), 0);
     return {
       counts,
+      squadValue,
+      saleValue,
+      purchaseValue,
       averageForwardDelta: squad.length ? squad.reduce((sum, row) => sum + row.forward_delta, 0) / squad.length : 0,
       belowPar: squad.filter((row) => row.return_delta != null && row.return_delta < 0).length,
       lowConfidence: squad.filter((row) => confidenceLabel(row.projection_confidence) === "LOW").length,
@@ -602,6 +620,9 @@ function loadData() {
             <div className="overview-item"><span>Below Par</span><strong>{squadSummary.belowPar}</strong><small>historical</small></div>
             <div className="overview-item"><span>Low Confidence</span><strong>{squadSummary.lowConfidence}</strong><small>players</small></div>
             <div className="overview-item"><span>Tracked</span><strong>{squadSummary.tracked}</strong><small>squad players</small></div>
+            <div className="overview-item"><span>Squad Value</span><strong>{money(squadSummary.squadValue)}</strong><small>current prices</small></div>
+            <div className="overview-item"><span>Sell Value</span><strong>{money(squadSummary.saleValue)}</strong><small>transfer value</small></div>
+            <div className="overview-item"><span>Locked Gain</span><strong className={valueTone(squadSummary.saleValue - squadSummary.purchaseValue)}>{signedMetric(squadSummary.saleValue - squadSummary.purchaseValue)}</strong><small>sale less paid</small></div>
           </div>
           <table>
             <thead>
@@ -708,6 +729,7 @@ function loadData() {
               <span>Underlying {detail.current.underlying_xppg.toFixed(2)}</span><span>Next 3 {detail.current.next_3_xppg.toFixed(2)}</span><span>Next 6 {detail.current.next_6_xppg.toFixed(2)}</span>
               <span>{trendLabel(detail.current.value_trend)}</span><span>Conf {confidenceLabel(detail.current.projection_confidence)}</span><span>Own {detail.current.ownership?.toFixed(1) ?? "-"}%</span>
               <span>Exp Min {detail.current.expected_minutes.toFixed(0)}</span><span>Start {Math.round(detail.current.start_probability * 100)}%</span><span>Minutes {detail.current.minutes_confidence}</span>
+              <span>Opp xGA6 {metric(detail.current.expected_opponent_goals_6)}</span>{detail.current.fixture_factor_6 != null && <span>Fixture {detail.current.fixture_factor_6.toFixed(2)}x</span>}{detail.current.captain_adjusted_delta != null && <span className={valueTone(detail.current.captain_adjusted_delta)}>Captain Δ {signedMetric(detail.current.captain_adjusted_delta)}</span>}{detail.current.opportunity_score != null && <span>Opportunity {metric(detail.current.opportunity_score)}</span>}
               {detail.current.raw_xg != null && <span>Raw xG {detail.current.raw_xg.toFixed(2)}</span>}{detail.current.raw_xa != null && <span>Raw xA {detail.current.raw_xa.toFixed(2)}</span>}{detail.current.xg90 != null && <span>xG90 {detail.current.xg90.toFixed(2)}</span>}{detail.current.xa90 != null && <span>xA90 {detail.current.xa90.toFixed(2)}</span>}{detail.current.role_xppg > 0 && <span>Role +{detail.current.role_xppg.toFixed(2)}</span>}{detail.current.clean_sheet_xppg_6 > 0 && <span>CS {detail.current.clean_sheet_xppg_6.toFixed(2)}</span>}{detail.current.defcon_xppg > 0 && <span>DefCon {detail.current.defcon_xppg.toFixed(2)}</span>}{detail.current.bonus_xppg > 0 && <span>Bonus {detail.current.bonus_xppg.toFixed(2)}</span>}{detail.current.save_xppg > 0 && <span>Saves {detail.current.save_xppg.toFixed(2)}</span>}
             </div>
             <h3>Attacking Roles</h3>
@@ -740,7 +762,7 @@ function loadData() {
                   <tbody>
                     {detail.current.fixture_projection.flatMap((gw) => gw.fixtures.length ? gw.fixtures.map((fixture, index) => (
                       <tr key={`${gw.gameweek}-${fixture.fixture_id}`}>
-                        <td>{index === 0 ? gw.gameweek : ""}</td><td>{fixture.is_home ? "H" : "A"} vs {fixture.opponent_team_id}</td><td>{Number(fixture.attack_factor).toFixed(2)}</td><td>{Number(fixture.expected_goals_against).toFixed(2)}</td><td>{Number(fixture.goal_ev).toFixed(2)}</td><td>{Number(fixture.assist_ev).toFixed(2)}</td><td>{Number(fixture.clean_sheet_ev).toFixed(2)}</td><td>{Number(fixture.defcon_ev).toFixed(2)}</td><td>{Number(fixture.bonus_ev).toFixed(2)}</td><td>{Number(fixture.save_ev).toFixed(2)}</td><td>{Number(fixture.total_fixture_xpts).toFixed(2)}</td>
+                        <td>{index === 0 ? gw.gameweek : ""}</td><td>{fixture.is_home ? "H" : "A"} vs {fixtureOpponent(fixture)}</td><td>{Number(fixture.attack_factor).toFixed(2)}</td><td>{Number(fixture.expected_goals_against).toFixed(2)}</td><td>{Number(fixture.goal_ev).toFixed(2)}</td><td>{Number(fixture.assist_ev).toFixed(2)}</td><td>{Number(fixture.clean_sheet_ev).toFixed(2)}</td><td>{Number(fixture.defcon_ev).toFixed(2)}</td><td>{Number(fixture.bonus_ev).toFixed(2)}</td><td>{Number(fixture.save_ev).toFixed(2)}</td><td>{Number(fixture.total_fixture_xpts).toFixed(2)}</td>
                       </tr>
                     )) : [<tr key={`${gw.gameweek}-blank`}><td>{gw.gameweek}</td><td>Blank</td><td colSpan={8}></td><td>0.00</td></tr>])}
                   </tbody>
