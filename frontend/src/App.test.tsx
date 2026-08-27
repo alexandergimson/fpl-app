@@ -90,7 +90,7 @@ beforeEach(() => {
       const pageSize = Number(parsed.searchParams.get("page_size") || 15);
       return json({ players: rows.slice((page - 1) * pageSize, page * pageSize), page, page_size: pageSize, total: rows.length, total_pages: Math.ceil(rows.length / pageSize) || 1 }) as Promise<Response>;
     }
-    if (url.includes("/players/1/performance-lineage")) return json({ player_id: 1, performance_delta: 0, underlying_xppg: 3, value_par: 3, state: "sufficient", confidence: "LOW", sample_gameweeks: 1, sample_minutes: 90, prior: { source: "historical_position_price", confidence: "LOW" }, components: { appearance: 2, goal: 0, assist: 0, clean_sheet: 0, defcon: 0, bonus: 0, saves: 0, deductions: 0 }, available_observations: ["official FPL player process"], missing_required_observations: [], forward_available: true, note: "Based on underlying process, not actual FPL points." }) as Promise<Response>;
+    if (url.includes("/players/1/performance-lineage")) return json({ player_id: 1, performance_delta: 0, underlying_xppg: 3, value_par: 3, state: "sufficient", confidence: "LOW", sample_gameweeks: 1, sample_minutes: 90, prior: { source: "historical_position_price", confidence: "LOW" }, components: { appearance: 2, goal: 0, assist: 0, clean_sheet: 0, defcon: 0, bonus: 0, saves: 0, deductions: 0 }, available_observations: ["official FPL player process"], missing_required_observations: [], forward_available: true, note: "Based on underlying performance, not actual FPL points." }) as Promise<Response>;
     if (url.includes("/players/1/forward-lineage")) return json({ player_id: 1, forward_delta: 0.5, next_6_xppg: 3.5, value_par: 3, gameweeks: [{ gameweek: 2, projected_points: 3.5, fixtures: [{ opponent: "ARS", home_away: "H", expected_minutes: 90, total_xpts: 3.5 }] }] }) as Promise<Response>;
     if (url.includes("/tracked-players")) return json([players[0]]) as Promise<Response>;
     if (url.includes("/squad")) return json([]) as Promise<Response>;
@@ -174,6 +174,6 @@ test("lineage loads only when a delta is inspected", async () => {
   await screen.findByText("Zero");
   expect(fetchMock.mock.calls.some(([url]) => String(url).includes("performance-lineage"))).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Performance Delta for Zero" }));
-  expect(await screen.findByText("Based on underlying process, not actual FPL points.")).toBeInTheDocument();
+  expect(await screen.findByText("Based on underlying performance, not actual FPL points.")).toBeInTheDocument();
   expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("performance-lineage")).length).toBe(1);
 });

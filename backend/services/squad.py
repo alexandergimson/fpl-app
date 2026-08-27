@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sqlite3
 
-from backend.services.boards import buy_board
 from backend.services.valuation import selling_price
 
 
@@ -43,19 +42,27 @@ def remove_squad_player(con: sqlite3.Connection, season: str, player_id: int) ->
 
 
 def squad_analysis(con: sqlite3.Connection, season: str, par_season: str = "2026-27", bank: float = 0.0) -> list[dict]:
-    board = buy_board(con, season, par_season, None, 2000)
-    by_id = {row["player_id"]: row for row in board}
-    owned = con.execute("SELECT * FROM squad_players WHERE season = ?", (season,)).fetchall()
+    owned = con.execute(
+        """
+        SELECT
+          m.player_id, m.player, m.team, m.position, m.current_price,
+          m.actual_points, m.current_par AS value_par, m.return_delta,
+          m.underlying_xppg, m.underlying_xppg AS process_xppg_regressed,
+          m.performance_delta, m.performance_data_state, m.performance_confidence,
+          m.next_6_xppg, m.forward_delta, m.expected_minutes, m.projection_confidence,
+          m.value_trend, m.tracked, s.purchase_price, s.selling_price
+        FROM squad_players s
+        JOIN current_player_metrics m ON m.season = s.season AND m.player_id = s.player_id
+        WHERE s.season = ?
+        """,
+        (season,),
+    ).fetchall()
     result = []
     for row in owned:
-        player = by_id.get(row["player_id"])
-        if not player:
-            continue
+        player = dict(row)
         result.append(
             player
             | {
-                "purchase_price": row["purchase_price"],
-                "selling_price": row["selling_price"],
                 "squad_health": squad_health(player["forward_delta"], player["expected_minutes"], player["projection_confidence"], player["value_trend"]),
             }
         )

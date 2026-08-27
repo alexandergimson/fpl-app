@@ -13,7 +13,7 @@ import pandas as pd
 from backend.ingestion.providers import Dataset, UnderstatProvider
 from backend.jobs.refresh import refresh_all
 from backend.services.valuation import captain_adjusted_delta, captaincy_weight, player_status, projection_confidence, selling_price
-from backend.services.boards import breakout_board, buy_board, freeze_player_gameweek_pars, infer_gameweeks, paginated_players, player_forward_lineage, player_performance_lineage, trap_board, value_balance_and_return_delta
+from backend.services.boards import breakout_board, buy_board, freeze_player_gameweek_pars, infer_gameweeks, materialize_current_market, paginated_players, player_forward_lineage, player_performance_lineage, trap_board, value_balance_and_return_delta
 from backend.services.bonus import bonus_rates, bonus_xppg
 from backend.services.goalkeepers import observed_save_rates, save_rates, save_xppg
 from backend.data.db import connect
@@ -353,6 +353,7 @@ class ModelTests(unittest.TestCase):
             ]
             con.executemany("INSERT INTO players VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
             track_player(con, "2026-27", 19)
+            materialize_current_market(con, "2026-27")
             page1 = paginated_players(con, "2026-27")
             page2 = paginated_players(con, "2026-27", page=2)
             cheap = paginated_players(con, "2026-27", page=1, page_size=5, sort="current_price", direction="asc")
@@ -1019,6 +1020,7 @@ class ModelTests(unittest.TestCase):
                 """
             )
             track_player(con, "2026-27", 1, "watch")
+            materialize_current_market(con, "2026-27")
             self.assertEqual(tracked_players(con, "2026-27")[0]["player"], "Track")
             self.assertEqual(snapshot_tracked(con, "2026-27", gameweek=1), 1)
             self.assertEqual(snapshot_tracked(con, "2026-27", gameweek=1), 1)
@@ -1092,6 +1094,7 @@ class ModelTests(unittest.TestCase):
                 """
             )
             upsert_squad_player(con, "2026-27", 1, 4.8, 5.0)
+            materialize_current_market(con, "2026-27")
             row = squad_analysis(con, "2026-27", bank=0.1)[0]
             remove_squad_player(con, "2026-27", 1)
         self.assertEqual(row["selling_price"], 4.9)
@@ -1503,11 +1506,12 @@ class ModelTests(unittest.TestCase):
                 """
             )
             replace_player_underlying(con, "2026-27", pd.DataFrame([{"player_id": 1, "gameweek": 1, "minutes": 90, "xg": 1.0, "xa": 0.5, "cbirt": 12}]), "test", "now")
+            materialize_current_market(con, "2026-27")
             performance = player_performance_lineage(con, "2026-27", 1)
             forward = player_forward_lineage(con, "2026-27", 1)
         self.assertEqual(performance["components"]["goal"], 4.0)
         self.assertEqual(performance["components"]["assist"], 1.5)
-        self.assertEqual(performance["note"], "Based on underlying process, not actual FPL points.")
+        self.assertEqual(performance["note"], "Based on underlying performance, not actual FPL points.")
         self.assertEqual(len(forward["gameweeks"]), 6)
         self.assertEqual(forward["gameweeks"][0]["fixtures"][0]["opponent"], "OPP")
 
@@ -1525,6 +1529,7 @@ class ModelTests(unittest.TestCase):
                 )
                 """
             )
+            materialize_current_market(con, "2026-27")
             lineage = player_performance_lineage(con, "2026-27", 106)
         self.assertIsNone(lineage["performance_delta"])
         self.assertEqual(lineage["state"], "missing")

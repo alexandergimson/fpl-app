@@ -29,31 +29,43 @@ def track_player(con: sqlite3.Connection, season: str, player_id: int, note: str
         """,
         (season, player_id, note),
     )
+    con.execute("UPDATE current_player_metrics SET tracked = 1 WHERE season = ? AND player_id = ?", (season, player_id))
     con.commit()
 
 
 def untrack_player(con: sqlite3.Connection, season: str, player_id: int) -> None:
     con.execute("DELETE FROM tracked_players WHERE season = ? AND player_id = ?", (season, player_id))
+    con.execute("UPDATE current_player_metrics SET tracked = 0 WHERE season = ? AND player_id = ?", (season, player_id))
     con.commit()
 
 
 def tracked_players(con: sqlite3.Connection, season: str, par_season: str = "2026-27") -> list[dict]:
-    tracked = con.execute("SELECT player_id, note, tracked_at FROM tracked_players WHERE season = ?", (season,)).fetchall()
-    rows = {row["player_id"]: row for row in buy_board(con, season, par_season, None, 2000)}
+    tracked = con.execute(
+        """
+        SELECT
+          m.player_id, m.player, m.team, m.position, m.current_price,
+          m.actual_points, m.current_par AS value_par, m.return_delta,
+          m.underlying_xppg, m.underlying_xppg AS process_xppg_regressed,
+          m.performance_delta, m.performance_data_state, m.performance_confidence,
+          m.next_6_xppg, m.forward_delta, m.expected_minutes, m.projection_confidence,
+          m.value_trend, t.note, t.tracked_at
+        FROM tracked_players t
+        JOIN current_player_metrics m ON m.season = t.season AND m.player_id = t.player_id
+        WHERE t.season = ?
+        """,
+        (season,),
+    ).fetchall()
     momentum = tracked_momentum(con, season)
-    result = []
-    for row in tracked:
-        board_row = rows.get(row["player_id"])
-        if board_row:
-            result.append(board_row | {"note": row["note"], "tracked_at": row["tracked_at"]} | momentum.get(row["player_id"], {}))
-    return sorted(result, key=lambda row: row["buy_delta_6"], reverse=True)
+    result = [dict(row) | momentum.get(row["player_id"], {}) for row in tracked]
+    return sorted(result, key=lambda row: row["forward_delta"], reverse=True)
 
 
 def snapshot_tracked(con: sqlite3.Connection, season: str, par_season: str = "2026-27", gameweek: int | None = None) -> int:
     gw = gameweek if gameweek is not None else current_gameweek(con, season)
     if not con.execute("SELECT 1 FROM tracked_players WHERE season = ? LIMIT 1", (season,)).fetchone():
         return 0
-    rows = tracked_players(con, season, par_season)
+    tracked_ids = {row["player_id"] for row in con.execute("SELECT player_id FROM tracked_players WHERE season = ?", (season,))}
+    rows = [row for row in buy_board(con, season, par_season, None, 2000) if row["player_id"] in tracked_ids]
     existing = {
         row["player_id"]
         for row in con.execute(

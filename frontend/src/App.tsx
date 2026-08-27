@@ -11,6 +11,7 @@ type BoardRow = {
   team: string;
   position: string;
   current_price: number;
+  actual_points?: number | null;
   market_mean: number;
   value_par: number;
   value_balance: number | null;
@@ -137,11 +138,12 @@ type DataStatus = {
 
 type SortKey =
   | "current_price"
-  | "actual_ppg"
+  | "actual_points"
   | "historical_delta"
   | "return_delta"
   | "value_par"
   | "neutral_xppg"
+  | "underlying_xppg"
   | "performance_delta"
   | "next_3_xppg"
   | "next_6_xppg"
@@ -156,11 +158,13 @@ type SortOption = "BEST_VALUE" | "PERFORMANCE" | "CHEAPEST";
 
 const API = "http://127.0.0.1:8000";
 const tooltipText = {
-  return_delta: "Average FPL points per completed team Gameweek above or below the frozen Par that applied at the time.",
-  performance_delta: "Estimated fixture-neutral underlying PPG minus today's Value Par.",
-  forward_delta: "Projected average PPG over the next six FPL Gameweeks minus today's Value Par.",
+  actual_points: "Actual FPL points scored in the relevant Gameweek.",
+  value_par: "Expected points for a good FPL pick at this player's price and position.",
+  return_delta: "Actual points minus Par. Positive means the pick returned above its price benchmark.",
+  underlying_xppg: "Estimated FPL points per Gameweek from the player's underlying process, independent of price.",
+  performance_delta: "Underlying xPPG minus Par. Positive means the player's underlying performance is above the standard required by their price.",
+  forward_delta: "Projected Next-6 xPPG minus Par. Positive means the player is projected to offer value at their current price.",
   value_balance: "Total actual FPL points gained or lost versus the frozen Par from each completed Gameweek.",
-  value_par: "Benchmark for a good FPL asset at this price and position.",
   neutral_xppg: "Fixture-neutral underlying PPG before future fixture adjustment.",
   next_3_xppg: "Projected PPG across the next 3 fixtures.",
   next_6_xppg: "Projected PPG across the next 6 fixtures.",
@@ -168,6 +172,10 @@ const tooltipText = {
   confidence: "Projection confidence from minutes security, data sample, role and availability.",
   value_trend: "Current Forward Delta minus the previous tracked snapshot delta when available.",
 };
+
+function HeaderHelp({ label, tip }: { label: string; tip: string }) {
+  return <button className="header-help" type="button" title={tip} aria-label={`${label}: ${tip}`}>{label}</button>;
+}
 
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" }) : "not loaded";
@@ -230,6 +238,7 @@ function DeltaPopover({
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
+  const hoverTimer = useRef<number | null>(null);
   const isPerformance = kind === "performance";
   const cache = isPerformance ? performanceCache[row.player_id] : forwardCache[row.player_id];
   const value = isPerformance ? row.performance_delta : row.forward_delta;
@@ -253,6 +262,15 @@ function DeltaPopover({
     }
   }
 
+  function scheduleLoad() {
+    hoverTimer.current = window.setTimeout(load, 200);
+  }
+
+  function close() {
+    if (hoverTimer.current) window.clearTimeout(hoverTimer.current);
+    setOpen(false);
+  }
+
   useEffect(() => {
     if (!open) return;
     function close(event: MouseEvent) {
@@ -263,13 +281,13 @@ function DeltaPopover({
   }, [open]);
 
   return (
-    <span className="delta-wrap" ref={wrapRef} onMouseLeave={() => setOpen(false)}>
+    <span className="delta-wrap" ref={wrapRef} onMouseLeave={close}>
       <button
         type="button"
         className={`delta-trigger ${valueTone(value)}`}
         aria-label={label}
         aria-expanded={open}
-        onMouseEnter={load}
+        onMouseEnter={scheduleLoad}
         onFocus={load}
         onClick={() => (open ? setOpen(false) : load())}
         onKeyDown={(event) => {
@@ -292,15 +310,26 @@ function DeltaPopover({
 }
 
 function PerformancePopover({ lineage }: { lineage: PerformanceLineage }) {
+  const labels: Record<string, [string, string]> = {
+    appearance: ["Playing time", "Expected appearance points based on projected minutes."],
+    goal: ["Goals", "Expected goal points based on underlying xG, position and minutes."],
+    assist: ["Assists", "Expected assist points based on underlying xA and minutes."],
+    clean_sheet: ["Clean sheets", "Expected clean-sheet points based on team defensive strength and playing time."],
+    defcon: ["Defensive contributions", "Expected points from reaching FPL defensive-contribution thresholds."],
+    bonus: ["Bonus", "Expected bonus points based on underlying BPS tendency, not actual match bonus."],
+    saves: ["Saves", "Expected goalkeeper save points."],
+    deductions: ["Deductions", "Expected negative points from modelled deductions."],
+  };
   return (
     <>
-      <div className="popover-grid"><span>Performance Δ</span><strong>{signedMetric(lineage.performance_delta)}</strong><span>Underlying xPPG</span><strong>{metric(lineage.underlying_xppg)}</strong><span>Current Par</span><strong>{metric(lineage.value_par)}</strong><span>State</span><strong>{lineage.state}</strong></div>
-      <h4>Process components</h4>
-      {Object.entries(lineage.components).map(([key, value]) => <div className={value ? "line" : "line muted"} key={key}><span>{key.replace(/_/g, " ")}</span><strong>{metric(value)}</strong></div>)}
+      <div className="popover-grid"><span>Underlying xPPG</span><strong>{metric(lineage.underlying_xppg)}</strong><span>Current Par</span><strong>{metric(lineage.value_par)}</strong><span>Performance Δ</span><strong>{signedMetric(lineage.performance_delta)}</strong><span>State</span><strong>{lineage.state}</strong></div>
+      <h4>Expected points breakdown</h4>
+      {Object.entries(lineage.components).filter(([, value]) => value !== 0).map(([key, value]) => <div className="line" title={labels[key]?.[1]} key={key}><span>{labels[key]?.[0] ?? key}</span><strong>{metric(value)}</strong></div>)}
       <h4>Evidence</h4>
+      <p>Estimate confidence: {lineage.confidence.toLowerCase()}</p>
       <p>{lineage.sample_gameweeks ?? 0} GW · {lineage.sample_minutes ?? 0} mins</p>
       <p>Available: {lineage.available_observations.length ? lineage.available_observations.join(", ") : "none"}</p>
-      <p>Prior: {(lineage.prior.source ?? "none").replace(/_/g, " ")} · Confidence: {lineage.confidence}</p>
+      <p>{lineage.prior.source ? "Blended with " + lineage.prior.source.replace(/_/g, " ") : "No player prior available"}</p>
       {lineage.missing_required_observations.map((item) => <p className="note" key={item}>{item}</p>)}
       {lineage.performance_delta == null && lineage.forward_available && <p className="note">Forward projection can still use historical priors and future fixtures.</p>}
       <p className="note">{lineage.note}</p>
@@ -311,9 +340,9 @@ function PerformancePopover({ lineage }: { lineage: PerformanceLineage }) {
 function ForwardPopover({ lineage, onDetail }: { lineage: ForwardLineage; onDetail: () => void }) {
   return (
     <>
-      <div className="popover-grid"><span>Forward Δ</span><strong>{signedMetric(lineage.forward_delta)}</strong><span>Next-6 xPPG</span><strong>{metric(lineage.next_6_xppg)}</strong><span>Current Par</span><strong>{metric(lineage.value_par)}</strong></div>
+      <div className="popover-grid"><span>Next-6 xPPG</span><strong>{metric(lineage.next_6_xppg)}</strong><span>Current Par</span><strong>{metric(lineage.value_par)}</strong><span>Forward Δ</span><strong>{signedMetric(lineage.forward_delta)}</strong></div>
       <h4>Outlook</h4>
-      {lineage.gameweeks.map((gw) => <div className="line" key={gw.gameweek}><span>GW{gw.gameweek}</span><strong>{metric(gw.projected_points)}{gw.fixtures.length ? ` · ${gw.fixtures.map((f) => `${f.opponent} (${f.home_away})`).join(", ")}` : " · Blank GW"}</strong></div>)}
+      {lineage.gameweeks.map((gw) => <div className="line" key={gw.gameweek}><span>GW{gw.gameweek} {gw.fixtures.length === 1 ? `${gw.fixtures[0].opponent} (${gw.fixtures[0].home_away})` : gw.fixtures.length ? "total" : "Blank"}</span><strong>{metric(gw.projected_points)}</strong></div>)}
       <button className="action" type="button" onClick={onDetail}>View detail</button>
     </>
   );
@@ -328,16 +357,13 @@ function SortButton({ label, sortKey, active, direction, onSort, title }: { labe
 }
 
 export function App() {
-  const [points, setPoints] = useState<ParPoint[]>([]);
   const [players, setPlayers] = useState<BoardRow[]>([]);
+  const [points, setPoints] = useState<ParPoint[]>([]);
   const [playersPage, setPlayersPage] = useState<PlayersPage>({ players: [], page: 1, page_size: 15, total: 0, total_pages: 1 });
   const [playersLoading, setPlayersLoading] = useState(false);
   const [tracked, setTracked] = useState<BoardRow[]>([]);
   const [squad, setSquad] = useState<BoardRow[]>([]);
   const [detail, setDetail] = useState<PlayerDetail | null>(null);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [priceMovements, setPriceMovements] = useState<PriceMovement[]>([]);
-  const [dataStatus, setDataStatus] = useState<DataStatus | null>(null);
   const [teamId, setTeamId] = useState("");
   const [teamMessage, setTeamMessage] = useState("");
   const [search, setSearch] = useState("");
@@ -365,15 +391,19 @@ export function App() {
       .catch(() => setSquad([]));
   }
 
-  function loadData() {
-    fetch(`${API}/price-par`).then((response) => response.json()).then(setPoints).catch(() => setPoints([]));
-    fetch(`${API}/tracked-players?season=2026-27`).then((response) => response.json()).then(setTracked).catch(() => setTracked([]));
-    fetch(`${API}/alerts?season=2026-27`).then((response) => response.json()).then(setAlerts).catch(() => setAlerts([]));
-    fetch(`${API}/price-movements?season=2026-27&limit=10`).then((response) => response.json()).then(setPriceMovements).catch(() => setPriceMovements([]));
-    fetch(`${API}/data-status?season=2026-27`).then((response) => response.json()).then(setDataStatus).catch(() => setDataStatus(null));
-    fetch(`${API}/settings?season=2026-27`).then((response) => response.json()).then((settings) => setTeamId(settings.fpl_team_id?.toString() ?? "")).catch(() => undefined);
-    loadSquad();
-  }
+function loadData() {
+  fetch(`${API}/tracked-players?season=2026-27`)
+    .then((response) => response.json())
+    .then(setTracked)
+    .catch(() => setTracked([]));
+
+  fetch(`${API}/settings?season=2026-27`)
+    .then((response) => response.json())
+    .then((settings) => setTeamId(settings.fpl_team_id?.toString() ?? ""))
+    .catch(() => undefined);
+
+  loadSquad();
+}
 
   useEffect(loadData, []);
 
@@ -571,7 +601,12 @@ export function App() {
             <thead>
               <tr>
                 <th>Player</th><th>Pos</th><th>Price</th>
-                <th title={tooltipText.return_delta}>Return Δ</th><th title={tooltipText.performance_delta}>Performance Δ</th><th title={tooltipText.forward_delta}>Forward Δ</th>
+                <th><HeaderHelp label="Actual pts" tip={tooltipText.actual_points} /></th>
+                <th><HeaderHelp label="Par" tip={tooltipText.value_par} /></th>
+                <th><HeaderHelp label="Return Δ" tip={tooltipText.return_delta} /></th>
+                <th><HeaderHelp label="Underlying xPPG" tip={tooltipText.underlying_xppg} /></th>
+                <th><HeaderHelp label="Performance Δ" tip={tooltipText.performance_delta} /></th>
+                <th><HeaderHelp label="Forward Δ" tip={tooltipText.forward_delta} /></th>
                 <th>Track</th><th></th>
               </tr>
             </thead>
@@ -580,14 +615,17 @@ export function App() {
                 <tr key={`squad-${row.player_id}`}>
                   <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td>
                   <td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td>
-                  <td className={row.return_delta == null ? "" : row.return_delta >= 0 ? "positive" : "negative"}>{metric(row.return_delta)}</td>
+                  <td>{metric(row.actual_points, 0)}</td>
+                  <td>{metric(row.value_par)}</td>
+                  <td className={valueTone(row.return_delta)}>{signedMetric(row.return_delta)}</td>
+                  <td>{metric(row.process_xppg_regressed)}</td>
                   <td><DeltaPopover row={row} kind="performance" performanceCache={performanceLineage} forwardCache={forwardLineage} setPerformanceCache={setPerformanceLineage} setForwardCache={setForwardLineage} selectPlayer={selectPlayer} /></td>
                   <td><DeltaPopover row={row} kind="forward" performanceCache={performanceLineage} forwardCache={forwardLineage} setPerformanceCache={setPerformanceLineage} setForwardCache={setForwardLineage} selectPlayer={selectPlayer} /></td>
                   <td>{trackedIds.has(row.player_id) ? <button className="action" onClick={() => untrack(row)}>Untrack</button> : <button className="action" onClick={() => track(row)}>Track</button>}</td>
                   <td><button className="action" onClick={() => viewMarket(row)}>Explore {row.position}</button> <button className="action" onClick={() => removeSquadPlayer(row)}>Remove</button></td>
                 </tr>
               ))}
-              {squad.length === 0 && <tr><td colSpan={8}>Import your public FPL team or add players manually.</td></tr>}
+              {squad.length === 0 && <tr><td colSpan={11}>Import your public FPL team or add players manually.</td></tr>}
             </tbody>
           </table>
         </article>
@@ -621,25 +659,31 @@ export function App() {
           <table>
             <thead>
               <tr>
-                <th>Player</th><th>Team</th><th>Pos</th><th><SortButton label="Price" sortKey="current_price" active={sortKey === "current_price"} direction={sortDirection} onSort={changeSort} /></th>
-                <th title={tooltipText.performance_delta}><SortButton label="Performance Δ" sortKey="performance_delta" active={sortKey === "performance_delta"} direction={sortDirection} onSort={changeSort} /></th>
-                <th>Process</th>
-                <th title={tooltipText.forward_delta}><SortButton label="Forward Δ" sortKey="forward_delta" active={sortKey === "forward_delta"} direction={sortDirection} onSort={changeSort} /></th>
+                <th>Player</th><th>Pos</th><th><SortButton label="Price" sortKey="current_price" active={sortKey === "current_price"} direction={sortDirection} onSort={changeSort} /></th>
+                <th><SortButton label="Actual pts" sortKey="actual_points" active={sortKey === "actual_points"} direction={sortDirection} onSort={changeSort} title={tooltipText.actual_points} /></th>
+                <th><SortButton label="Par" sortKey="value_par" active={sortKey === "value_par"} direction={sortDirection} onSort={changeSort} title={tooltipText.value_par} /></th>
+                <th><SortButton label="Return Δ" sortKey="return_delta" active={sortKey === "return_delta"} direction={sortDirection} onSort={changeSort} title={tooltipText.return_delta} /></th>
+                <th><SortButton label="Underlying xPPG" sortKey="underlying_xppg" active={sortKey === "underlying_xppg"} direction={sortDirection} onSort={changeSort} title={tooltipText.underlying_xppg} /></th>
+                <th><SortButton label="Performance Δ" sortKey="performance_delta" active={sortKey === "performance_delta"} direction={sortDirection} onSort={changeSort} title={tooltipText.performance_delta} /></th>
+                <th><SortButton label="Forward Δ" sortKey="forward_delta" active={sortKey === "forward_delta"} direction={sortDirection} onSort={changeSort} title={tooltipText.forward_delta} /></th>
                 <th>Track</th>
               </tr>
             </thead>
             <tbody>
-              {playersLoading && <tr><td colSpan={8}>Loading players...</td></tr>}
+              {playersLoading && <tr><td colSpan={10}>Loading players...</td></tr>}
               {!playersLoading && visiblePlayers.map((row) => (
                 <tr key={`player-${row.player_id}`}>
-                  <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td><td>{row.team}</td><td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td>
+                  <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button><small>{row.team}</small></td><td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td>
+                  <td>{metric(row.actual_points, 0)}</td>
+                  <td>{metric(row.value_par)}</td>
+                  <td className={valueTone(row.return_delta)}>{signedMetric(row.return_delta)}</td>
+                  <td>{metric(row.process_xppg_regressed)}</td>
                   <td><DeltaPopover row={row} kind="performance" performanceCache={performanceLineage} forwardCache={forwardLineage} setPerformanceCache={setPerformanceLineage} setForwardCache={setForwardLineage} selectPlayer={selectPlayer} /></td>
-                  <td title={performanceTitle(row)}><span className={`state state-${row.performance_data_state}`}>{row.performance_data_state}</span><small>{metric(row.process_xppg_regressed)}</small></td>
                   <td><DeltaPopover row={row} kind="forward" performanceCache={performanceLineage} forwardCache={forwardLineage} setPerformanceCache={setPerformanceLineage} setForwardCache={setForwardLineage} selectPlayer={selectPlayer} /></td>
                   <td>{trackedIds.has(row.player_id) ? <button className="action" onClick={() => untrack(row)}>Untrack</button> : <button className="action" onClick={() => track(row)}>Track</button>}</td>
                 </tr>
               ))}
-              {!playersLoading && visiblePlayers.length === 0 && <tr><td colSpan={8}>No players match these filters.</td></tr>}
+              {!playersLoading && visiblePlayers.length === 0 && <tr><td colSpan={10}>No players match these filters.</td></tr>}
             </tbody>
           </table>
         </article>
@@ -701,36 +745,6 @@ export function App() {
             <table><thead><tr><th>GW</th><th>Pts</th><th>Min</th><th>Price</th></tr></thead><tbody>{detail.recent_gameweeks.map((row) => <tr key={row.gameweek}><td>{row.gameweek}</td><td>{row.total_points}</td><td>{row.minutes}</td><td>{row.value ? `£${row.value.toFixed(1)}` : "-"}</td></tr>)}{detail.recent_gameweeks.length === 0 && <tr><td colSpan={4}>No gameweek history yet</td></tr>}</tbody></table>
           </article>
         )}
-
-        <article id="data-model" className="wide">
-          <h2>Data / Model</h2>
-          {dataStatus && <div className="status-grid">
-            <div className="overview-item"><span>Season</span><strong>{dataStatus.season}</strong><small>GW {dataStatus.current_gameweek ?? "-"}</small></div>
-            <div className="overview-item"><span>Latest Ingest</span><strong>{dataStatus.latest_ingestion_runs[0]?.status ?? "-"}</strong><small>{dataStatus.latest_ingestion_runs[0]?.summary ?? "not run"}</small></div>
-            <div className="overview-item"><span>Performance Sufficient</span><strong>{dataStatus.health_summary.performance_sufficient_players}</strong><small>numeric Performance Δ</small></div>
-            <div className="overview-item"><span>Performance Partial</span><strong>{dataStatus.health_summary.performance_partial_players}</strong><small>held back</small></div>
-            <div className="overview-item"><span>Performance Missing</span><strong>{dataStatus.health_summary.performance_missing_players}</strong><small>shown as —</small></div>
-            <div className="overview-item"><span>Underlying Updated</span><strong>{formatDate(dataStatus.health_summary.advanced_stats_last_updated)}</strong><small>latest process feed</small></div>
-            <div className="overview-item"><span>Understat Teams</span><strong>{dataStatus.health_summary.understat_team_rows ?? dataStatus.health_summary.team_underlying_rows}</strong><small>team mappings</small></div>
-            <div className="overview-item"><span>Understat Players</span><strong>{dataStatus.health_summary.understat_player_rows_mapped ?? 0}/{dataStatus.health_summary.understat_player_rows_fetched ?? 0}</strong><small>{dataStatus.health_summary.understat_player_mapping_unresolved ?? 0} unresolved</small></div>
-            <div className="overview-item"><span>Low Prior Confidence</span><strong>{dataStatus.health_summary.low_confidence_prior_players ?? 0}</strong><small>fallback priors</small></div>
-            {Object.entries(dataStatus.health_summary.player_prior_coverage ?? {}).map(([source, count]) => <div className="overview-item" key={`prior-${source}`}><span>{source.replace(/_/g, " ")}</span><strong>{count}</strong><small>prior source</small></div>)}
-            {Object.entries(dataStatus.health_summary.performance_coverage_by_position ?? {}).map(([position, counts]) => (
-              <div className="overview-item" key={`perf-${position}`}><span>{position} Performance</span><strong>{counts.sufficient}</strong><small>{counts.partial} partial, {counts.missing} missing</small></div>
-            ))}
-            {dataStatus.sources.map((source) => <div className="overview-item" key={source.key}><span>{source.label}</span><strong>{source.rows}</strong><small>{formatDate(source.fetched_at)}</small></div>)}
-          </div>}
-          <div className="chart-grid">
-            <div>
-              <h3>Price Movements</h3>
-              <table><thead><tr><th>Player</th><th>Pos</th><th>Start</th><th>Now</th><th>Move</th><th>GW</th></tr></thead><tbody>{priceMovements.map((row) => <tr key={row.player_id}><td>{row.player}</td><td>{row.position}</td><td>£{row.first_price.toFixed(1)}</td><td>£{row.latest_price.toFixed(1)}</td><td className={row.price_change >= 0 ? "positive" : "negative"}>{row.price_change.toFixed(1)}</td><td>{row.gameweek ?? "-"}</td></tr>)}{priceMovements.length === 0 && <tr><td colSpan={6}>No price movements yet</td></tr>}</tbody></table>
-            </div>
-            <div>
-              <h3>Alerts</h3>
-              <table><thead><tr><th>Type</th><th>Message</th><th>Created</th></tr></thead><tbody>{alerts.map((alert) => <tr key={alert.id}><td>{alert.kind}</td><td>{alert.message}</td><td>{formatDate(alert.created_at)}</td></tr>)}{alerts.length === 0 && <tr><td colSpan={3}>No open alerts</td></tr>}</tbody></table>
-            </div>
-          </div>
-        </article>
 
         {points.map((point, index) => point.position).filter((position, index, list) => list.indexOf(position) === index).map((position) => {
           const rows = points.filter((point) => point.position === position);

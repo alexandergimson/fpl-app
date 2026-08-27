@@ -251,6 +251,87 @@ CREATE TABLE IF NOT EXISTS current_prediction_snapshots (
   PRIMARY KEY (model_run_id, player_id)
 );
 
+CREATE TABLE IF NOT EXISTS current_player_metrics (
+  season TEXT NOT NULL,
+  player_id INTEGER NOT NULL,
+  player TEXT NOT NULL,
+  team TEXT,
+  team_id INTEGER,
+  position TEXT NOT NULL,
+  current_price REAL NOT NULL,
+  actual_points REAL,
+  relevant_gameweek INTEGER,
+  current_par REAL,
+  return_par REAL,
+  return_delta REAL,
+  value_balance REAL,
+  underlying_xppg REAL,
+  performance_delta REAL,
+  performance_data_state TEXT NOT NULL,
+  performance_confidence TEXT,
+  next_6_xppg REAL,
+  forward_delta REAL,
+  expected_minutes REAL,
+  projection_confidence REAL,
+  value_trend REAL,
+  is_emerging INTEGER NOT NULL DEFAULT 0,
+  is_regression_risk INTEGER NOT NULL DEFAULT 0,
+  tracked INTEGER NOT NULL DEFAULT 0,
+  model_run_id INTEGER,
+  data_cutoff TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (season, player_id)
+);
+
+CREATE TABLE IF NOT EXISTS current_performance_lineage (
+  season TEXT NOT NULL,
+  player_id INTEGER NOT NULL,
+  performance_delta REAL,
+  underlying_xppg REAL,
+  current_par REAL,
+  state TEXT NOT NULL,
+  confidence TEXT,
+  sample_gameweeks INTEGER,
+  sample_minutes INTEGER,
+  prior_source TEXT,
+  prior_confidence TEXT,
+  appearance REAL NOT NULL DEFAULT 0,
+  goal REAL NOT NULL DEFAULT 0,
+  assist REAL NOT NULL DEFAULT 0,
+  clean_sheet REAL NOT NULL DEFAULT 0,
+  defcon REAL NOT NULL DEFAULT 0,
+  bonus REAL NOT NULL DEFAULT 0,
+  saves REAL NOT NULL DEFAULT 0,
+  deductions REAL NOT NULL DEFAULT 0,
+  forward_available INTEGER NOT NULL DEFAULT 0,
+  model_run_id INTEGER,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (season, player_id)
+);
+
+CREATE TABLE IF NOT EXISTS current_forward_lineage (
+  season TEXT NOT NULL,
+  player_id INTEGER NOT NULL,
+  gameweek INTEGER NOT NULL,
+  fixture_id INTEGER NOT NULL DEFAULT 0,
+  opponent TEXT,
+  home_away TEXT,
+  expected_minutes REAL,
+  projected_xpts REAL,
+  gameweek_total_xpts REAL,
+  next_6_xppg REAL,
+  current_par REAL,
+  forward_delta REAL,
+  model_run_id INTEGER,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (season, player_id, gameweek, fixture_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_current_player_metrics_forward ON current_player_metrics (season, position, forward_delta);
+CREATE INDEX IF NOT EXISTS idx_current_player_metrics_performance ON current_player_metrics (season, position, performance_delta);
+CREATE INDEX IF NOT EXISTS idx_current_player_metrics_price ON current_player_metrics (season, position, current_price, forward_delta);
+CREATE INDEX IF NOT EXISTS idx_current_player_metrics_tracked ON current_player_metrics (season, tracked, forward_delta);
+
 CREATE TABLE IF NOT EXISTS frozen_player_gameweek_par (
   season TEXT NOT NULL,
   player_id INTEGER NOT NULL,

@@ -20,6 +20,10 @@ FPL_BOOTSTRAP = "https://fantasy.premierleague.com/api/bootstrap-static/"
 FPL_FIXTURES = "https://fantasy.premierleague.com/api/fixtures/"
 FPL_ENTRY_HISTORY = "https://fantasy.premierleague.com/api/entry/{team_id}/history/"
 FPL_ENTRY_PICKS = "https://fantasy.premierleague.com/api/entry/{team_id}/event/{gameweek}/picks/"
+FPL_ELEMENT_SUMMARY = "https://fantasy.premierleague.com/api/element-summary/{player_id}/"
+FPL_ENTRY = "https://fantasy.premierleague.com/api/entry/{team_id}/"
+FPL_ENTRY_TRANSFERS = "https://fantasy.premierleague.com/api/entry/{team_id}/transfers/"
+FPL_MY_TEAM = "https://fantasy.premierleague.com/api/my-team/{team_id}/"
 UNDERSTAT_LEAGUE_DATA = "https://understat.com/getLeagueData/{league}/{year}"
 
 
@@ -81,6 +85,16 @@ class OfficialFplProvider:
                 return json.loads(cached.read_text()), str(cached), datetime.fromtimestamp(cached.stat().st_mtime, timezone.utc).isoformat()
             raise
 
+    def element_summary(self, player_id: int, season: str = "2026-27") -> Dataset:
+        payload, source, fetched_at = self._json(FPL_ELEMENT_SUMMARY.format(player_id=player_id), f"{season}-element-summary-{player_id}.json")
+        history = pd.DataFrame(payload.get("history", []))
+        history.attrs["fixtures"] = payload.get("fixtures", [])
+        return Dataset(history, source, fetched_at, season)
+
+    def entry(self, team_id: int, season: str = "2026-27") -> Dataset:
+        payload, source, fetched_at = self._json(FPL_ENTRY.format(team_id=team_id), f"{season}-entry-{team_id}.json")
+        return Dataset(pd.DataFrame([payload]), source, fetched_at, season)
+
     def bootstrap(self, season: str = "2026-27") -> Dataset:
         payload, source, fetched_at = self._json(FPL_BOOTSTRAP, f"{season}-bootstrap.json")
         elements = pd.DataFrame(payload["elements"])
@@ -104,6 +118,16 @@ class OfficialFplProvider:
         payload, source, fetched_at = self._json(url, f"{season}-entry-{team_id}-gw-{gameweek}-picks.json")
         picks = pd.DataFrame(payload.get("picks", []))
         picks.attrs["entry_history"] = payload.get("entry_history", {})
+        return Dataset(picks, source, fetched_at, season)
+
+    def entry_transfers(self, team_id: int, season: str = "2026-27") -> Dataset:
+        payload, source, fetched_at = self._json(FPL_ENTRY_TRANSFERS.format(team_id=team_id), f"{season}-entry-{team_id}-transfers.json")
+        return Dataset(pd.DataFrame(payload), source, fetched_at, season)
+
+    def my_team(self, team_id: int, season: str = "2026-27") -> Dataset:
+        payload, source, fetched_at = self._json(FPL_MY_TEAM.format(team_id=team_id), f"{season}-my-team-{team_id}.json")
+        picks = pd.DataFrame(payload.get("picks", []))
+        picks.attrs["transfers"] = payload.get("transfers", {})
         return Dataset(picks, source, fetched_at, season)
 
 

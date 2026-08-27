@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import json
+
 from backend.data.db import connect
 from backend.ingestion.loaders import replace_fixtures, replace_team_underlying, set_state, snapshot_prices, upsert_fpl_bootstrap_gameweek_observations, upsert_players
 from backend.ingestion.providers import OfficialFplProvider, UnderstatProvider
-from backend.services.boards import freeze_player_gameweek_pars
+from backend.services.boards import buy_board, freeze_player_gameweek_pars, materialize_current_market
 from backend.services.alerts import generate_tracked_alerts
 from backend.services.ingestion_runs import add_health_event, finish_ingestion_run, start_ingestion_run
 from backend.services.squad import get_team_id, import_public_squad
-from backend.services.tracking import snapshot_tracked
+from backend.services.tracking import COMPONENT_VERSIONS, MODEL_VERSION, create_model_run, snapshot_tracked
 
 
 def latest_finished_fixture_gameweek(fixtures) -> int:
@@ -48,6 +50,12 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
             set_state(con, season, "current_gameweek", str(gameweek))
             team_id = get_team_id(con, season)
             imported_squad = import_public_squad(con, season, team_id, provider)["players"] if team_id else 0
+            materialized = 0
+            if con.execute("SELECT 1 FROM price_par_points WHERE season = ? LIMIT 1", (par_season,)).fetchone():
+                data_cutoff = con.execute("SELECT MAX(fetched_at) AS fetched_at FROM players WHERE season = ?", (season,)).fetchone()["fetched_at"]
+                model_run_id = create_model_run(con, season, gameweek, MODEL_VERSION, json.dumps(COMPONENT_VERSIONS, sort_keys=True), data_cutoff)
+                board_rows = buy_board(con, season, par_season, None, 2000)
+                materialized = materialize_current_market(con, season, par_season, model_run_id, data_cutoff, board_rows)
             snapshots = snapshot_tracked(con, season, par_season, gameweek)
             alerts = generate_tracked_alerts(con, season)
             if players < 500:
@@ -58,7 +66,7 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
                 add_health_event(con, season, run_id, "WARN", "missing_player_underlying", "No player xG/xA rows loaded")
             if con.execute("SELECT COUNT(*) AS n FROM team_underlying_gameweeks WHERE season = ?", (season,)).fetchone()["n"] == 0:
                 add_health_event(con, season, run_id, "WARN", "missing_team_underlying", "No team xG/xGA rows loaded")
-            summary = f"{players} players, {prices} prices, {fixture_count} fixtures, {observations} player GW observations, {team_underlying_count} team xG/xGA rows, Understat player baseline disabled, {frozen_pars} frozen Pars, {imported_squad} squad picks, {snapshots} snapshots, {alerts} alerts"
+            summary = f"{players} players, {prices} prices, {fixture_count} fixtures, {observations} player GW observations, {team_underlying_count} team xG/xGA rows, Understat player baseline disabled, {frozen_pars} frozen Pars, {imported_squad} squad picks, {materialized} current metrics, {snapshots} snapshots, {alerts} alerts"
             finish_ingestion_run(con, run_id, "SUCCESS", summary)
         return {
             "run_id": run_id,
@@ -72,6 +80,7 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
             "understat_players": {"fetched": 0, "mapped": 0, "unmapped": 0, "duplicate_candidates": 0, "canonical": 0},
             "frozen_pars": frozen_pars,
             "squad": imported_squad,
+            "materialized": materialized,
             "snapshots": snapshots,
             "alerts": alerts,
         }

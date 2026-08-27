@@ -361,6 +361,7 @@ def buy_board(
                 "player_id": row["player_id"],
                 "player": row["web_name"],
                 "team": row["team"],
+                "team_id": row["team_id"],
                 "position": row["position"],
                 "current_price": price,
                 "market_mean": round(market_mean, 2),
@@ -430,12 +431,199 @@ TABLE_FIELDS = {
     "team",
     "position",
     "current_price",
+    "actual_points",
+    "value_par",
     "return_delta",
+    "underlying_xppg",
+    "process_xppg_regressed",
     "performance_delta",
     "performance_data_state",
     "forward_delta",
     "tracked",
 }
+
+SORT_FIELDS = {
+    "current_price": "current_price",
+    "performance_delta": "performance_delta",
+    "forward_delta": "forward_delta",
+    "return_delta": "return_delta",
+    "underlying_xppg": "underlying_xppg",
+    "actual_points": "actual_points",
+    "value_par": "current_par",
+}
+
+
+def latest_actual_returns(con: sqlite3.Connection, season: str) -> dict[int, dict]:
+    rows = con.execute(
+        """
+        WITH gw_points AS (
+          SELECT player_id, gameweek, SUM(total_points) AS actual_points
+          FROM player_gameweeks
+          WHERE season = ?
+          GROUP BY player_id, gameweek
+        ),
+        latest AS (
+          SELECT player_id, MAX(gameweek) AS gameweek
+          FROM gw_points
+          GROUP BY player_id
+        ),
+        frozen AS (
+          SELECT player_id, gameweek, MAX(value_par) AS value_par
+          FROM frozen_player_gameweek_par
+          WHERE season = ?
+          GROUP BY player_id, gameweek
+        )
+        SELECT g.player_id, g.gameweek, g.actual_points, frozen.value_par AS return_par
+        FROM gw_points g
+        JOIN latest ON latest.player_id = g.player_id AND latest.gameweek = g.gameweek
+        LEFT JOIN frozen ON frozen.player_id = g.player_id AND frozen.gameweek = g.gameweek
+        """,
+        (season, season),
+    ).fetchall()
+    return {
+        row["player_id"]: {
+            "relevant_gameweek": row["gameweek"],
+            "actual_points": row["actual_points"],
+            "return_par": row["return_par"],
+            "return_delta": row["actual_points"] - row["return_par"] if row["return_par"] is not None else None,
+        }
+        for row in rows
+    }
+
+
+def materialize_current_market(
+    con: sqlite3.Connection,
+    season: str,
+    par_season: str = "2026-27",
+    model_run_id: int | None = None,
+    data_cutoff: str | None = None,
+    rows: list[dict] | None = None,
+) -> int:
+    rows = rows or buy_board(con, season, par_season, None, 2000)
+    latest_returns = latest_actual_returns(con, season)
+    tracked_ids = {row["player_id"] for row in con.execute("SELECT player_id FROM tracked_players WHERE season = ?", (season,))}
+    teams = {team["team_id"]: team["short_name"] for team in con.execute("SELECT team_id, short_name FROM teams WHERE season = ?", (season,))}
+    con.execute("DELETE FROM current_player_metrics WHERE season = ?", (season,))
+    con.execute("DELETE FROM current_performance_lineage WHERE season = ?", (season,))
+    con.execute("DELETE FROM current_forward_lineage WHERE season = ?", (season,))
+    metric_rows = []
+    performance_rows = []
+    forward_rows = []
+    for row in rows:
+        returns = latest_returns.get(row["player_id"], {})
+        components = row.get("performance_components") or {}
+        metric_rows.append(
+            (
+                season,
+                row["player_id"],
+                row["player"],
+                row["team"],
+                row.get("team_id"),
+                row["position"],
+                row["current_price"],
+                returns.get("actual_points"),
+                returns.get("relevant_gameweek"),
+                row["value_par"],
+                returns.get("return_par"),
+                round(returns["return_delta"], 2) if returns.get("return_delta") is not None else None,
+                row["value_balance"],
+                row["process_xppg_regressed"],
+                row["performance_delta"],
+                row["performance_data_state"],
+                row["performance_confidence"],
+                row["next_6_xppg"],
+                row["forward_delta"],
+                row["expected_minutes"],
+                row["projection_confidence"],
+                row["value_trend"],
+                int(row["is_emerging"]),
+                int(row["is_regression_risk"]),
+                int(row["player_id"] in tracked_ids),
+                model_run_id,
+                data_cutoff,
+            )
+        )
+        performance_rows.append(
+            (
+                season,
+                row["player_id"],
+                row["performance_delta"],
+                row["process_xppg_regressed"],
+                row["value_par"],
+                row["performance_data_state"],
+                row["performance_confidence"],
+                row["performance_sample_gameweeks"],
+                row["performance_sample_minutes"],
+                row["prior_source"],
+                row["prior_confidence"],
+                components.get("appearance_ev", 0.0),
+                components.get("goal_ev", 0.0),
+                components.get("assist_ev", 0.0),
+                components.get("clean_sheet_process_ev", 0.0),
+                components.get("defcon_ev", 0.0),
+                components.get("bonus_process_ev", 0.0),
+                components.get("save_process_ev", 0.0),
+                components.get("deduction_process_ev", 0.0),
+                int(row["forward_delta"] is not None),
+                model_run_id,
+            )
+        )
+        for gw in row.get("fixture_projection", []):
+            fixtures = gw.get("fixtures", [])
+            if not fixtures:
+                forward_rows.append((season, row["player_id"], gw["gameweek"], 0, "Blank", "", row["expected_minutes"], 0.0, gw["total_xpts"], row["next_6_xppg"], row["value_par"], row["forward_delta"], model_run_id))
+            for fixture in fixtures:
+                forward_rows.append(
+                    (
+                        season,
+                        row["player_id"],
+                        gw["gameweek"],
+                        fixture.get("fixture_id") or 0,
+                        teams.get(fixture.get("opponent_team_id"), str(fixture.get("opponent_team_id"))),
+                        "H" if fixture.get("is_home") else "A",
+                        row["expected_minutes"],
+                        fixture.get("total_fixture_xpts"),
+                        gw["total_xpts"],
+                        row["next_6_xppg"],
+                        row["value_par"],
+                        row["forward_delta"],
+                        model_run_id,
+                    )
+                )
+    con.executemany(
+        """
+        INSERT INTO current_player_metrics (
+          season, player_id, player, team, team_id, position, current_price,
+          actual_points, relevant_gameweek, current_par, return_par, return_delta, value_balance,
+          underlying_xppg, performance_delta, performance_data_state, performance_confidence,
+          next_6_xppg, forward_delta, expected_minutes, projection_confidence, value_trend,
+          is_emerging, is_regression_risk, tracked, model_run_id, data_cutoff
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        metric_rows,
+    )
+    con.executemany(
+        """
+        INSERT INTO current_performance_lineage (
+          season, player_id, performance_delta, underlying_xppg, current_par, state, confidence,
+          sample_gameweeks, sample_minutes, prior_source, prior_confidence,
+          appearance, goal, assist, clean_sheet, defcon, bonus, saves, deductions,
+          forward_available, model_run_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        performance_rows,
+    )
+    con.executemany(
+        """
+        INSERT INTO current_forward_lineage (
+          season, player_id, gameweek, fixture_id, opponent, home_away, expected_minutes,
+          projected_xpts, gameweek_total_xpts, next_6_xppg, current_par, forward_delta, model_run_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        forward_rows,
+    )
+    con.commit()
+    return len(metric_rows)
 
 
 def paginated_players(
@@ -455,105 +643,138 @@ def paginated_players(
     search: str = "",
     quick_filter: str = "ALL",
 ):
-    rows = buy_board(con, season, par_season, gameweeks_played, 2000)
-    tracked_ids = {row["player_id"] for row in con.execute("SELECT player_id FROM tracked_players WHERE season = ?", (season,))}
-    query = search.strip().lower()
-    if position != "ALL":
-        rows = [row for row in rows if row["position"] == position]
-    if min_price is not None:
-        rows = [row for row in rows if row["current_price"] >= min_price]
-    if max_price is not None:
-        rows = [row for row in rows if row["current_price"] <= max_price]
-    if tracked:
-        rows = [row for row in rows if row["player_id"] in tracked_ids]
-    if confidence != "ALL":
-        rows = [row for row in rows if ("HIGH" if row["projection_confidence"] >= 0.7 else "MEDIUM" if row["projection_confidence"] >= 0.45 else "LOW") == confidence]
-    if quick_filter == "ABOVE_PAR":
-        rows = [row for row in rows if row["forward_delta"] >= 0]
-    if quick_filter == "BELOW_PAR":
-        rows = [row for row in rows if row["forward_delta"] < 0]
-    if quick_filter == "EMERGING":
-        rows = [row for row in rows if row["is_emerging"]]
-    if quick_filter == "REGRESSION_RISK":
-        rows = [row for row in rows if row["is_regression_risk"]]
-    if quick_filter == "TRACKED":
-        rows = [row for row in rows if row["player_id"] in tracked_ids]
-    if query:
-        rows = [row for row in rows if query in row["player"].lower() or query in row["team"].lower()]
-    reverse = direction != "asc"
-    rows = sorted(rows, key=lambda row: row.get(sort) if row.get(sort) is not None else (-9999 if reverse else 9999), reverse=reverse)
-    total = len(rows)
     page_size = max(1, min(100, page_size))
+    where = ["season = ?"]
+    params: list = [season]
+    if position != "ALL":
+        where.append("position = ?")
+        params.append(position)
+    if min_price is not None:
+        where.append("current_price >= ?")
+        params.append(min_price)
+    if max_price is not None:
+        where.append("current_price <= ?")
+        params.append(max_price)
+    if tracked or quick_filter == "TRACKED":
+        where.append("tracked = 1")
+    if confidence != "ALL":
+        where.append("performance_confidence = ?")
+        params.append(confidence)
+    if quick_filter == "ABOVE_PAR":
+        where.append("forward_delta >= 0")
+    if quick_filter == "BELOW_PAR":
+        where.append("forward_delta < 0")
+    if quick_filter == "EMERGING":
+        where.append("is_emerging = 1")
+    if quick_filter == "REGRESSION_RISK":
+        where.append("is_regression_risk = 1")
+    query = search.strip().lower()
+    if query:
+        where.append("(LOWER(player) LIKE ? OR LOWER(team) LIKE ?)")
+        params.extend([f"%{query}%", f"%{query}%"])
+    where_sql = " AND ".join(where)
+    total = con.execute(f"SELECT COUNT(*) AS n FROM current_player_metrics WHERE {where_sql}", params).fetchone()["n"]
     total_pages = max(1, (total + page_size - 1) // page_size)
     page = max(1, min(page, total_pages))
-    start = (page - 1) * page_size
-    page_rows = [({key: row.get(key) for key in TABLE_FIELDS} | {"tracked": row["player_id"] in tracked_ids}) for row in rows[start : start + page_size]]
-    return {"players": page_rows, "page": page, "page_size": page_size, "total": total, "total_pages": total_pages}
+    sort_sql = SORT_FIELDS.get(sort, "forward_delta")
+    direction_sql = "ASC" if direction == "asc" else "DESC"
+    rows = con.execute(
+        f"""
+        SELECT
+          player_id, player, team, position, current_price, actual_points,
+          current_par AS value_par, return_delta, underlying_xppg,
+          underlying_xppg AS process_xppg_regressed, performance_delta,
+          performance_data_state, next_6_xppg, forward_delta, tracked
+        FROM current_player_metrics
+        WHERE {where_sql}
+        ORDER BY {sort_sql} IS NULL, {sort_sql} {direction_sql}, player
+        LIMIT ? OFFSET ?
+        """,
+        params + [page_size, (page - 1) * page_size],
+    ).fetchall()
+    summary = con.execute(
+        f"""
+        SELECT
+          AVG(forward_delta) AS avg_forward_delta,
+          SUM(CASE WHEN forward_delta < 0 THEN 1 ELSE 0 END) AS below_par,
+          SUM(CASE WHEN performance_confidence = 'LOW' THEN 1 ELSE 0 END) AS low_confidence,
+          SUM(tracked) AS tracked
+        FROM current_player_metrics
+        WHERE {where_sql}
+        """,
+        params,
+    ).fetchone()
+    page_rows = [{key: row[key] for key in row.keys()} for row in rows]
+    return {
+        "players": page_rows,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
+        "summary": dict(summary),
+    }
 
 
 def player_performance_lineage(con: sqlite3.Connection, season: str, player_id: int, par_season: str = "2026-27"):
-    row = next((item for item in buy_board(con, season, par_season, None, 2000) if item["player_id"] == player_id), None)
+    row = con.execute("SELECT * FROM current_performance_lineage WHERE season = ? AND player_id = ?", (season, player_id)).fetchone()
     if not row:
         return None
-    components = row.get("performance_components") or {}
     missing = []
-    if row["performance_data_state"] == "missing":
+    if row["state"] == "missing":
         missing.append("No current player-process observation from official FPL.")
-    if row["performance_data_state"] == "partial":
+    if row["state"] == "partial":
         missing.append("Defensive process data is incomplete.")
     return {
         "player_id": player_id,
         "performance_delta": row["performance_delta"],
-        "underlying_xppg": row["process_xppg_regressed"],
-        "value_par": row["value_par"],
-        "state": row["performance_data_state"],
-        "confidence": row["performance_confidence"],
-        "sample_gameweeks": row["performance_sample_gameweeks"],
-        "sample_minutes": row["performance_sample_minutes"],
+        "underlying_xppg": row["underlying_xppg"],
+        "value_par": row["current_par"],
+        "state": row["state"],
+        "confidence": row["confidence"],
+        "sample_gameweeks": row["sample_gameweeks"],
+        "sample_minutes": row["sample_minutes"],
         "prior": {"source": row["prior_source"], "confidence": row["prior_confidence"]},
         "components": {
-            "appearance": components.get("appearance_ev", 0.0),
-            "goal": components.get("goal_ev", 0.0),
-            "assist": components.get("assist_ev", 0.0),
-            "clean_sheet": components.get("clean_sheet_process_ev", 0.0),
-            "defcon": components.get("defcon_ev", 0.0),
-            "bonus": components.get("bonus_process_ev", 0.0),
-            "saves": components.get("save_process_ev", 0.0),
-            "deductions": components.get("deduction_process_ev", 0.0),
+            "appearance": row["appearance"],
+            "goal": row["goal"],
+            "assist": row["assist"],
+            "clean_sheet": row["clean_sheet"],
+            "defcon": row["defcon"],
+            "bonus": row["bonus"],
+            "saves": row["saves"],
+            "deductions": row["deductions"],
         },
-        "available_observations": ["official FPL player process"] if row["performance_data_state"] == "sufficient" else [],
+        "available_observations": ["official FPL player process"] if row["state"] == "sufficient" else [],
         "missing_required_observations": missing,
-        "forward_available": row["forward_delta"] is not None,
-        "note": "Based on underlying process, not actual FPL points.",
+        "forward_available": bool(row["forward_available"]),
+        "note": "Based on underlying performance, not actual FPL points.",
     }
 
 
 def player_forward_lineage(con: sqlite3.Connection, season: str, player_id: int, par_season: str = "2026-27"):
-    row = next((item for item in buy_board(con, season, par_season, None, 2000) if item["player_id"] == player_id), None)
-    if not row:
+    rows = con.execute(
+        """
+        SELECT *
+        FROM current_forward_lineage
+        WHERE season = ? AND player_id = ?
+        ORDER BY gameweek, fixture_id
+        """,
+        (season, player_id),
+    ).fetchall()
+    metrics = con.execute("SELECT next_6_xppg, current_par, forward_delta FROM current_player_metrics WHERE season = ? AND player_id = ?", (season, player_id)).fetchone()
+    if not metrics:
         return None
-    teams = {team["team_id"]: team["short_name"] for team in con.execute("SELECT team_id, short_name FROM teams WHERE season = ?", (season,))}
+    by_gw: dict[int, dict] = {}
+    for row in rows:
+        gw = by_gw.setdefault(row["gameweek"], {"gameweek": row["gameweek"], "projected_points": row["gameweek_total_xpts"] or 0.0, "fixtures": []})
+        if row["fixture_id"]:
+            gw["fixtures"].append({"opponent": row["opponent"], "home_away": row["home_away"], "expected_minutes": row["expected_minutes"], "total_xpts": row["projected_xpts"]})
     return {
         "player_id": player_id,
-        "forward_delta": row["forward_delta"],
-        "next_6_xppg": row["next_6_xppg"],
-        "value_par": row["value_par"],
-        "gameweeks": [
-            {
-                "gameweek": gw["gameweek"],
-                "projected_points": gw["total_xpts"],
-                "fixtures": [
-                    {
-                        "opponent": teams.get(fixture.get("opponent_team_id"), str(fixture.get("opponent_team_id"))),
-                        "home_away": "H" if fixture.get("is_home") else "A",
-                        "expected_minutes": row["expected_minutes"],
-                        "total_xpts": fixture.get("total_fixture_xpts"),
-                    }
-                    for fixture in gw["fixtures"]
-                ],
-            }
-            for gw in row.get("fixture_projection", [])
-        ],
+        "forward_delta": metrics["forward_delta"],
+        "next_6_xppg": metrics["next_6_xppg"],
+        "value_par": metrics["current_par"],
+        "gameweeks": list(by_gw.values()),
     }
 
 
