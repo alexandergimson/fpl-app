@@ -57,10 +57,25 @@ def team_completed_fixtures(con: sqlite3.Connection, season: str, as_of_gw: int 
     return {row["team_id"]: row["played"] for row in rows}
 
 
-def actual_ppg(points: int, team_id: int | None, completed_by_team: dict[int, int], fallback_denominator: int | None = None) -> float | None:
-    played = completed_by_team.get(team_id) if team_id is not None else None
-    if played:
-        return points / played
+def completed_gameweeks(con: sqlite3.Connection, season: str, as_of_gw: int | None = None) -> int:
+    clause = "AND gameweek <= ?" if as_of_gw is not None else ""
+    params = (season, as_of_gw) if as_of_gw is not None else (season,)
+    row = con.execute(
+        f"SELECT COUNT(DISTINCT gameweek) AS played FROM fixtures WHERE season = ? AND finished = 1 {clause}",
+        params,
+    ).fetchone()
+    if row and row["played"]:
+        return int(row["played"])
+    state = con.execute("SELECT value FROM app_state WHERE season = ? AND key = 'current_gameweek'", (season,)).fetchone()
+    if state and int(state["value"] or 0) > 0:
+        return int(state["value"])
+    row = con.execute("SELECT COALESCE(MAX(gameweek), 0) AS played FROM player_gameweeks WHERE season = ?", (season,)).fetchone()
+    return int(row["played"] or 0)
+
+
+def actual_ppg(points: int, elapsed_gameweeks: int, fallback_denominator: int | None = None) -> float | None:
+    if elapsed_gameweeks:
+        return points / elapsed_gameweeks
     if fallback_denominator:
         return points / fallback_denominator
     return None
@@ -225,6 +240,7 @@ def buy_board(
     current_par_points = current_curve_points(con, season, as_of_gw) if as_of_gw is not None else None
     denominator = gameweeks_played or as_of_gw or infer_gameweeks(rows, season, par_season)
     completed_by_team = team_completed_fixtures(con, season, as_of_gw)
+    elapsed_gameweeks = completed_gameweeks(con, season, as_of_gw)
     frozen_pars = frozen_par_summary(con, season, as_of_gw)
     baseline_minutes = baseline_minutes_profiles(con, season, denominator, as_of_gw)
     actual_fallback = denominator if season < par_season and not completed_by_team else None
@@ -282,8 +298,8 @@ def buy_board(
             as_of_gw,
             current_par_points,
         )
-        actual = actual_ppg(points, row["team_id"], completed_by_team, actual_fallback)
-        played = completed_by_team.get(row["team_id"]) if row["team_id"] is not None else actual_fallback
+        actual = actual_ppg(points, elapsed_gameweeks, actual_fallback)
+        played = elapsed_gameweeks or actual_fallback
         minute_profile = baseline_minutes.get(row["player_id"]) or fallback_minutes_profile(minutes, denominator)
         minutes_confidence = min(1.0, minute_profile["expected_minutes"] / 60)
         neutral_xppg = market_mean * (0.35 + 0.65 * minutes_confidence)
@@ -489,10 +505,11 @@ SORT_FIELDS = {
 
 
 def actual_scoring_summary(con: sqlite3.Connection, season: str) -> dict[int, dict]:
+    elapsed_gameweeks = completed_gameweeks(con, season)
     rows = con.execute(
         """
         WITH gw_points AS (
-          SELECT player_id, gameweek, SUM(total_points) AS actual_points, SUM(minutes) AS minutes
+          SELECT player_id, gameweek, SUM(total_points) AS actual_points
           FROM player_gameweeks
           WHERE season = ?
           GROUP BY player_id, gameweek
@@ -505,8 +522,7 @@ def actual_scoring_summary(con: sqlite3.Connection, season: str) -> dict[int, di
         season AS (
           SELECT
             player_id,
-            SUM(actual_points) AS season_points,
-            SUM(CASE WHEN minutes > 0 THEN 1 ELSE 0 END) AS games
+            SUM(actual_points) AS season_points
           FROM gw_points
           GROUP BY player_id
         )
@@ -515,13 +531,13 @@ def actual_scoring_summary(con: sqlite3.Connection, season: str) -> dict[int, di
           g.gameweek,
           g.actual_points,
           season.season_points,
-          season.games,
-          CASE WHEN season.games > 0 THEN season.season_points * 1.0 / season.games ELSE NULL END AS actual_ppg
+          ? AS games,
+          CASE WHEN ? > 0 THEN season.season_points * 1.0 / ? ELSE NULL END AS actual_ppg
         FROM gw_points g
         JOIN latest ON latest.player_id = g.player_id AND latest.gameweek = g.gameweek
         JOIN season ON season.player_id = g.player_id
         """,
-        (season,),
+        (season, elapsed_gameweeks, elapsed_gameweeks, elapsed_gameweeks),
     ).fetchall()
     return {
         row["player_id"]: {

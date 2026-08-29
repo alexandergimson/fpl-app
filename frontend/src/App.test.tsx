@@ -190,7 +190,7 @@ test("sorts, filters, and opens detail with analyse", async () => {
   expect(within(playersTable).getByText("Actual PPG")).toBeInTheDocument();
   expect(within(playersTable).getByText("Expected PPG")).toBeInTheDocument();
   expect(await screen.findByText("Zero · TST · MID · £6.0m")).toBeInTheDocument();
-  expect(screen.getByText("Season total: 6 pts · 2 appearances · 3.00 PPG")).toBeInTheDocument();
+  expect(screen.getByText("Season total: 6 pts · 2 elapsed GWs · 3.00 PPG")).toBeInTheDocument();
   expect(screen.getByText("Project Score")).toBeInTheDocument();
 });
 

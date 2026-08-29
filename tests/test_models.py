@@ -13,7 +13,7 @@ import pandas as pd
 from backend.ingestion.providers import Dataset, UnderstatProvider
 from backend.jobs.refresh import refresh_all
 from backend.services.valuation import captain_adjusted_delta, captaincy_weight, player_status, projection_confidence, selling_price
-from backend.services.boards import actual_scoring_summary, breakout_board, buy_board, freeze_player_gameweek_pars, infer_gameweeks, materialize_current_market, paginated_players, player_forward_lineage, player_performance_lineage, trap_board, value_balance_and_return_delta
+from backend.services.boards import actual_scoring_summary, breakout_board, buy_board, completed_gameweeks, freeze_player_gameweek_pars, infer_gameweeks, materialize_current_market, paginated_players, player_forward_lineage, player_performance_lineage, trap_board, value_balance_and_return_delta
 from backend.services.bonus import bonus_rates, bonus_xppg
 from backend.services.goalkeepers import observed_save_rates, save_rates, save_xppg
 from backend.data.db import connect
@@ -533,7 +533,7 @@ class ModelTests(unittest.TestCase):
         self.assertEqual([row["player"] for row in breakouts], ["Break"])
         self.assertEqual([row["player"] for row in traps], ["Trap"])
 
-    def test_actual_ppg_uses_team_completed_fixtures_only(self):
+    def test_actual_ppg_uses_elapsed_gameweeks(self):
         with connect(":memory:") as con:
             con.execute(
                 "INSERT INTO price_par_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -550,7 +550,7 @@ class ModelTests(unittest.TestCase):
             con.execute(
                 """
                 INSERT INTO players VALUES
-                ('2026-27', 1, NULL, 'NotPlayedYet', '', '', 1, 'ONE', 'MID', 5.0, 80, 900, 10.0, 'a', 'test', 'now', 'test'),
+                ('2026-27', 1, NULL, 'NotPlayedYet', '', '', 1, 'ONE', 'MID', 5.0, 0, 0, 10.0, 'a', 'test', 'now', 'test'),
                 ('2026-27', 2, NULL, 'DNP', '', '', 2, 'TWO', 'MID', 5.0, 0, 0, 10.0, 'a', 'test', 'now', 'test'),
                 ('2026-27', 3, NULL, 'Six', '', '', 2, 'TWO', 'MID', 5.0, 6, 90, 10.0, 'a', 'test', 'now', 'test'),
                 ('2026-27', 4, NULL, 'Four', '', '', 3, 'THR', 'MID', 5.0, 8, 180, 10.0, 'a', 'test', 'now', 'test')
@@ -558,11 +558,12 @@ class ModelTests(unittest.TestCase):
             )
             self.assertEqual(freeze_player_gameweek_pars(con, "2026-27", "2026-27"), 4)
             rows = {row["player"]: row for row in buy_board(con, "2026-27", "2026-27", 10, 10)}
-        self.assertIsNone(rows["NotPlayedYet"]["actual_ppg"])
+        self.assertEqual(completed_gameweeks(con, "2026-27"), 2)
+        self.assertEqual(rows["NotPlayedYet"]["actual_ppg"], 0.0)
         self.assertIsNone(rows["NotPlayedYet"]["historical_delta"])
         self.assertGreater(rows["NotPlayedYet"]["neutral_xppg"], 0)
         self.assertEqual(rows["DNP"]["actual_ppg"], 0.0)
-        self.assertEqual(rows["Six"]["actual_ppg"], 6.0)
+        self.assertEqual(rows["Six"]["actual_ppg"], 3.0)
         self.assertEqual(rows["Four"]["actual_ppg"], 4.0)
         self.assertEqual(rows["Four"]["historical_delta"], 0.5)
         self.assertEqual(rows["Four"]["return_delta"], 0.5)
@@ -1592,8 +1593,8 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(rows["Wirtz"]["performance_delta"], -0.47)
         self.assertEqual(rows["Wirtz"]["forward_delta"], -0.36)
         self.assertEqual(rows["Missed"]["season_points"], 5)
-        self.assertEqual(rows["Missed"]["games"], 1)
-        self.assertEqual(rows["Missed"]["actual_ppg"], 5.0)
+        self.assertEqual(rows["Missed"]["games"], 2)
+        self.assertEqual(rows["Missed"]["actual_ppg"], 2.5)
         self.assertEqual(rows["Missed"]["value_par"], 4.5)
 
     def test_data_status_summarizes_sources(self):

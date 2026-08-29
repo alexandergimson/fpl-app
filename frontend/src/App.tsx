@@ -161,7 +161,7 @@ const API = "http://127.0.0.1:8000";
 const SEASON = "2026-27";
 const tooltipText = {
   season_points: "Total FPL points scored this season.",
-  actual_ppg: "Average FPL points per appearance this season.",
+  actual_ppg: "Average FPL points per elapsed Gameweek this season.",
   expected_ppg: "Expected points per game based on the player's price and position benchmark.",
   return_delta: "Actual PPG minus Expected PPG.",
   underlying_xppg: "Estimated FPL points per game based on underlying performance rather than actual points scored.",
@@ -580,6 +580,15 @@ function loadData() {
             <input aria-label="FPL Team ID" type="number" placeholder="FPL Team ID" value={teamId} onChange={(event) => setTeamId(event.target.value)} />
             <button className="action primary" onClick={saveTeamId}>Import Public Squad</button>
           </div>
+          <p className="note">{teamMessage || "Public import uses the latest available FPL Gameweek picks, not private transfer drafts."}</p>
+          <div className="overview">
+            <div className="overview-item"><span>Squad Value</span><strong>{money(squadSummary.squadValue)}</strong><small>current prices</small></div>
+            <div className="overview-item"><span>Bank</span><strong>{money(manager?.bank)}</strong><small>{manager?.bank == null ? "unavailable" : "manager context"}</small></div>
+            <div className="overview-item"><span>Free Transfers</span><strong>{manager?.free_transfers ?? "—"}</strong><small>{manager?.free_transfers == null ? "unavailable" : "manager context"}</small></div>
+            <div className="overview-item"><span>Chips</span><strong>{chipsLabel(manager?.chips_remaining)}</strong><small>{chipsNote(manager?.chips_remaining)}</small></div>
+            <div className="overview-item"><span>Deadline</span><strong>{formatDate(manager?.deadline)}</strong><small>next GW</small></div>
+            {squadSummary.hasGenuinePurchasePrices && <div className="overview-item"><span>Locked Gain</span><strong>{money(squadSummary.saleValue - squadSummary.purchaseValue)}</strong><small>sell value less buy cost</small></div>}
+          </div>
 
           <table>
 <thead>
@@ -677,7 +686,7 @@ function loadData() {
         {detail?.current && (
           <article className="wide">
             <h2>{detail.player.name} · {detail.player.team ?? "—"} · {detail.player.position} · £{detail.player.current_price.toFixed(1)}m</h2>
-            <p className="note">Season total: {metric(detail.current.season_points, 0)} pts · {detail.current.games ?? "—"} appearances · {metric(detail.current.actual_ppg)} PPG</p>
+            <p className="note">Season total: {metric(detail.current.season_points, 0)} pts · {detail.current.games ?? "—"} elapsed GWs · {metric(detail.current.actual_ppg)} PPG</p>
             <table>
               <thead><tr><th>GW</th><th>Opponent</th><th>Points</th><th>Project Score</th><th>Performance</th><th>xG</th><th>xA</th><th>Minutes</th><th>Price</th></tr></thead>
               <tbody>
