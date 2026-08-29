@@ -18,8 +18,11 @@ function row(overrides: Partial<Record<string, unknown>>) {
     current_price: 5,
     market_mean: 3,
     value_par: 3,
+    expected_ppg: 3,
+    season_points: 6,
+    games: 2,
     value_balance: null,
-    actual_ppg: null,
+    actual_ppg: 3,
     historical_delta: null,
     return_delta: null,
     neutral_xppg: 3,
@@ -183,7 +186,11 @@ test("sorts, filters, and opens detail with analyse", async () => {
   await waitFor(() => expect(within(playersTable).getByText("Zero")).toBeInTheDocument());
   expect(within(playersTable).queryByText("Plus")).not.toBeInTheDocument();
   fireEvent.click(within(playersTable).getByRole("button", { name: "Analyse" }));
+  expect(within(playersTable).getByText("Total Pts")).toBeInTheDocument();
+  expect(within(playersTable).getByText("Actual PPG")).toBeInTheDocument();
+  expect(within(playersTable).getByText("Expected PPG")).toBeInTheDocument();
   expect(await screen.findByText("Zero · TST · MID · £6.0m")).toBeInTheDocument();
+  expect(screen.getByText("Season total: 6 pts · 2 appearances · 3.00 PPG")).toBeInTheDocument();
   expect(screen.getByText("Project Score")).toBeInTheDocument();
 });
 

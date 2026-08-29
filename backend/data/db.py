@@ -270,6 +270,9 @@ CREATE TABLE IF NOT EXISTS current_player_metrics (
   position TEXT NOT NULL,
   current_price REAL NOT NULL,
   actual_points REAL,
+  season_points REAL,
+  games INTEGER,
+  actual_ppg REAL,
   relevant_gameweek INTEGER,
   current_par REAL,
   return_par REAL,
@@ -560,6 +563,7 @@ def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
     )
     ensure_columns(con, "player_cumulative_observations", {"bps": "INTEGER NOT NULL DEFAULT 0"})
     ensure_columns(con, "game_underlying_xpts", {"deduction_process_ev": "REAL NOT NULL DEFAULT 0"})
+    ensure_columns(con, "current_player_metrics", {"season_points": "REAL", "games": "INTEGER", "actual_ppg": "REAL"})
     ensure_columns(con, "squad_players", {"purchase_price_source": "TEXT NOT NULL DEFAULT 'manual'"})
     migrate_nullable_canonical_context(con)
     ensure_columns(

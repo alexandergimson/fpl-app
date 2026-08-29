@@ -13,7 +13,7 @@ import pandas as pd
 from backend.ingestion.providers import Dataset, UnderstatProvider
 from backend.jobs.refresh import refresh_all
 from backend.services.valuation import captain_adjusted_delta, captaincy_weight, player_status, projection_confidence, selling_price
-from backend.services.boards import breakout_board, buy_board, freeze_player_gameweek_pars, infer_gameweeks, materialize_current_market, paginated_players, player_forward_lineage, player_performance_lineage, trap_board, value_balance_and_return_delta
+from backend.services.boards import actual_scoring_summary, breakout_board, buy_board, freeze_player_gameweek_pars, infer_gameweeks, materialize_current_market, paginated_players, player_forward_lineage, player_performance_lineage, trap_board, value_balance_and_return_delta
 from backend.services.bonus import bonus_rates, bonus_xppg
 from backend.services.goalkeepers import observed_save_rates, save_rates, save_xppg
 from backend.data.db import connect
@@ -1525,6 +1525,76 @@ class ModelTests(unittest.TestCase):
         self.assertIsNone(rows[1]["xg"])
         self.assertEqual(rows[1]["price"], 6.1)
         self.assertEqual(rows[1]["project_score"], 4.4)
+
+    def test_materialized_scoring_uses_fpl_history_not_snapshots(self):
+        model_row = {
+            "player_id": 1,
+            "player": "Wirtz",
+            "team": "LIV",
+            "team_id": 1,
+            "position": "MID",
+            "current_price": 8.5,
+            "market_mean": 4.0,
+            "value_par": 4.5,
+            "value_balance": None,
+            "process_xppg_regressed": 4.03,
+            "performance_components": {},
+            "performance_data_state": "sufficient",
+            "performance_confidence": "HIGH",
+            "performance_sample_gameweeks": 2,
+            "performance_sample_minutes": 180,
+            "prior_source": None,
+            "prior_confidence": None,
+            "next_6_xppg": 4.14,
+            "forward_delta": -0.36,
+            "expected_minutes": 85,
+            "projection_confidence": 0.8,
+            "value_trend": 0.0,
+            "is_emerging": False,
+            "is_regression_risk": False,
+            "fixture_projection": [],
+        }
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2026-27', 1, 1, 1, 2, 1, 2, 90, 1, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 8.5, 'fpl', 'now', 'test'),
+                ('2026-27', 1, 2, 2, 3, 0, 4, 90, 1, 0, 1, 0, 0, 0, 0, 0, NULL, NULL, NULL, 8.5, 'fpl', 'now', 'test'),
+                ('2026-27', 2, 1, 3, 2, 1, 5, 90, 1, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'fpl', 'now', 'test'),
+                ('2026-27', 2, 2, 4, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 5.0, 'fpl', 'now', 'test')
+                """
+            )
+            cursor = con.execute(
+                "INSERT INTO model_runs (season, gameweek, model_version, component_versions, data_cutoff) VALUES ('2026-27', 2, 'baseline_v3', '{}', 'now')"
+            )
+            con.execute(
+                "INSERT INTO current_prediction_snapshots (model_run_id, season, gameweek, player_id, prediction_json) VALUES (?, '2026-27', 2, 1, ?)",
+                (int(cursor.lastrowid), json.dumps({"actual_points": 999, "value_par": 999, "forward_delta": 999})),
+            )
+            materialize_current_market(con, "2026-27", model_run_id=99, rows=[model_row, model_row | {"player_id": 2, "player": "Missed", "current_price": 5.0, "process_xppg_regressed": 2.0, "next_6_xppg": 2.5}])
+            page = paginated_players(con, "2026-27", page_size=10)
+            rows = {row["player"]: row for row in page["players"]}
+            summary = actual_scoring_summary(con, "2026-27")
+        self.assertEqual(summary[1]["season_points"], 6)
+        self.assertEqual(summary[1]["games"], 2)
+        self.assertEqual(rows["Wirtz"]["season_points"], 6)
+        self.assertEqual(rows["Wirtz"]["games"], 2)
+        self.assertEqual(rows["Wirtz"]["actual_points"], 4)
+        self.assertEqual(rows["Wirtz"]["actual_ppg"], 3.0)
+        self.assertEqual(rows["Wirtz"]["value_par"], 4.5)
+        self.assertEqual(rows["Wirtz"]["expected_ppg"], 4.5)
+        self.assertEqual(rows["Wirtz"]["return_delta"], -1.5)
+        self.assertEqual(rows["Wirtz"]["performance_delta"], -0.47)
+        self.assertEqual(rows["Wirtz"]["forward_delta"], -0.36)
+        self.assertEqual(rows["Missed"]["season_points"], 5)
+        self.assertEqual(rows["Missed"]["games"], 1)
+        self.assertEqual(rows["Missed"]["actual_ppg"], 5.0)
+        self.assertEqual(rows["Missed"]["value_par"], 4.5)
 
     def test_data_status_summarizes_sources(self):
         with connect(":memory:") as con:

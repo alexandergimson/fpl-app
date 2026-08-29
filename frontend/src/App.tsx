@@ -12,7 +12,10 @@ type BoardRow = {
   position: string;
   current_price: number;
   actual_points?: number | null;
+  season_points?: number | null;
+  games?: number | null;
   market_mean: number;
+  expected_ppg?: number | null;
   value_par: number;
   value_balance: number | null;
   actual_ppg: number | null;
@@ -101,8 +104,6 @@ type PlayerDetail = {
   role_history: { penalties: number; direct_free_kicks: number; corners: number; indirect_free_kicks: number; reason: string; created_at: string }[];
 };
 
-type Alert = { id: number; kind: string; message: string; created_at: string };
-type PriceMovement = { player_id: number; player: string; team: string; position: string; first_price: number; latest_price: number; price_change: number; gameweek?: number | null };
 type PlayersPage = { players: BoardRow[]; page: number; page_size: number; total: number; total_pages: number };
 type RefreshSummary = { status: string; gameweek: number; players: number; fixtures: number; observations: number; team_underlying: number; materialized: number; snapshots: number; alerts: number };
 type ManagerContext = { bank: number | null; free_transfers: number | null; chips_remaining: string[] | null; deadline: string | null; context_type: string | null };
@@ -130,42 +131,15 @@ type ForwardLineage = {
   value_par: number;
   gameweeks: { gameweek: number; projected_points: number; fixtures: { opponent: string; home_away: string; expected_minutes: number; total_xpts: number }[] }[];
 };
-type DataStatus = {
-  season: string;
-  current_gameweek?: number | null;
-  latest_ingestion_runs: { id: number; provider: string; kind: string; status: string; started_at: string; finished_at?: string | null; summary?: string | null }[];
-  latest_health_events: { id: number; level: string; kind: string; message: string; created_at: string }[];
-  health_summary: {
-    fpl_last_updated?: string | null;
-    advanced_stats_last_updated?: string | null;
-    expected_player_count: number;
-    received_player_count: number;
-    expected_fixture_count: number;
-    processed_fixture_count: number;
-    player_underlying_rows: number;
-    team_underlying_rows: number;
-    performance_sufficient_players: number;
-    performance_partial_players: number;
-    performance_missing_players: number;
-    performance_coverage_by_position?: Record<string, { missing: number; partial: number; sufficient: number }>;
-    understat_team_rows?: number;
-    understat_team_mapping_coverage?: number;
-    understat_player_rows_fetched?: number;
-    understat_player_rows_mapped?: number;
-    understat_player_mapping_unresolved?: number;
-    player_prior_coverage?: Record<string, number>;
-    low_confidence_prior_players?: number;
-    latest_fixture_projection_run?: Record<string, string> | null;
-    latest_ingestion_status?: string | null;
-    historical_prior_weight: number;
-    current_season_weight: number;
-  };
-  sources: { key: string; label: string; rows: number; fetched_at?: string | null; data_period?: string | null }[];
-};
 
 type SortKey =
+  | "player"
+  | "position"
   | "current_price"
   | "actual_points"
+  | "season_points"
+  | "actual_ppg"
+  | "expected_ppg"
   | "historical_delta"
   | "return_delta"
   | "value_par"
@@ -181,31 +155,24 @@ type SortKey =
   | "value_trend"
   | "price_trend";
 
-type SortOption = "BEST_VALUE" | "PERFORMANCE" | "CHEAPEST";
+type SortOption = "BEST_VALUE" | "PERFORMANCE" | "CHEAPEST" | "CUSTOM";
 
 const API = "http://127.0.0.1:8000";
 const SEASON = "2026-27";
 const tooltipText = {
-  actual_points: "Total FPL points scored in the current sample.",
-  value_par: "Expected points-per-game Par for a player at this price and position.",
-  return_delta: "Actual FPL return relative to Par over the periods played. Positive means the player has returned above Par.",
+  season_points: "Total FPL points scored this season.",
+  actual_ppg: "Average FPL points per appearance this season.",
+  expected_ppg: "Expected points per game based on the player's price and position benchmark.",
+  return_delta: "Actual PPG minus Expected PPG.",
   underlying_xppg: "Estimated FPL points per game based on underlying performance rather than actual points scored.",
-  performance_delta: "Underlying xPPG minus Par. Positive means the player's underlying performance is above Par for their price.",
-  forward_delta: "Projected xPPG minus Par. Positive means the player is expected to outperform Par going forward.",};
+  performance_delta: "Underlying xPPG minus Expected PPG.",
+  forward_delta: "Projected PPG minus Expected PPG.",};
 
-function HeaderHelp({ label, tip }: { label: string; tip: string }) {
-  return <button className="header-help" type="button" title={tip} aria-label={`${label}: ${tip}`}>{label}</button>;
-}
 
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" }) : "not loaded";
 }
 
-function trendLabel(value: number) {
-  if (value > 0.15) return "↑ improving";
-  if (value < -0.15) return "↓ deteriorating";
-  return "→ stable";
-}
 
 function confidenceLabel(value: number) {
   if (value >= 0.7) return "HIGH";
@@ -230,9 +197,6 @@ function valueTone(value: number | null | undefined) {
   return value >= 0 ? "positive" : "negative";
 }
 
-function fixtureOpponent(fixture: Record<string, number | string | boolean | null>) {
-  return fixture.opponent ?? `#${fixture.opponent_team_id}`;
-}
 
 function chipsLabel(chips: string[] | null | undefined) {
   if (chips == null) return "—";
@@ -244,22 +208,8 @@ function chipsNote(chips: string[] | null | undefined) {
   return chips.join(", ") || "none remaining";
 }
 
-function factualFixture(detail: PlayerDetail, fixture: Record<string, number | string | boolean | null>) {
-  return detail.current.next_5_fixtures?.find((item) => item.gameweek === fixture.gameweek && item.opponent_team_id === fixture.opponent_team_id);
-}
 
-function performanceTitle(row: BoardRow) {
-  const prior = row.prior_source === "player_history" ? `Player-history prior, ${row.prior_minutes ?? 0} prior minutes.` : row.prior_source === "historical_position_price" ? "Historical position-price prior." : row.prior_source === "historical_position" ? "Historical position prior." : "No prior.";
-  const sample = `${row.performance_data_state} evidence from ${row.performance_sample_gameweeks ?? 0} GW, ${row.performance_sample_minutes ?? 0} minutes.`;
-  return row.performance_delta == null ? `No numeric Performance Delta yet. ${sample} ${prior}` : `${sample} Process xPPG ${metric(row.process_xppg_regressed)}. ${prior}`;
-}
 
-function priorLabel(row: BoardRow) {
-  if (row.prior_source === "player_history") return `Player prior (${row.prior_minutes ?? 0}m)`;
-  if (row.prior_source === "historical_position_price") return "Position-price prior";
-  if (row.prior_source === "historical_position") return "Position prior";
-  return "No prior";
-}
 
 function DeltaPopover({
   row,
@@ -364,7 +314,7 @@ function PerformancePopover({ lineage }: { lineage: PerformanceLineage }) {
   };
   return (
     <>
-      <div className="popover-grid"><span>Underlying xPPG</span><strong>{metric(lineage.underlying_xppg)}</strong><span>Current Par</span><strong>{metric(lineage.value_par)}</strong><span>Performance Δ</span><strong>{signedMetric(lineage.performance_delta)}</strong><span>State</span><strong>{lineage.state}</strong></div>
+      <div className="popover-grid"><span>Underlying xPPG</span><strong>{metric(lineage.underlying_xppg)}</strong><span>Expected PPG</span><strong>{metric(lineage.value_par)}</strong><span>Performance Δ</span><strong>{signedMetric(lineage.performance_delta)}</strong><span>State</span><strong>{lineage.state}</strong></div>
       <h4>Expected points breakdown</h4>
       {Object.entries(lineage.components).filter(([, value]) => value !== 0).map(([key, value]) => <div className="line" title={labels[key]?.[1]} key={key}><span>{labels[key]?.[0] ?? key}</span><strong>{metric(value)}</strong></div>)}
       <h4>Evidence</h4>
@@ -382,7 +332,7 @@ function PerformancePopover({ lineage }: { lineage: PerformanceLineage }) {
 function ForwardPopover({ lineage, onDetail }: { lineage: ForwardLineage; onDetail: () => void }) {
   return (
     <>
-      <div className="popover-grid"><span>Next-6 xPPG</span><strong>{metric(lineage.next_6_xppg)}</strong><span>Current Par</span><strong>{metric(lineage.value_par)}</strong><span>Forward Δ</span><strong>{signedMetric(lineage.forward_delta)}</strong></div>
+      <div className="popover-grid"><span>Next-6 xPPG</span><strong>{metric(lineage.next_6_xppg)}</strong><span>Expected PPG</span><strong>{metric(lineage.value_par)}</strong><span>Forward Δ</span><strong>{signedMetric(lineage.forward_delta)}</strong></div>
       <h4>Outlook</h4>
       {lineage.gameweeks.map((gw) => <div className="line" key={gw.gameweek}><span>GW{gw.gameweek} {gw.fixtures.length === 1 ? `${gw.fixtures[0].opponent} (${gw.fixtures[0].home_away})` : gw.fixtures.length ? "total" : "Blank"}</span><strong>{metric(gw.projected_points)}</strong></div>)}
       <button className="action" type="button" onClick={onDetail}>View detail</button>
@@ -396,6 +346,20 @@ function SortButton({ label, sortKey, active, direction, onSort, title }: { labe
       {label}{active ? (direction === "desc" ? " ↓" : " ↑") : ""}
     </button>
   );
+}
+
+function sortValue(row: BoardRow, key: SortKey) {
+  return key === "expected_ppg" ? row.expected_ppg ?? row.value_par : row[key as keyof BoardRow];
+}
+
+function compareRows(a: BoardRow, b: BoardRow, key: SortKey, direction: "asc" | "desc") {
+  const left = sortValue(a, key);
+  const right = sortValue(b, key);
+  if (left == null && right == null) return a.player.localeCompare(b.player);
+  if (left == null) return 1;
+  if (right == null) return -1;
+  const result = typeof left === "string" || typeof right === "string" ? String(left).localeCompare(String(right)) : Number(left) - Number(right);
+  return direction === "asc" ? result : -result;
 }
 
 export function App() {
@@ -523,9 +487,11 @@ function loadData() {
   }, [squad]);
 
   const visiblePlayers = players;
+  const visibleSquad = useMemo(() => [...squad].sort((a, b) => compareRows(a, b, sortKey, sortDirection)), [squad, sortKey, sortDirection]);
 
   function changeSort(key: SortKey) {
     setPage(1);
+    setSortOption("CUSTOM");
     if (sortKey === key) setSortDirection(sortDirection === "desc" ? "asc" : "desc");
     else {
       setSortKey(key);
@@ -536,11 +502,12 @@ function loadData() {
   function changeSortOption(option: SortOption) {
     setPage(1);
     setSortOption(option);
+    if (option === "CUSTOM") return;
     if (option === "CHEAPEST") {
       setSortKey("current_price");
       setSortDirection("asc");
     } else {
-      const keys: Record<Exclude<SortOption, "CHEAPEST">, SortKey> = { BEST_VALUE: "forward_delta", PERFORMANCE: "performance_delta" };
+      const keys: Record<Exclude<SortOption, "CHEAPEST" | "CUSTOM">, SortKey> = { BEST_VALUE: "forward_delta", PERFORMANCE: "performance_delta" };
       setSortKey(keys[option]);
       setSortDirection("desc");
     }
@@ -578,9 +545,6 @@ function loadData() {
     if (player) addSquadPlayer(player.player_id, Number(purchasePrice || player.current_price));
   }
 
-  function removeSquadPlayer(row: BoardRow) {
-    fetch(`${API}/squad/${row.player_id}?season=${SEASON}`, { method: "DELETE" }).then(loadSquad).catch(() => undefined);
-  }
 
   function saveTeamId() {
     if (!teamId) return;
@@ -594,96 +558,53 @@ function loadData() {
       .catch(() => setTeamMessage("Could not import that public FPL team."));
   }
 
-  function viewMarket(row: BoardRow) {
-    setPosition(row.position);
-    setMaxPrice(row.current_price.toFixed(1));
-    setQuickFilter("ALL");
-    window.location.hash = "players";
-  }
 
-  function saveRoles() {
-    if (!detail?.current) return;
-    const params = new URLSearchParams({
-      penalties: roleForm.penalties ? "1" : "0",
-      direct_free_kicks: roleForm.direct_free_kicks ? "1" : "0",
-      corners: roleForm.corners ? "1" : "0",
-      indirect_free_kicks: roleForm.indirect_free_kicks ? "1" : "0",
-      reason: roleForm.reason || "manual role update",
-      season: SEASON,
-    });
-    fetch(`${API}/role-overrides/${detail.current.player_id}?${params}`, { method: "POST" }).then(() => selectPlayer(detail.current)).catch(() => undefined);
-  }
 
-  function saveMinutes() {
-    if (!detail?.current) return;
-    const params = new URLSearchParams({ ...minutesForm, reason: minutesForm.reason || "manual minutes update", season: SEASON });
-    fetch(`${API}/minutes-overrides/${detail.current.player_id}?${params}`, { method: "POST" }).then(() => { selectPlayer(detail.current); loadData(); }).catch(() => undefined);
-  }
 
   return (
     <main>
       <header>
+        <div>
         <h1>FPL Analytics</h1>
         <p>Diagnose your squad, discover market value, then investigate the players that matter.</p>
         <nav>
-          <a href="#my-squad">Squad</a>
-          <a href="#players">Players</a>
-          <a href="#data-model">Data / Model</a>
           <button className="action primary" type="button" onClick={refreshData} disabled={refreshing}>{refreshing ? "Refreshing…" : "Refresh Data"}</button>
         </nav>
         {refreshMessage && <p className="note">{refreshMessage}</p>}
+        </div>
       </header>
-
       <section className="grid">
         <article id="my-squad" className="wide">
           <h2>My Squad</h2>
           <div className="toolbar">
             <input aria-label="FPL Team ID" type="number" placeholder="FPL Team ID" value={teamId} onChange={(event) => setTeamId(event.target.value)} />
             <button className="action primary" onClick={saveTeamId}>Import Public Squad</button>
-            <select aria-label="Squad player" value={squadPlayerId} onChange={(event) => {
-              const id = event.target.value;
-              const player = players.find((row) => row.player_id === Number(id));
-              setSquadPlayerId(id);
-              setPurchasePrice(player ? player.current_price.toFixed(1) : "");
-            }}>
-              <option value="">Add player manually</option>
-              {players.filter((row) => !squadIds.has(row.player_id)).map((row) => <option key={row.player_id} value={row.player_id}>{row.player} {row.position} £{row.current_price.toFixed(1)}</option>)}
-            </select>
-            <input aria-label="Purchase price" type="number" step="0.1" placeholder="Purchase price" value={purchasePrice} onChange={(event) => setPurchasePrice(event.target.value)} />
-            <button className="action" onClick={addSelectedSquadPlayer}>Add</button>
           </div>
-          <p className="note">{teamMessage || "Public import uses the latest available FPL Gameweek picks, not private transfer drafts."}</p>
-          <div className="overview">
-            <div className="overview-item"><span>Squad Value</span><strong>{money(squadSummary.squadValue)}</strong><small>current prices</small></div>
-            <div className="overview-item"><span>Bank</span><strong>{money(manager?.bank)}</strong><small>{manager?.bank == null ? "unavailable" : "manager context"}</small></div>
-            <div className="overview-item"><span>Free Transfers</span><strong>{manager?.free_transfers ?? "—"}</strong><small>{manager?.free_transfers == null ? "unavailable" : "manager context"}</small></div>
-            <div className="overview-item"><span>Chips</span><strong>{chipsLabel(manager?.chips_remaining)}</strong><small>{chipsNote(manager?.chips_remaining)}</small></div>
-            <div className="overview-item"><span>Deadline</span><strong>{formatDate(manager?.deadline)}</strong><small>next GW</small></div>
-          </div>
+
           <table>
 <thead>
   <tr>
-    <th><HeaderHelp label="Player" tip="Player name and current club." /></th>
-    <th><HeaderHelp label="Pos" tip="FPL position: goalkeeper, defender, midfielder or forward." /></th>
-    <th><HeaderHelp label="Price" tip="Current FPL price." /></th>
-    <th><HeaderHelp label="Actual pts" tip={tooltipText.actual_points} /></th>
-    <th><HeaderHelp label="Par" tip={tooltipText.value_par} /></th>
-    <th><HeaderHelp label="Return Δ" tip={tooltipText.return_delta} /></th>
-    <th><HeaderHelp label="Underlying xPPG" tip={tooltipText.underlying_xppg} /></th>
-    <th><HeaderHelp label="Performance Δ" tip={tooltipText.performance_delta} /></th>
-    <th><HeaderHelp label="Forward Δ" tip={tooltipText.forward_delta} /></th>
+    <th><SortButton label="Player" sortKey="player" active={sortKey === "player"} direction={sortDirection} onSort={changeSort} title="Player name and current club." /></th>
+    <th><SortButton label="Pos" sortKey="position" active={sortKey === "position"} direction={sortDirection} onSort={changeSort} title="FPL position: goalkeeper, defender, midfielder or forward." /></th>
+    <th><SortButton label="Price" sortKey="current_price" active={sortKey === "current_price"} direction={sortDirection} onSort={changeSort} title="Current FPL price." /></th>
+    <th><SortButton label="Total Pts" sortKey="season_points" active={sortKey === "season_points"} direction={sortDirection} onSort={changeSort} title={tooltipText.season_points} /></th>
+    <th><SortButton label="Actual PPG" sortKey="actual_ppg" active={sortKey === "actual_ppg"} direction={sortDirection} onSort={changeSort} title={tooltipText.actual_ppg} /></th>
+    <th><SortButton label="Expected PPG" sortKey="expected_ppg" active={sortKey === "expected_ppg"} direction={sortDirection} onSort={changeSort} title={tooltipText.expected_ppg} /></th>
+    <th><SortButton label="Return Δ" sortKey="return_delta" active={sortKey === "return_delta"} direction={sortDirection} onSort={changeSort} title={tooltipText.return_delta} /></th>
+    <th><SortButton label="Performance Δ" sortKey="performance_delta" active={sortKey === "performance_delta"} direction={sortDirection} onSort={changeSort} title={tooltipText.performance_delta} /></th>
+    <th><SortButton label="Forward Δ" sortKey="forward_delta" active={sortKey === "forward_delta"} direction={sortDirection} onSort={changeSort} title={tooltipText.forward_delta} /></th>
     <th></th>
   </tr>
 </thead>
             <tbody>
-              {squad.map((row) => (
+              {visibleSquad.map((row) => (
                 <tr key={`squad-${row.player_id}`}>
                   <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button></td>
                   <td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td>
-                  <td>{metric(row.actual_points, 0)}</td>
-                  <td>{metric(row.value_par)}</td>
+                  <td>{metric(row.season_points, 0)}</td>
+                  <td><strong>{metric(row.actual_ppg)}</strong></td>
+                  <td>{metric(row.expected_ppg ?? row.value_par)}</td>
                   <td className={valueTone(row.return_delta)}>{signedMetric(row.return_delta)}</td>
-                  <td>{metric(row.process_xppg_regressed)}</td>
                   <td><DeltaPopover row={row} kind="performance" performanceCache={performanceLineage} forwardCache={forwardLineage} setPerformanceCache={setPerformanceLineage} setForwardCache={setForwardLineage} selectPlayer={selectPlayer} /></td>
                   <td><DeltaPopover row={row} kind="forward" performanceCache={performanceLineage} forwardCache={forwardLineage} setPerformanceCache={setPerformanceLineage} setForwardCache={setForwardLineage} selectPlayer={selectPlayer} /></td>
                   <td><button className="action" onClick={() => selectPlayer(row)}>Analyse</button></td>
@@ -712,6 +633,7 @@ function loadData() {
             <input aria-label="Maximum price" type="number" step="0.1" placeholder="Max £" value={maxPrice} onChange={(event) => { setMaxPrice(event.target.value); setPage(1); }} />
             <select aria-label="Confidence filter" value={confidence} onChange={(event) => { setConfidence(event.target.value); setPage(1); }}><option value="ALL">All confidence</option><option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option></select>
             <select aria-label="Sort players" value={sortOption} onChange={(event) => changeSortOption(event.target.value as SortOption)}>
+              <option value="CUSTOM">Custom sort</option>
               <option value="BEST_VALUE">Best Value</option>
               <option value="PERFORMANCE">Best Process</option>
               <option value="CHEAPEST">Cheapest</option>
@@ -721,15 +643,15 @@ function loadData() {
           <table>
 <thead>
   <tr>
-    <th><HeaderHelp label="Player" tip="Player name and current club." /></th>
-    <th><HeaderHelp label="Pos" tip="FPL position: goalkeeper, defender, midfielder or forward." /></th>
-    <th><HeaderHelp label="Price" tip="Current FPL price." /></th>
-    <th><HeaderHelp label="Actual pts" tip={tooltipText.actual_points} /></th>
-    <th><HeaderHelp label="Par" tip={tooltipText.value_par} /></th>
-    <th><HeaderHelp label="Return Δ" tip={tooltipText.return_delta} /></th>
-    <th><HeaderHelp label="Underlying xPPG" tip={tooltipText.underlying_xppg} /></th>
-    <th><HeaderHelp label="Performance Δ" tip={tooltipText.performance_delta} /></th>
-    <th><HeaderHelp label="Forward Δ" tip={tooltipText.forward_delta} /></th>
+    <th><SortButton label="Player" sortKey="player" active={sortKey === "player"} direction={sortDirection} onSort={changeSort} title="Player name and current club." /></th>
+    <th><SortButton label="Pos" sortKey="position" active={sortKey === "position"} direction={sortDirection} onSort={changeSort} title="FPL position: goalkeeper, defender, midfielder or forward." /></th>
+    <th><SortButton label="Price" sortKey="current_price" active={sortKey === "current_price"} direction={sortDirection} onSort={changeSort} title="Current FPL price." /></th>
+    <th><SortButton label="Total Pts" sortKey="season_points" active={sortKey === "season_points"} direction={sortDirection} onSort={changeSort} title={tooltipText.season_points} /></th>
+    <th><SortButton label="Actual PPG" sortKey="actual_ppg" active={sortKey === "actual_ppg"} direction={sortDirection} onSort={changeSort} title={tooltipText.actual_ppg} /></th>
+    <th><SortButton label="Expected PPG" sortKey="expected_ppg" active={sortKey === "expected_ppg"} direction={sortDirection} onSort={changeSort} title={tooltipText.expected_ppg} /></th>
+    <th><SortButton label="Return Δ" sortKey="return_delta" active={sortKey === "return_delta"} direction={sortDirection} onSort={changeSort} title={tooltipText.return_delta} /></th>
+    <th><SortButton label="Performance Δ" sortKey="performance_delta" active={sortKey === "performance_delta"} direction={sortDirection} onSort={changeSort} title={tooltipText.performance_delta} /></th>
+    <th><SortButton label="Forward Δ" sortKey="forward_delta" active={sortKey === "forward_delta"} direction={sortDirection} onSort={changeSort} title={tooltipText.forward_delta} /></th>
     <th></th>
   </tr>
 </thead>
@@ -738,10 +660,10 @@ function loadData() {
               {!playersLoading && visiblePlayers.map((row) => (
                 <tr key={`player-${row.player_id}`}>
                   <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button><small>{row.team}</small></td><td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td>
-                  <td>{metric(row.actual_points, 0)}</td>
-                  <td>{metric(row.value_par)}</td>
+                  <td>{metric(row.season_points, 0)}</td>
+                  <td><strong>{metric(row.actual_ppg)}</strong></td>
+                  <td>{metric(row.expected_ppg ?? row.value_par)}</td>
                   <td className={valueTone(row.return_delta)}>{signedMetric(row.return_delta)}</td>
-                  <td>{metric(row.process_xppg_regressed)}</td>
                   <td><DeltaPopover row={row} kind="performance" performanceCache={performanceLineage} forwardCache={forwardLineage} setPerformanceCache={setPerformanceLineage} setForwardCache={setForwardLineage} selectPlayer={selectPlayer} /></td>
                   <td><DeltaPopover row={row} kind="forward" performanceCache={performanceLineage} forwardCache={forwardLineage} setPerformanceCache={setPerformanceLineage} setForwardCache={setForwardLineage} selectPlayer={selectPlayer} /></td>
                   <td><button className="action" onClick={() => selectPlayer(row)}>Analyse</button></td>
@@ -755,6 +677,7 @@ function loadData() {
         {detail?.current && (
           <article className="wide">
             <h2>{detail.player.name} · {detail.player.team ?? "—"} · {detail.player.position} · £{detail.player.current_price.toFixed(1)}m</h2>
+            <p className="note">Season total: {metric(detail.current.season_points, 0)} pts · {detail.current.games ?? "—"} appearances · {metric(detail.current.actual_ppg)} PPG</p>
             <table>
               <thead><tr><th>GW</th><th>Opponent</th><th>Points</th><th>Project Score</th><th>Performance</th><th>xG</th><th>xA</th><th>Minutes</th><th>Price</th></tr></thead>
               <tbody>
@@ -777,7 +700,7 @@ function loadData() {
           </article>
         )}
 
-        {points.map((point, index) => point.position).filter((position, index, list) => list.indexOf(position) === index).map((position) => {
+        {points.map((point) => point.position).filter((position, index, list) => list.indexOf(position) === index).map((position) => {
           const rows = points.filter((point) => point.position === position);
           return <article key={position}><h2>{position}</h2><ResponsiveContainer width="100%" height={180}><LineChart data={rows}><XAxis dataKey="price" /><YAxis domain={["dataMin", "dataMax"]} /><Tooltip /><Line type="monotone" dataKey="market_mean" stroke="#2563eb" dot={false} /><Line type="monotone" dataKey="value_par" stroke="#16a34a" dot={false} /></LineChart></ResponsiveContainer></article>;
         })}

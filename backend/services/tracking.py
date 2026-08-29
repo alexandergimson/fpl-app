@@ -44,7 +44,8 @@ def tracked_players(con: sqlite3.Connection, season: str, par_season: str = "202
         """
         SELECT
           m.player_id, m.player, m.team, m.position, m.current_price,
-          m.actual_points, m.current_par AS value_par, m.return_delta,
+          m.actual_points, m.season_points, m.games, m.actual_ppg,
+          m.current_par AS expected_ppg, m.current_par AS value_par, m.return_delta,
           m.underlying_xppg, m.underlying_xppg AS process_xppg_regressed,
           m.performance_delta, m.performance_data_state, m.performance_confidence,
           m.next_6_xppg, m.forward_delta, m.expected_minutes, m.projection_confidence,
@@ -57,7 +58,7 @@ def tracked_players(con: sqlite3.Connection, season: str, par_season: str = "202
     ).fetchall()
     momentum = tracked_momentum(con, season)
     result = [dict(row) | momentum.get(row["player_id"], {}) for row in tracked]
-    return sorted(result, key=lambda row: row["forward_delta"], reverse=True)
+    return sorted(result, key=lambda row: row["forward_delta"] if row["forward_delta"] is not None else -999, reverse=True)
 
 
 def snapshot_tracked(con: sqlite3.Connection, season: str, par_season: str = "2026-27", gameweek: int | None = None) -> int:

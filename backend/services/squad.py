@@ -47,7 +47,8 @@ def squad_analysis(con: sqlite3.Connection, season: str, par_season: str = "2026
         """
         SELECT
           m.player_id, m.player, m.team, m.position, m.current_price,
-          m.actual_points, m.current_par AS value_par, m.return_delta,
+          m.actual_points, m.season_points, m.games, m.actual_ppg,
+          m.current_par AS expected_ppg, m.current_par AS value_par, m.return_delta,
           m.underlying_xppg, m.underlying_xppg AS process_xppg_regressed,
           m.performance_delta, m.performance_data_state, m.performance_confidence,
           m.next_6_xppg, m.forward_delta, m.expected_minutes, m.projection_confidence,
@@ -67,10 +68,12 @@ def squad_analysis(con: sqlite3.Connection, season: str, par_season: str = "2026
                 "squad_health": squad_health(player["forward_delta"], player["expected_minutes"], player["projection_confidence"], player["value_trend"]),
             }
         )
-    return sorted(result, key=lambda item: item["forward_delta"])
+    return sorted(result, key=lambda item: item["forward_delta"] if item["forward_delta"] is not None else -999)
 
 
-def squad_health(forward_delta: float, expected_minutes: float, confidence: float, value_trend: float) -> str:
+def squad_health(forward_delta: float | None, expected_minutes: float, confidence: float, value_trend: float) -> str:
+    if forward_delta is None:
+        return SQUAD_HEALTH["review"]
     if forward_delta <= -0.5 and confidence >= 0.55:
         return SQUAD_HEALTH["review"]
     if forward_delta < -0.15 or expected_minutes < 55 or confidence < 0.45 or value_trend < -0.25:

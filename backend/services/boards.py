@@ -472,7 +472,13 @@ TABLE_FIELDS = {
 }
 
 SORT_FIELDS = {
+    "player": "player",
+    "position": "position",
     "current_price": "current_price",
+    "season_points": "season_points",
+    "games": "games",
+    "actual_ppg": "actual_ppg",
+    "expected_ppg": "current_par",
     "performance_delta": "performance_delta",
     "forward_delta": "forward_delta",
     "return_delta": "return_delta",
@@ -482,11 +488,11 @@ SORT_FIELDS = {
 }
 
 
-def latest_actual_returns(con: sqlite3.Connection, season: str) -> dict[int, dict]:
+def actual_scoring_summary(con: sqlite3.Connection, season: str) -> dict[int, dict]:
     rows = con.execute(
         """
         WITH gw_points AS (
-          SELECT player_id, gameweek, SUM(total_points) AS actual_points
+          SELECT player_id, gameweek, SUM(total_points) AS actual_points, SUM(minutes) AS minutes
           FROM player_gameweeks
           WHERE season = ?
           GROUP BY player_id, gameweek
@@ -496,25 +502,34 @@ def latest_actual_returns(con: sqlite3.Connection, season: str) -> dict[int, dic
           FROM gw_points
           GROUP BY player_id
         ),
-        frozen AS (
-          SELECT player_id, gameweek, MAX(value_par) AS value_par
-          FROM frozen_player_gameweek_par
-          WHERE season = ?
-          GROUP BY player_id, gameweek
+        season AS (
+          SELECT
+            player_id,
+            SUM(actual_points) AS season_points,
+            SUM(CASE WHEN minutes > 0 THEN 1 ELSE 0 END) AS games
+          FROM gw_points
+          GROUP BY player_id
         )
-        SELECT g.player_id, g.gameweek, g.actual_points, frozen.value_par AS return_par
+        SELECT
+          g.player_id,
+          g.gameweek,
+          g.actual_points,
+          season.season_points,
+          season.games,
+          CASE WHEN season.games > 0 THEN season.season_points * 1.0 / season.games ELSE NULL END AS actual_ppg
         FROM gw_points g
         JOIN latest ON latest.player_id = g.player_id AND latest.gameweek = g.gameweek
-        LEFT JOIN frozen ON frozen.player_id = g.player_id AND frozen.gameweek = g.gameweek
+        JOIN season ON season.player_id = g.player_id
         """,
-        (season, season),
+        (season,),
     ).fetchall()
     return {
         row["player_id"]: {
             "relevant_gameweek": row["gameweek"],
             "actual_points": row["actual_points"],
-            "return_par": row["return_par"],
-            "return_delta": row["actual_points"] - row["return_par"] if row["return_par"] is not None else None,
+            "season_points": row["season_points"],
+            "games": row["games"],
+            "actual_ppg": row["actual_ppg"],
         }
         for row in rows
     }
@@ -529,7 +544,7 @@ def materialize_current_market(
     rows: list[dict] | None = None,
 ) -> int:
     rows = rows or buy_board(con, season, par_season, None, 2000)
-    latest_returns = latest_actual_returns(con, season)
+    scoring = actual_scoring_summary(con, season)
     tracked_ids = {row["player_id"] for row in con.execute("SELECT player_id FROM tracked_players WHERE season = ?", (season,))}
     teams = {team["team_id"]: team["short_name"] for team in con.execute("SELECT team_id, short_name FROM teams WHERE season = ?", (season,))}
     con.execute("DELETE FROM current_player_metrics WHERE season = ?", (season,))
@@ -543,8 +558,13 @@ def materialize_current_market(
     snapshot_rows = []
     snapshot_gameweek = current_gameweek(con, season) if model_run_id is not None else None
     for row in rows:
-        returns = latest_returns.get(row["player_id"], {})
+        returns = scoring.get(row["player_id"], {})
         components = row.get("performance_components") or {}
+        expected_ppg = row["value_par"]
+        actual_ppg_value = returns.get("actual_ppg")
+        return_delta = actual_ppg_value - expected_ppg if actual_ppg_value is not None else None
+        performance_delta = row["process_xppg_regressed"] - expected_ppg if row["process_xppg_regressed"] is not None else None
+        forward_delta = row["next_6_xppg"] - expected_ppg
         metric_rows.append(
             (
                 season,
@@ -555,17 +575,20 @@ def materialize_current_market(
                 row["position"],
                 row["current_price"],
                 returns.get("actual_points"),
+                returns.get("season_points"),
+                returns.get("games"),
+                round(actual_ppg_value, 2) if actual_ppg_value is not None else None,
                 returns.get("relevant_gameweek"),
-                row["value_par"],
-                returns.get("return_par"),
-                round(returns["return_delta"], 2) if returns.get("return_delta") is not None else None,
+                expected_ppg,
+                expected_ppg,
+                round(return_delta, 2) if return_delta is not None else None,
                 row["value_balance"],
                 row["process_xppg_regressed"],
-                row["performance_delta"],
+                round(performance_delta, 2) if performance_delta is not None else None,
                 row["performance_data_state"],
                 row["performance_confidence"],
                 row["next_6_xppg"],
-                row["forward_delta"],
+                round(forward_delta, 2) if forward_delta is not None else None,
                 row["expected_minutes"],
                 row["projection_confidence"],
                 row["value_trend"],
@@ -580,9 +603,9 @@ def materialize_current_market(
             (
                 season,
                 row["player_id"],
-                row["performance_delta"],
+                round(performance_delta, 2) if performance_delta is not None else None,
                 row["process_xppg_regressed"],
-                row["value_par"],
+                expected_ppg,
                 row["performance_data_state"],
                 row["performance_confidence"],
                 row["performance_sample_gameweeks"],
@@ -597,7 +620,7 @@ def materialize_current_market(
                 components.get("bonus_process_ev", 0.0),
                 components.get("save_process_ev", 0.0),
                 components.get("deduction_process_ev", 0.0),
-                int(row["forward_delta"] is not None),
+                int(forward_delta is not None),
                 model_run_id,
             )
         )
@@ -606,7 +629,7 @@ def materialize_current_market(
         for gw in row.get("fixture_projection", []):
             fixtures = gw.get("fixtures", [])
             if not fixtures:
-                forward_rows.append((season, row["player_id"], gw["gameweek"], 0, "Blank", "", row["expected_minutes"], 0.0, gw["total_xpts"], row["next_6_xppg"], row["value_par"], row["forward_delta"], model_run_id))
+                forward_rows.append((season, row["player_id"], gw["gameweek"], 0, "Blank", "", row["expected_minutes"], 0.0, gw["total_xpts"], row["next_6_xppg"], expected_ppg, round(forward_delta, 2), model_run_id))
             for fixture in fixtures:
                 forward_rows.append(
                     (
@@ -620,8 +643,8 @@ def materialize_current_market(
                         fixture.get("total_fixture_xpts"),
                         gw["total_xpts"],
                         row["next_6_xppg"],
-                        row["value_par"],
-                        row["forward_delta"],
+                        expected_ppg,
+                        round(forward_delta, 2),
                         model_run_id,
                     )
                 )
@@ -629,11 +652,11 @@ def materialize_current_market(
         """
         INSERT INTO current_player_metrics (
           season, player_id, player, team, team_id, position, current_price,
-          actual_points, relevant_gameweek, current_par, return_par, return_delta, value_balance,
+          actual_points, season_points, games, actual_ppg, relevant_gameweek, current_par, return_par, return_delta, value_balance,
           underlying_xppg, performance_delta, performance_data_state, performance_confidence,
           next_6_xppg, forward_delta, expected_minutes, projection_confidence, value_trend,
           is_emerging, is_regression_risk, tracked, model_run_id, data_cutoff
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         metric_rows,
     )
@@ -724,8 +747,8 @@ def paginated_players(
     rows = con.execute(
         f"""
         SELECT
-          player_id, player, team, position, current_price, actual_points,
-          current_par AS value_par, return_delta, underlying_xppg,
+          player_id, player, team, position, current_price, actual_points, season_points, games,
+          actual_ppg, current_par AS expected_ppg, current_par AS value_par, return_delta, underlying_xppg,
           underlying_xppg AS process_xppg_regressed, performance_delta,
           performance_data_state, next_6_xppg, forward_delta, tracked
         FROM current_player_metrics
