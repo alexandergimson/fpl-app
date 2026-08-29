@@ -2,7 +2,14 @@ body {
   margin: 0;
   background: #eef3f0;
   color: #17201d;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
 }
 
 main {
@@ -18,7 +25,9 @@ header {
   padding: 20px 22px;
 }
 
-h1, h2, p {
+h1,
+h2,
+p {
   margin: 0 0 12px;
 }
 
@@ -53,7 +62,7 @@ article {
   border: 1px solid #cad8d1;
   border-radius: 6px;
   box-shadow: 0 10px 24px rgba(23, 32, 29, 0.06);
-  overflow-x: auto;
+  overflow: visible;
   padding: 16px;
 }
 
@@ -67,7 +76,8 @@ table {
   width: 100%;
 }
 
-th, td {
+th,
+td {
   border-bottom: 1px solid #dbe5df;
   padding: 8px;
   text-align: right;
@@ -80,7 +90,8 @@ th {
   text-transform: uppercase;
 }
 
-th:first-child, td:first-child {
+th:first-child,
+td:first-child {
   text-align: left;
 }
 
@@ -420,7 +431,8 @@ td small {
     padding: 14px;
   }
 
-  th, td {
+  th,
+  td {
     padding: 7px 6px;
   }
 
@@ -436,4 +448,26 @@ td small {
   #my-squad td:nth-child(5) {
     display: none;
   }
+}
+
+.header-help {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: help;
+  font: inherit;
+  font-weight: inherit;
+  padding: 0;
+  text-transform: inherit;
+}
+
+.header-help:hover {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.header-help:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: 3px;
 }

@@ -65,6 +65,16 @@ CREATE TABLE IF NOT EXISTS fixtures (
   PRIMARY KEY (season, fixture_id)
 );
 
+CREATE TABLE IF NOT EXISTS gameweek_deadlines (
+  season TEXT NOT NULL,
+  gameweek INTEGER NOT NULL,
+  deadline TEXT NOT NULL,
+  source TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  data_period TEXT NOT NULL,
+  PRIMARY KEY (season, gameweek)
+);
+
 CREATE TABLE IF NOT EXISTS player_gameweeks (
   season TEXT NOT NULL,
   player_id INTEGER NOT NULL,

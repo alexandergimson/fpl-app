@@ -168,6 +168,28 @@ def replace_fixtures(con: sqlite3.Connection, season: str, fixtures: pd.DataFram
     return len(rows)
 
 
+def replace_gameweek_deadlines(con: sqlite3.Connection, season: str, events: pd.DataFrame, source: str, fetched_at: str) -> int:
+    if events is None or events.empty:
+        return 0
+    con.execute("DELETE FROM gameweek_deadlines WHERE season = ?", (season,))
+    rows = []
+    for row in events.itertuples(index=False):
+        data = row._asdict()
+        if pd.isna(data.get("id")) or pd.isna(data.get("deadline_time")):
+            continue
+        rows.append((season, int(data["id"]), str(data["deadline_time"]), source, fetched_at, season))
+    con.executemany(
+        """
+        INSERT OR REPLACE INTO gameweek_deadlines (
+          season, gameweek, deadline, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    con.commit()
+    return len(rows)
+
+
 def set_state(con: sqlite3.Connection, season: str, key: str, value: str) -> None:
     con.execute(
         """

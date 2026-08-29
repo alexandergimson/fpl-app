@@ -1,12 +1,14 @@
 from pathlib import Path
+from threading import Lock
 
 try:
-    from fastapi import FastAPI
+    from fastapi import FastAPI, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
 except ImportError:  # pragma: no cover
     FastAPI = None
 
 from backend.data.db import connect
+from backend.jobs.refresh import refresh_all
 from backend.ingestion.providers import OfficialFplProvider
 from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, list_alerts
 from backend.services.boards import breakout_board, buy_board, paginated_players, player_forward_lineage, player_performance_lineage, trap_board
@@ -21,6 +23,7 @@ from backend.services.tracking import snapshot_tracked, track_player, tracked_pl
 
 
 if FastAPI:
+    _refresh_lock = Lock()
     app = FastAPI(title="FPL Analytics")
     app.add_middleware(
         CORSMiddleware,
@@ -32,6 +35,15 @@ if FastAPI:
     @app.get("/health")
     def health():
         return {"ok": True}
+
+    @app.post("/refresh")
+    def post_refresh(season: str = "2026-27", par_season: str = "2026-27"):
+        if not _refresh_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail="Refresh already running")
+        try:
+            return refresh_all(season=season, par_season=par_season)
+        finally:
+            _refresh_lock.release()
 
     @app.get("/data-status")
     def get_data_status(season: str = "2026-27"):

@@ -70,18 +70,20 @@ function row(overrides: Partial<Record<string, unknown>>) {
   };
 }
 
-function json(data: unknown) {
-  return Promise.resolve({ json: () => Promise.resolve(data) });
+function json(data: unknown, status = 200) {
+  return Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(data) });
 }
 
 let squadResponse: unknown[] = [];
 let settingsResponse: unknown = {};
 let detailResponse: unknown = {};
+let refreshResponse: unknown = {};
 
 beforeEach(() => {
   squadResponse = [];
   settingsResponse = { fpl_team_id: null, manager: { bank: null, free_transfers: null, chips_remaining: null, deadline: null, context_type: "public" } };
-  detailResponse = { current: players[0], projection_breakdown: { fixture_xpts: 3 }, recent_gameweeks: [], minutes_history: [], role_history: [], tracked_snapshots: [] };
+  detailResponse = { player: { id: 1, name: "Zero", team: "TST", position: "MID", current_price: 6 }, current: players[0], projection_breakdown: { fixture_xpts: 3 }, gameweeks: [], recent_gameweeks: [], gameweek_history: [], prediction_history: [], minutes_history: [], role_history: [] };
+  refreshResponse = { status: "SUCCESS", gameweek: 3, players: 640, fixtures: 380, observations: 640, team_underlying: 40, materialized: 640, snapshots: 15, alerts: 2 };
   globalThis.ResizeObserver = class {
     observe() {}
     unobserve() {}
@@ -98,7 +100,6 @@ beforeEach(() => {
       const maxPrice = Number(parsed.searchParams.get("max_price") || "");
       if (minPrice) rows = rows.filter((item) => item.current_price >= minPrice);
       if (maxPrice) rows = rows.filter((item) => item.current_price <= maxPrice);
-      if (parsed.searchParams.get("tracked") === "true") rows = rows.filter((item) => item.player_id === 1);
       const sort = parsed.searchParams.get("sort");
       const direction = parsed.searchParams.get("direction") === "asc" ? 1 : -1;
       if (sort) rows.sort((a, b) => (Number((a as Record<string, unknown>)[sort] ?? 0) - Number((b as Record<string, unknown>)[sort] ?? 0)) * direction);
@@ -106,9 +107,9 @@ beforeEach(() => {
       const pageSize = Number(parsed.searchParams.get("page_size") || 15);
       return json({ players: rows.slice((page - 1) * pageSize, page * pageSize), page, page_size: pageSize, total: rows.length, total_pages: Math.ceil(rows.length / pageSize) || 1 }) as Promise<Response>;
     }
+    if (url.includes("/refresh")) return json(refreshResponse) as Promise<Response>;
     if (url.includes("/players/1/performance-lineage")) return json({ player_id: 1, performance_delta: 0, underlying_xppg: 3, value_par: 3, state: "sufficient", confidence: "LOW", sample_gameweeks: 1, sample_minutes: 90, prior: { source: "historical_position_price", confidence: "LOW" }, components: { appearance: 2, goal: 0, assist: 0, clean_sheet: 0, defcon: 0, bonus: 0, saves: 0, deductions: 0 }, available_observations: ["official FPL player process"], missing_required_observations: [], forward_available: true, note: "Based on underlying performance, not actual FPL points." }) as Promise<Response>;
     if (url.includes("/players/1/forward-lineage")) return json({ player_id: 1, forward_delta: 0.5, next_6_xppg: 3.5, value_par: 3, gameweeks: [{ gameweek: 2, projected_points: 3.5, fixtures: [{ opponent: "ARS", home_away: "H", expected_minutes: 90, total_xpts: 3.5 }] }] }) as Promise<Response>;
-    if (url.includes("/tracked-players")) return json([players[0]]) as Promise<Response>;
     if (url.includes("/squad")) return json(squadResponse) as Promise<Response>;
     if (url.includes("/alerts")) return json([]) as Promise<Response>;
     if (url.includes("/price-movements")) return json([]) as Promise<Response>;
@@ -138,6 +139,27 @@ test("renders null and zero Performance Delta distinctly", async () => {
   expect(within(playersTable).getByRole("row", { name: /Null/ })).toHaveTextContent("—");
 });
 
+test("refresh button shows loading success and refetches displayed data", async () => {
+  let resolveRefresh: (value: Response) => void = () => undefined;
+  const fetchMock = vi.mocked(globalThis.fetch);
+  fetchMock.mockImplementation((input) => {
+    const url = String(input);
+    if (url.includes("/refresh")) return new Promise((resolve) => { resolveRefresh = resolve; }) as Promise<Response>;
+    if (url.includes("/all-players")) return json({ players: players.slice(0, 15), page: 1, page_size: 15, total: players.length, total_pages: 2 }) as Promise<Response>;
+    if (url.includes("/squad")) return json(squadResponse) as Promise<Response>;
+    if (url.includes("/price-par")) return json([]) as Promise<Response>;
+    if (url.includes("/settings")) return json(settingsResponse) as Promise<Response>;
+    return json({}) as Promise<Response>;
+  });
+  render(<App />);
+  await screen.findByText("Zero");
+  fireEvent.click(screen.getByRole("button", { name: "Refresh Data" }));
+  expect(screen.getByRole("button", { name: "Refreshing…" })).toBeDisabled();
+  resolveRefresh({ ok: true, status: 200, json: () => Promise.resolve(refreshResponse) } as Response);
+  expect(await screen.findByText("Updated GW3 · 640 players · 640 metrics")).toBeInTheDocument();
+  expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/all-players")).length).toBeGreaterThan(1);
+});
+
 test("styles positive and negative deltas", async () => {
   render(<App />);
   expect(await screen.findByText("Plus")).toBeInTheDocument();
@@ -146,7 +168,7 @@ test("styles positive and negative deltas", async () => {
   expect(within(within(playersTable).getByRole("row", { name: /Null/ })).getByText("-0.20")).toHaveClass("negative");
 });
 
-test("sorts, filters, tracks, and opens detail", async () => {
+test("sorts, filters, and opens detail with analyse", async () => {
   render(<App />);
   expect((await screen.findAllByText("Zero")).length).toBeGreaterThan(0);
   const playersTable = playersArticle();
@@ -160,41 +182,32 @@ test("sorts, filters, tracks, and opens detail", async () => {
   fireEvent.change(screen.getByLabelText("Maximum price"), { target: { value: "6" } });
   await waitFor(() => expect(within(playersTable).getByText("Zero")).toBeInTheDocument());
   expect(within(playersTable).queryByText("Plus")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByLabelText("Tracked only"));
-  await waitFor(() => expect(within(playersTable).getByText("Zero")).toBeInTheDocument());
-  fireEvent.click(within(playersTable).getByRole("button", { name: "Zero" }));
-  expect(await screen.findByText("Projection Breakdown")).toBeInTheDocument();
+  fireEvent.click(within(playersTable).getByRole("button", { name: "Analyse" }));
+  expect(await screen.findByText("Zero · TST · MID · £6.0m")).toBeInTheDocument();
+  expect(screen.getByText("Project Score")).toBeInTheDocument();
 });
 
-test("renders selected canonical player team and fixture context in detail", async () => {
+test("renders simplified gameweek history in detail", async () => {
   detailResponse = {
+    player: { id: 1, name: "Zero", team: "TST", position: "MID", current_price: 6 },
     current: row({
       player_id: 1,
       player: "Zero",
-      shots: 3,
-      shots_in_box: 2,
-      high_quality_chances: 1,
-      high_quality_chances_created: 1,
-      key_passes: 4,
-      team_context: { team_xg: 4, team_xga: 2, team_xg_last_5: 3, team_xga_last_5: 1.5, team_shots_conceded: 12, team_high_quality_chances_conceded: 3 },
-      next_5_fixtures: [{ gameweek: 2, opponent_team_id: 9, opponent: "ARS", home_away: "H", fdr: 2, opponent_attacking_strength: 1100, opponent_defensive_strength: 900 }],
-      fixture_projection: [{ gameweek: 2, total_xpts: 3.5, fixtures: [{ fixture_id: 1, gameweek: 2, opponent_team_id: 9, opponent: "ARS", is_home: true, attack_factor: 1.1, expected_goals_against: 0.9, goal_ev: 0.5, assist_ev: 0.2, clean_sheet_ev: 0.1, defcon_ev: 0, bonus_ev: 0.1, save_ev: 0, total_fixture_xpts: 3.5 }] }],
     }),
     projection_breakdown: { fixture_xpts: 3 },
+    gameweeks: [{ gameweek: 1, opponent: "ARS (H)", home_away: null, points: 6, project_score: 5.2, performance: 0.8, xg: 0.42, xa: 0.11, minutes: 90, price: 6, model_run_id: 12, forecast_data_cutoff: "then" }],
     recent_gameweeks: [],
+    gameweek_history: [],
+    prediction_history: [],
     minutes_history: [],
     role_history: [],
-    tracked_snapshots: [],
   };
   render(<App />);
   await screen.findByText("Zero");
   fireEvent.click(within(playersArticle()).getByRole("button", { name: "Zero" }));
-  expect(await screen.findByText("Shots 3")).toBeInTheDocument();
-  expect(screen.getByText("HQ Created 1")).toBeInTheDocument();
-  expect(screen.getByText("Team Form")).toBeInTheDocument();
-  expect(screen.getByText("xG L5")).toBeInTheDocument();
-  expect(screen.getByText("Opp Atk")).toBeInTheDocument();
-  expect(screen.getByText("1100")).toBeInTheDocument();
+  const historyRow = await screen.findByRole("row", { name: /1 ARS \(H\) 6 5.20 \+0.80 0.42 0.11 90 £6.0/ });
+  expect(historyRow).toHaveTextContent("ARS (H)");
+  expect(within(historyRow).getByText("+0.80")).toHaveClass("positive");
 });
 
 test("renders manager context without inventing private fields", async () => {
@@ -208,28 +221,23 @@ test("renders manager context without inventing private fields", async () => {
 
 test("renders unavailable canonical metrics as dashes", async () => {
   detailResponse = {
+    player: { id: 1, name: "Zero", team: "TST", position: "MID", current_price: 6 },
     current: row({
       player_id: 1,
       player: "Zero",
-      shots: null,
-      shots_in_box: null,
-      high_quality_chances: null,
-      high_quality_chances_created: null,
-      key_passes: null,
-      team_context: { team_xg: null, team_xga: null, team_xg_last_5: null, team_xga_last_5: null, team_shots_conceded: null, team_high_quality_chances_conceded: null },
     }),
     projection_breakdown: { fixture_xpts: 3 },
+    gameweeks: [{ gameweek: 2, opponent: "Blank", home_away: null, points: null, project_score: null, performance: null, xg: null, xa: null, minutes: null, price: null, model_run_id: null, forecast_data_cutoff: null }],
     recent_gameweeks: [],
+    gameweek_history: [],
+    prediction_history: [],
     minutes_history: [],
     role_history: [],
-    tracked_snapshots: [],
   };
   render(<App />);
   await screen.findByText("Zero");
   fireEvent.click(within(playersArticle()).getByRole("button", { name: "Zero" }));
-  expect(await screen.findByText("Shots —")).toBeInTheDocument();
-  expect(screen.getByText("HQ Chances —")).toBeInTheDocument();
-  expect(screen.getByText("HQ Created —")).toBeInTheDocument();
+  expect(await screen.findByText("Blank")).toBeInTheDocument();
   expect(screen.getAllByText("—").length).toBeGreaterThan(1);
   expect(screen.getAllByText("unavailable").length).toBeGreaterThan(0);
 });

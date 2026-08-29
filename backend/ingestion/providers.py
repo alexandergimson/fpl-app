@@ -102,6 +102,7 @@ class OfficialFplProvider:
         teams = pd.DataFrame(payload["teams"])
         events = pd.DataFrame(payload["events"])
         elements.attrs["teams"] = teams
+        elements.attrs["events"] = events
         current = events.loc[events["is_current"], "id"] if "is_current" in events else pd.Series(dtype=int)
         next_event = events.loc[events["is_next"], "id"] if "is_next" in events else pd.Series(dtype=int)
         deadline = events.loc[events["is_next"], "deadline_time"] if "is_next" in events and "deadline_time" in events else pd.Series(dtype=str)

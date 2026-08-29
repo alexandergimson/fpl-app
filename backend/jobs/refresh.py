@@ -4,7 +4,7 @@ import json
 
 from backend.data.db import connect
 from backend.ingestion.context import build_fpl_context
-from backend.ingestion.loaders import replace_fixtures, replace_team_underlying, set_state, snapshot_prices, upsert_fpl_bootstrap_gameweek_observations, upsert_players
+from backend.ingestion.loaders import replace_fixtures, replace_gameweek_deadlines, replace_team_underlying, set_state, snapshot_prices, upsert_fpl_bootstrap_gameweek_observations, upsert_players
 from backend.ingestion.providers import OfficialFplProvider, UnderstatProvider
 from backend.services.canonical_context import materialize_canonical_context
 from backend.services.boards import buy_board, freeze_player_gameweek_pars, materialize_current_market
@@ -40,6 +40,7 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
             prices = snapshot_prices(con, season, dataset.frame, dataset.source, dataset.fetched_at)
             observations = upsert_fpl_bootstrap_gameweek_observations(con, season, dataset.frame, dataset.fetched_at)
             fixture_count = replace_fixtures(con, season, fixtures.frame, fixtures.source, fixtures.fetched_at)
+            replace_gameweek_deadlines(con, season, dataset.frame.attrs.get("events"), dataset.source, dataset.fetched_at)
             con.execute("DELETE FROM player_underlying_gameweeks WHERE season = ? AND source != 'official_fpl_bootstrap'", (season,))
             con.execute("DELETE FROM game_underlying_xpts WHERE season = ? AND source != 'official_fpl_bootstrap'", (season,))
             try:

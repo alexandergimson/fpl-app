@@ -25,7 +25,7 @@ from backend.services.squad import import_public_squad, remove_squad_player, squ
 from backend.services.canonical_context import manager_context, materialize_canonical_context
 from backend.services.status import data_status
 from backend.services.ingestion_runs import add_health_event, finish_ingestion_run, start_ingestion_run
-from backend.services.player_detail import player_detail, recent_gameweeks
+from backend.services.player_detail import gameweek_history, player_detail, player_gameweeks, prediction_history, recent_gameweeks
 from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, list_alerts
 from backend.services.minutes import add_minutes_override, latest_minutes_overrides
 from backend.services.roles import add_role_override, latest_role_overrides, role_history
@@ -1281,6 +1281,250 @@ class ModelTests(unittest.TestCase):
         self.assertIn("appearance_ev", detail["projection_breakdown"])
         self.assertEqual(detail["minutes_history"][0]["reason"], "starter")
         self.assertEqual(recent[0]["total_points"], 10)
+
+    def test_prediction_history_reads_frozen_runs_for_untracked_player(self):
+        with connect(":memory:") as con:
+            for gameweek, name, next_6 in [(1, "Frozen One", 4.2), (2, "Frozen Two", 5.1)]:
+                cursor = con.execute(
+                    """
+                    INSERT INTO model_runs (season, gameweek, model_version, component_versions, data_cutoff)
+                    VALUES ('2026-27', ?, 'baseline_v3', '{}', ?)
+                    """,
+                    (gameweek, f"cutoff-{gameweek}"),
+                )
+                con.execute(
+                    """
+                    INSERT INTO current_prediction_snapshots (model_run_id, season, gameweek, player_id, prediction_json)
+                    VALUES (?, '2026-27', ?, 1, ?)
+                    """,
+                    (
+                        int(cursor.lastrowid),
+                        gameweek,
+                        json.dumps(
+                            {
+                                "player_id": 1,
+                                "player": name,
+                                "position": "MID",
+                                "current_price": 8.5,
+                                "value_par": 4.0,
+                                "actual_ppg": 3.0,
+                                "return_delta": -1.0,
+                                "performance_delta": 0.2,
+                                "neutral_xppg": 4.4,
+                                "next_3_xppg": 4.0,
+                                "next_6_xppg": next_6,
+                                "forward_delta": next_6 - 4.0,
+                                "expected_minutes": 82,
+                                "projection_confidence": 0.8,
+                                "fixture_factor_6": 1.05,
+                                "xg90": 0.3,
+                                "xa90": 0.2,
+                            }
+                        ),
+                    ),
+                )
+            history = prediction_history(con, "2026-27", 1)
+        self.assertEqual([row["gameweek"] for row in history], [1, 2])
+        self.assertEqual([row["next_6_xppg"] for row in history], [4.2, 5.1])
+        self.assertEqual(history[0]["current_par"], 4.0)
+
+    def test_player_detail_uses_prediction_history_without_tracking(self):
+        with connect(":memory:") as con:
+            cursor = con.execute(
+                """
+                INSERT INTO model_runs (season, gameweek, model_version, component_versions, data_cutoff)
+                VALUES ('2026-27', 1, 'baseline_v3', '{}', 'then')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO current_prediction_snapshots (model_run_id, season, gameweek, player_id, prediction_json)
+                VALUES (?, '2026-27', 1, 1, ?)
+                """,
+                (
+                    int(cursor.lastrowid),
+                    json.dumps(
+                        {
+                            "player_id": 1,
+                            "player": "Untracked",
+                            "team": "TST",
+                            "position": "MID",
+                            "current_price": 7.0,
+                            "market_mean": 3.5,
+                            "value_par": 3.5,
+                            "actual_ppg": 4.0,
+                            "return_delta": 0.5,
+                            "performance_delta": 0.4,
+                            "neutral_xppg": 4.1,
+                            "underlying_xppg": 4.1,
+                            "process_xppg_regressed": 3.9,
+                            "next_3_xppg": 4.2,
+                            "next_6_xppg": 4.4,
+                            "forward_delta": 0.9,
+                            "expected_minutes": 80,
+                            "projection_confidence": 0.7,
+                            "fixture_factor_6": 1.1,
+                        }
+                    ),
+                ),
+            )
+            detail = player_detail(con, "2026-27", 1)
+        self.assertEqual(detail["current"]["player"], "Untracked")
+        self.assertEqual(detail["prediction_history"][0]["forward_delta"], 0.9)
+        self.assertEqual(detail["gameweek_history"], [])
+        self.assertNotIn("tracked_snapshots", detail)
+
+    def test_gameweek_history_joins_actual_underlying_par_and_price(self):
+        with connect(":memory:") as con:
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2026-27', 1, 1, 1, 2, 1, 5, 90, 1, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, 7.0, 'test', 'now', 'test'),
+                ('2026-27', 1, 2, 2, 3, 0, 8, 75, 1, 1, 0, 0, 0, 0, 1, 20, NULL, NULL, NULL, 7.1, 'test', 'now', 'test')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO price_history VALUES
+                ('2026-27', 1, 1, '2026-08-15', 7.0, 'test', 'now', 'test'),
+                ('2026-27', 1, 2, '2026-08-22', 7.1, 'test', 'now', 'test')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO player_underlying_gameweeks (
+                  season, player_id, gameweek, minutes, xg, xa, source, fetched_at, data_period
+                ) VALUES
+                ('2026-27', 1, 1, 90, 0.2, 0.1, 'official_fpl_bootstrap', 'now', 'test'),
+                ('2026-27', 1, 2, 75, 0.6, 0.2, 'official_fpl_bootstrap', 'now', 'test')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO game_underlying_xpts (
+                  season, player_id, gameweek, source, minutes, appearance_ev, goal_ev, assist_ev,
+                  clean_sheet_process_ev, defcon_ev, bonus_process_ev, save_process_ev,
+                  deduction_process_ev, game_underlying_xpts, fetched_at, data_period
+                ) VALUES
+                ('2026-27', 1, 1, 'official_fpl_bootstrap', 90, 2, 1, 0, 0, 0, 0, 0, 0, 3.0, 'now', 'test'),
+                ('2026-27', 1, 2, 'official_fpl_bootstrap', 75, 2, 2, 0, 0, 0, 0, 0, 0, 4.0, 'now', 'test')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO frozen_player_gameweek_par (
+                  season, player_id, gameweek, fixture_id, price, position, value_par,
+                  par_model_version, source, source_version, data_cutoff
+                ) VALUES
+                ('2026-27', 1, 1, 0, 7.0, 'MID', 3.2, 'test', 'test', 'test', 'now'),
+                ('2026-27', 1, 2, 0, 7.1, 'MID', 3.4, 'test', 'test', 'test', 'now')
+                """
+            )
+            history = gameweek_history(con, "2026-27", 1)
+        self.assertEqual([row["points"] for row in history], [5, 8])
+        self.assertAlmostEqual(history[1]["price_change"], 0.1)
+        self.assertEqual(history[1]["xg"], 0.6)
+        self.assertEqual(history[1]["game_underlying_xpts"], 4.0)
+        self.assertAlmostEqual(history[1]["performance_vs_par"], 0.6)
+
+    def test_player_gameweeks_use_latest_pre_deadline_snapshot(self):
+        with connect(":memory:") as con:
+            con.execute("INSERT INTO teams VALUES ('2026-27', 1, 'Team', 'TST', 'test', 'now', 'test')")
+            con.execute("INSERT INTO teams VALUES ('2026-27', 2, 'Arsenal', 'ARS', 'test', 'now', 'test')")
+            con.execute("INSERT INTO teams VALUES ('2026-27', 3, 'Chelsea', 'CHE', 'test', 'now', 'test')")
+            con.execute(
+                """
+                INSERT INTO players VALUES (
+                  '2026-27', 1, NULL, 'Simple', '', '', 1, 'TST', 'MID',
+                  6.0, 6, 90, 10.0, 'a', 'test', 'now', 'test'
+                )
+                """
+            )
+            con.execute("INSERT INTO gameweek_deadlines VALUES ('2026-27', 1, '2026-08-16T11:00:00Z', 'test', 'now', 'test')")
+            con.execute("INSERT INTO gameweek_deadlines VALUES ('2026-27', 2, '2026-08-23T11:00:00Z', 'test', 'now', 'test')")
+            con.execute("INSERT INTO fixtures VALUES ('2026-27', 1, 1, '2026-08-16T14:00:00Z', 1, 2, 3, 3, 1, 'test', 'now', 'test')")
+            con.execute("INSERT INTO fixtures VALUES ('2026-27', 2, 2, '2026-08-23T14:00:00Z', 3, 1, 3, 3, 0, 'test', 'now', 'test')")
+            con.execute(
+                """
+                INSERT INTO player_gameweeks (
+                  season, player_id, gameweek, fixture_id, opponent_team, was_home,
+                  total_points, minutes, starts, goals_scored, assists, clean_sheets,
+                  goals_conceded, saves, bonus, bps, selected, transfers_in, transfers_out,
+                  value, source, fetched_at, data_period
+                ) VALUES
+                ('2026-27', 1, 1, 1, 2, 1, 6, 90, 1, 0, 1, 0, 0, 0, 0, 0, NULL, NULL, NULL, 6.0, 'test', 'now', 'test')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO price_history VALUES
+                ('2026-27', 1, 1, '2026-08-16', 6.0, 'test', 'now', 'test'),
+                ('2026-27', 1, 2, '2026-08-23', 6.1, 'test', 'now', 'test')
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO player_underlying_gameweeks (
+                  season, player_id, gameweek, minutes, xg, xa, source, fetched_at, data_period
+                ) VALUES ('2026-27', 1, 1, 90, 0.42, 0.11, 'official_fpl_bootstrap', 'now', 'test')
+                """
+            )
+            for created_at, score_gw1, score_gw2 in [
+                ("2026-08-15 10:00:00", 4.0, 4.1),
+                ("2026-08-16 10:00:00", 5.2, 4.2),
+                ("2026-08-16 12:00:00", 9.9, 4.4),
+            ]:
+                cursor = con.execute(
+                    """
+                    INSERT INTO model_runs (season, gameweek, model_version, component_versions, data_cutoff, created_at)
+                    VALUES ('2026-27', 1, 'baseline_v3', '{}', ?, ?)
+                    """,
+                    (created_at, created_at),
+                )
+                con.execute(
+                    """
+                    INSERT INTO current_prediction_snapshots (model_run_id, season, gameweek, player_id, prediction_json)
+                    VALUES (?, '2026-27', 1, 1, ?)
+                    """,
+                    (
+                        int(cursor.lastrowid),
+                        json.dumps(
+                            {
+                                "player_id": 1,
+                                "player": "Simple",
+                                "team": "TST",
+                                "team_id": 1,
+                                "position": "MID",
+                                "current_price": 6.0,
+                                "fixture_projection": [
+                                    {"gameweek": 1, "total_xpts": score_gw1, "fixtures": []},
+                                    {"gameweek": 2, "total_xpts": score_gw2, "fixtures": []},
+                                ],
+                            }
+                        ),
+                    ),
+                )
+            rows = player_gameweeks(con, "2026-27", 1)
+        self.assertEqual(rows[0]["opponent"], "ARS (H)")
+        self.assertEqual(rows[0]["points"], 6)
+        self.assertEqual(rows[0]["minutes"], 90)
+        self.assertEqual(rows[0]["price"], 6.0)
+        self.assertEqual(rows[0]["xg"], 0.42)
+        self.assertEqual(rows[0]["xa"], 0.11)
+        self.assertEqual(rows[0]["project_score"], 5.2)
+        self.assertAlmostEqual(rows[0]["performance"], 0.8)
+        self.assertNotEqual(rows[0]["project_score"], 9.9)
+        self.assertEqual(rows[1]["opponent"], "CHE (A)")
+        self.assertIsNone(rows[1]["points"])
+        self.assertIsNone(rows[1]["minutes"])
+        self.assertIsNone(rows[1]["xg"])
+        self.assertEqual(rows[1]["price"], 6.1)
+        self.assertEqual(rows[1]["project_score"], 4.4)
 
     def test_data_status_summarizes_sources(self):
         with connect(":memory:") as con:
