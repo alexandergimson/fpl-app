@@ -48,6 +48,7 @@ def squad_analysis(con: sqlite3.Connection, season: str, par_season: str = "2026
         SELECT
           m.player_id, m.player, m.team, m.position, m.current_price,
           m.actual_points, m.season_points, m.games, m.actual_ppg,
+          (SELECT COUNT(*) FROM player_gameweeks g WHERE g.season = m.season AND g.player_id = m.player_id AND g.minutes > 0) AS matches_played,
           m.current_par AS expected_ppg, m.current_par AS value_par, m.return_delta,
           m.underlying_xppg, m.underlying_xppg AS process_xppg_regressed,
           m.performance_delta, m.performance_data_state, m.performance_confidence,

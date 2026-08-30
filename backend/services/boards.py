@@ -493,6 +493,7 @@ SORT_FIELDS = {
     "current_price": "current_price",
     "season_points": "season_points",
     "games": "games",
+    "matches_played": "matches_played",
     "actual_ppg": "actual_ppg",
     "expected_ppg": "current_par",
     "performance_delta": "performance_delta",
@@ -763,11 +764,12 @@ def paginated_players(
     rows = con.execute(
         f"""
         SELECT
-          player_id, player, team, position, current_price, actual_points, season_points, games,
+          m.player_id, player, team, position, current_price, actual_points, season_points, games,
+          (SELECT COUNT(*) FROM player_gameweeks g WHERE g.season = m.season AND g.player_id = m.player_id AND g.minutes > 0) AS matches_played,
           actual_ppg, current_par AS expected_ppg, current_par AS value_par, return_delta, underlying_xppg,
           underlying_xppg AS process_xppg_regressed, performance_delta,
           performance_data_state, next_6_xppg, forward_delta, tracked
-        FROM current_player_metrics
+        FROM current_player_metrics m
         WHERE {where_sql}
         ORDER BY {sort_sql} IS NULL, {sort_sql} {direction_sql}, player
         LIMIT ? OFFSET ?

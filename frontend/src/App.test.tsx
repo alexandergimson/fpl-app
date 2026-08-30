@@ -21,6 +21,7 @@ function row(overrides: Partial<Record<string, unknown>>) {
     expected_ppg: 3,
     season_points: 6,
     games: 2,
+    matches_played: 1,
     value_balance: null,
     actual_ppg: 3,
     historical_delta: null,
@@ -187,6 +188,7 @@ test("sorts, filters, and opens detail with analyse", async () => {
   expect(within(playersTable).queryByText("Plus")).not.toBeInTheDocument();
   fireEvent.click(within(playersTable).getByRole("button", { name: "Analyse" }));
   expect(within(playersTable).getByText("Total Pts")).toBeInTheDocument();
+  expect(within(playersTable).getByText("Played")).toBeInTheDocument();
   expect(within(playersTable).getByText("Actual PPG")).toBeInTheDocument();
   expect(within(playersTable).getByText("Expected PPG")).toBeInTheDocument();
   expect(await screen.findByText("Zero · TST · MID · £6.0m")).toBeInTheDocument();
