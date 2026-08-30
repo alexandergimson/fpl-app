@@ -558,7 +558,10 @@ class ModelTests(unittest.TestCase):
             )
             self.assertEqual(freeze_player_gameweek_pars(con, "2026-27", "2026-27"), 4)
             rows = {row["player"]: row for row in buy_board(con, "2026-27", "2026-27", 10, 10)}
+            summary = actual_scoring_summary(con, "2026-27")
         self.assertEqual(completed_gameweeks(con, "2026-27"), 2)
+        self.assertEqual(summary[1]["actual_ppg"], 0.0)
+        self.assertEqual(summary[1]["games"], 2)
         self.assertEqual(rows["NotPlayedYet"]["actual_ppg"], 0.0)
         self.assertIsNone(rows["NotPlayedYet"]["historical_delta"])
         self.assertGreater(rows["NotPlayedYet"]["neutral_xppg"], 0)

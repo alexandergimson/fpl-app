@@ -540,7 +540,7 @@ def actual_scoring_summary(con: sqlite3.Connection, season: str) -> dict[int, di
         """,
         (season, elapsed_gameweeks, elapsed_gameweeks, elapsed_gameweeks),
     ).fetchall()
-    return {
+    summary = {
         row["player_id"]: {
             "relevant_gameweek": row["gameweek"],
             "actual_points": row["actual_points"],
@@ -550,6 +550,18 @@ def actual_scoring_summary(con: sqlite3.Connection, season: str) -> dict[int, di
         }
         for row in rows
     }
+    for row in con.execute("SELECT player_id, total_points FROM players WHERE season = ?", (season,)):
+        summary.setdefault(
+            row["player_id"],
+            {
+                "relevant_gameweek": None,
+                "actual_points": 0,
+                "season_points": row["total_points"],
+                "games": elapsed_gameweeks,
+                "actual_ppg": actual_ppg(row["total_points"], elapsed_gameweeks),
+            },
+        )
+    return summary
 
 
 def materialize_current_market(
