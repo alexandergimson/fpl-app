@@ -45,10 +45,12 @@ def tracked_players(con: sqlite3.Connection, season: str, par_season: str = "202
         SELECT
           m.player_id, m.player, m.team, m.position, m.current_price,
           m.actual_points, m.season_points, m.games, m.actual_ppg,
-          m.current_par AS expected_ppg, m.current_par AS value_par, m.return_delta,
-          m.underlying_xppg, m.underlying_xppg AS process_xppg_regressed,
+          m.current_par AS par_ppg, m.current_par AS expected_ppg, m.current_par AS value_par, m.return_delta,
+          CASE WHEN m.performance_data_state = 'sufficient' THEN m.underlying_xppg END AS performance_ppg,
+          m.underlying_xppg,
+          CASE WHEN m.performance_data_state = 'sufficient' THEN m.underlying_xppg END AS process_xppg_regressed,
           m.performance_delta, m.performance_data_state, m.performance_confidence,
-          m.next_6_xppg, m.forward_delta, m.expected_minutes, m.projection_confidence,
+          m.next_6_xppg AS next_6_ppg, m.next_6_xppg, m.forward_delta, m.expected_minutes, m.projection_confidence,
           m.value_trend, t.note, t.tracked_at
         FROM tracked_players t
         JOIN current_player_metrics m ON m.season = t.season AND m.player_id = t.player_id

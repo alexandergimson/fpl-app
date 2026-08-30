@@ -1140,6 +1140,9 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(row["selling_price"], 4.9)
         self.assertNotIn("best_replacement", row)
         self.assertNotIn("transfer_gain", row)
+        self.assertIn("par_ppg", row)
+        self.assertIn("performance_ppg", row)
+        self.assertIn("next_6_ppg", row)
         self.assertIn(row["squad_health"], {"STRONG", "HEALTHY", "WATCH", "REVIEW"})
         self.assertEqual(squad_health(-0.6, 80, 0.8, 0), "REVIEW")
 
@@ -1580,7 +1583,11 @@ class ModelTests(unittest.TestCase):
                 "INSERT INTO current_prediction_snapshots (model_run_id, season, gameweek, player_id, prediction_json) VALUES (?, '2026-27', 2, 1, ?)",
                 (int(cursor.lastrowid), json.dumps({"actual_points": 999, "value_par": 999, "forward_delta": 999})),
             )
-            materialize_current_market(con, "2026-27", model_run_id=99, rows=[model_row, model_row | {"player_id": 2, "player": "Missed", "current_price": 5.0, "process_xppg_regressed": 2.0, "next_6_xppg": 2.5}])
+            materialize_current_market(con, "2026-27", model_run_id=99, rows=[
+                model_row,
+                model_row | {"player_id": 2, "player": "Missed", "current_price": 5.0, "process_xppg_regressed": 2.0, "next_6_xppg": 2.5},
+                model_row | {"player_id": 3, "player": "Partial", "performance_data_state": "partial", "process_xppg_regressed": 9.0},
+            ])
             page = paginated_players(con, "2026-27", page_size=10)
             rows = {row["player"]: row for row in page["players"]}
             summary = actual_scoring_summary(con, "2026-27")
@@ -1590,11 +1597,20 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(rows["Wirtz"]["games"], 2)
         self.assertEqual(rows["Wirtz"]["actual_points"], 4)
         self.assertEqual(rows["Wirtz"]["actual_ppg"], 3.0)
+        self.assertEqual(rows["Wirtz"]["par_ppg"], 4.5)
+        self.assertEqual(rows["Wirtz"]["performance_ppg"], 4.03)
+        self.assertEqual(rows["Wirtz"]["next_6_ppg"], 4.14)
         self.assertEqual(rows["Wirtz"]["value_par"], 4.5)
         self.assertEqual(rows["Wirtz"]["expected_ppg"], 4.5)
         self.assertEqual(rows["Wirtz"]["return_delta"], -1.5)
         self.assertEqual(rows["Wirtz"]["performance_delta"], -0.47)
         self.assertEqual(rows["Wirtz"]["forward_delta"], -0.36)
+        self.assertAlmostEqual(rows["Wirtz"]["return_delta"], rows["Wirtz"]["actual_ppg"] - rows["Wirtz"]["par_ppg"])
+        self.assertAlmostEqual(rows["Wirtz"]["performance_delta"], rows["Wirtz"]["performance_ppg"] - rows["Wirtz"]["par_ppg"])
+        self.assertAlmostEqual(rows["Wirtz"]["forward_delta"], rows["Wirtz"]["next_6_ppg"] - rows["Wirtz"]["par_ppg"])
+        self.assertIsNone(rows["Partial"]["performance_ppg"])
+        self.assertIsNone(rows["Partial"]["process_xppg_regressed"])
+        self.assertIsNone(rows["Partial"]["performance_delta"])
         self.assertEqual(rows["Missed"]["season_points"], 5)
         self.assertEqual(rows["Missed"]["games"], 2)
         self.assertEqual(rows["Missed"]["actual_ppg"], 2.5)

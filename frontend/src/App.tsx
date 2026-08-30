@@ -20,6 +20,9 @@ type BoardRow = {
   value_par: number;
   value_balance: number | null;
   actual_ppg: number | null;
+  par_ppg: number;
+  performance_ppg: number | null;
+  next_6_ppg: number;
   historical_delta: number | null;
   return_delta: number | null;
   neutral_xppg: number;
@@ -141,7 +144,9 @@ type SortKey =
   | "season_points"
   | "matches_played"
   | "actual_ppg"
-  | "expected_ppg"
+  | "par_ppg"
+  | "performance_ppg"
+  | "next_6_ppg"
   | "historical_delta"
   | "return_delta"
   | "value_par"
@@ -164,12 +169,14 @@ const SEASON = "2026-27";
 const tooltipText = {
   season_points: "Total FPL points scored this season.",
   matches_played: "Matches in which the player recorded at least one minute.",
-  actual_ppg: "Average FPL points per elapsed Gameweek this season.",
-  expected_ppg: "Expected points per game based on the player's price and position benchmark.",
-  return_delta: "Actual PPG minus Expected PPG.",
+  actual_ppg: "Actual FPL points per elapsed Gameweek.",
+  par_ppg: "Expected PPG for a player at this price and position.",
+  performance_ppg: "Expected PPG based on the player's aggregated underlying performance.",
+  next_6_ppg: "Projected average PPG across the next six Gameweeks.",
+  return_delta: "Actual PPG minus Par PPG.",
   underlying_xppg: "Estimated FPL points per game based on underlying performance rather than actual points scored.",
-  performance_delta: "Underlying xPPG minus Expected PPG.",
-  forward_delta: "Projected PPG minus Expected PPG.",};
+  performance_delta: "Performance PPG minus Par PPG.",
+  forward_delta: "Next 6 PPG minus Par PPG.",};
 
 
 function formatDate(value?: string | null) {
@@ -317,7 +324,7 @@ function PerformancePopover({ lineage }: { lineage: PerformanceLineage }) {
   };
   return (
     <>
-      <div className="popover-grid"><span>Underlying xPPG</span><strong>{metric(lineage.underlying_xppg)}</strong><span>Expected PPG</span><strong>{metric(lineage.value_par)}</strong><span>Performance Δ</span><strong>{signedMetric(lineage.performance_delta)}</strong><span>State</span><strong>{lineage.state}</strong></div>
+      <div className="popover-grid"><span>Performance PPG</span><strong>{metric(lineage.underlying_xppg)}</strong><span>Par PPG</span><strong>{metric(lineage.value_par)}</strong><span>Performance Δ</span><strong>{signedMetric(lineage.performance_delta)}</strong><span>State</span><strong>{lineage.state}</strong></div>
       <h4>Expected points breakdown</h4>
       {Object.entries(lineage.components).filter(([, value]) => value !== 0).map(([key, value]) => <div className="line" title={labels[key]?.[1]} key={key}><span>{labels[key]?.[0] ?? key}</span><strong>{metric(value)}</strong></div>)}
       <h4>Evidence</h4>
@@ -335,7 +342,7 @@ function PerformancePopover({ lineage }: { lineage: PerformanceLineage }) {
 function ForwardPopover({ lineage, onDetail }: { lineage: ForwardLineage; onDetail: () => void }) {
   return (
     <>
-      <div className="popover-grid"><span>Next-6 xPPG</span><strong>{metric(lineage.next_6_xppg)}</strong><span>Expected PPG</span><strong>{metric(lineage.value_par)}</strong><span>Forward Δ</span><strong>{signedMetric(lineage.forward_delta)}</strong></div>
+      <div className="popover-grid"><span>Next 6 PPG</span><strong>{metric(lineage.next_6_xppg)}</strong><span>Par PPG</span><strong>{metric(lineage.value_par)}</strong><span>Forward Δ</span><strong>{signedMetric(lineage.forward_delta)}</strong></div>
       <h4>Outlook</h4>
       {lineage.gameweeks.map((gw) => <div className="line" key={gw.gameweek}><span>GW{gw.gameweek} {gw.fixtures.length === 1 ? `${gw.fixtures[0].opponent} (${gw.fixtures[0].home_away})` : gw.fixtures.length ? "total" : "Blank"}</span><strong>{metric(gw.projected_points)}</strong></div>)}
       <button className="action" type="button" onClick={onDetail}>View detail</button>
@@ -352,7 +359,7 @@ function SortButton({ label, sortKey, active, direction, onSort, title }: { labe
 }
 
 function sortValue(row: BoardRow, key: SortKey) {
-  return key === "expected_ppg" ? row.expected_ppg ?? row.value_par : row[key as keyof BoardRow];
+  return row[key as keyof BoardRow];
 }
 
 function compareRows(a: BoardRow, b: BoardRow, key: SortKey, direction: "asc" | "desc") {
@@ -594,7 +601,9 @@ function loadData() {
     <th><SortButton label="Total Pts" sortKey="season_points" active={sortKey === "season_points"} direction={sortDirection} onSort={changeSort} title={tooltipText.season_points} /></th>
     <th><SortButton label="Played" sortKey="matches_played" active={sortKey === "matches_played"} direction={sortDirection} onSort={changeSort} title={tooltipText.matches_played} /></th>
     <th><SortButton label="Actual PPG" sortKey="actual_ppg" active={sortKey === "actual_ppg"} direction={sortDirection} onSort={changeSort} title={tooltipText.actual_ppg} /></th>
-    <th><SortButton label="Expected PPG" sortKey="expected_ppg" active={sortKey === "expected_ppg"} direction={sortDirection} onSort={changeSort} title={tooltipText.expected_ppg} /></th>
+    <th><SortButton label="Par PPG" sortKey="par_ppg" active={sortKey === "par_ppg"} direction={sortDirection} onSort={changeSort} title={tooltipText.par_ppg} /></th>
+    <th><SortButton label="Performance PPG" sortKey="performance_ppg" active={sortKey === "performance_ppg"} direction={sortDirection} onSort={changeSort} title={tooltipText.performance_ppg} /></th>
+    <th><SortButton label="Next 6 PPG" sortKey="next_6_ppg" active={sortKey === "next_6_ppg"} direction={sortDirection} onSort={changeSort} title={tooltipText.next_6_ppg} /></th>
     <th><SortButton label="Return Δ" sortKey="return_delta" active={sortKey === "return_delta"} direction={sortDirection} onSort={changeSort} title={tooltipText.return_delta} /></th>
     <th><SortButton label="Performance Δ" sortKey="performance_delta" active={sortKey === "performance_delta"} direction={sortDirection} onSort={changeSort} title={tooltipText.performance_delta} /></th>
     <th><SortButton label="Forward Δ" sortKey="forward_delta" active={sortKey === "forward_delta"} direction={sortDirection} onSort={changeSort} title={tooltipText.forward_delta} /></th>
@@ -609,14 +618,16 @@ function loadData() {
                   <td>{metric(row.season_points, 0)}</td>
                   <td>{row.matches_played ?? 0}</td>
                   <td><strong>{metric(row.actual_ppg)}</strong></td>
-                  <td>{metric(row.expected_ppg ?? row.value_par)}</td>
+                  <td>{metric(row.par_ppg)}</td>
+                  <td>{metric(row.performance_ppg)}</td>
+                  <td>{metric(row.next_6_ppg)}</td>
                   <td className={valueTone(row.return_delta)}>{signedMetric(row.return_delta)}</td>
                   <td><DeltaPopover row={row} kind="performance" performanceCache={performanceLineage} forwardCache={forwardLineage} setPerformanceCache={setPerformanceLineage} setForwardCache={setForwardLineage} selectPlayer={selectPlayer} /></td>
                   <td><DeltaPopover row={row} kind="forward" performanceCache={performanceLineage} forwardCache={forwardLineage} setPerformanceCache={setPerformanceLineage} setForwardCache={setForwardLineage} selectPlayer={selectPlayer} /></td>
                   <td><button className="action" onClick={() => selectPlayer(row)}>Analyse</button></td>
                 </tr>
               ))}
-              {squad.length === 0 && <tr><td colSpan={11}>Import your public FPL team or add players manually.</td></tr>}
+              {squad.length === 0 && <tr><td colSpan={13}>Import your public FPL team or add players manually.</td></tr>}
             </tbody>
           </table>
         </article>
@@ -655,7 +666,9 @@ function loadData() {
     <th><SortButton label="Total Pts" sortKey="season_points" active={sortKey === "season_points"} direction={sortDirection} onSort={changeSort} title={tooltipText.season_points} /></th>
     <th><SortButton label="Played" sortKey="matches_played" active={sortKey === "matches_played"} direction={sortDirection} onSort={changeSort} title={tooltipText.matches_played} /></th>
     <th><SortButton label="Actual PPG" sortKey="actual_ppg" active={sortKey === "actual_ppg"} direction={sortDirection} onSort={changeSort} title={tooltipText.actual_ppg} /></th>
-    <th><SortButton label="Expected PPG" sortKey="expected_ppg" active={sortKey === "expected_ppg"} direction={sortDirection} onSort={changeSort} title={tooltipText.expected_ppg} /></th>
+    <th><SortButton label="Par PPG" sortKey="par_ppg" active={sortKey === "par_ppg"} direction={sortDirection} onSort={changeSort} title={tooltipText.par_ppg} /></th>
+    <th><SortButton label="Performance PPG" sortKey="performance_ppg" active={sortKey === "performance_ppg"} direction={sortDirection} onSort={changeSort} title={tooltipText.performance_ppg} /></th>
+    <th><SortButton label="Next 6 PPG" sortKey="next_6_ppg" active={sortKey === "next_6_ppg"} direction={sortDirection} onSort={changeSort} title={tooltipText.next_6_ppg} /></th>
     <th><SortButton label="Return Δ" sortKey="return_delta" active={sortKey === "return_delta"} direction={sortDirection} onSort={changeSort} title={tooltipText.return_delta} /></th>
     <th><SortButton label="Performance Δ" sortKey="performance_delta" active={sortKey === "performance_delta"} direction={sortDirection} onSort={changeSort} title={tooltipText.performance_delta} /></th>
     <th><SortButton label="Forward Δ" sortKey="forward_delta" active={sortKey === "forward_delta"} direction={sortDirection} onSort={changeSort} title={tooltipText.forward_delta} /></th>
@@ -663,21 +676,23 @@ function loadData() {
   </tr>
 </thead>
             <tbody>
-              {playersLoading && <tr><td colSpan={11}>Loading players...</td></tr>}
+              {playersLoading && <tr><td colSpan={13}>Loading players...</td></tr>}
               {!playersLoading && visiblePlayers.map((row) => (
                 <tr key={`player-${row.player_id}`}>
                   <td><button className="link" onClick={() => selectPlayer(row)}>{row.player}</button><small>{row.team}</small></td><td>{row.position}</td><td>£{row.current_price.toFixed(1)}</td>
                   <td>{metric(row.season_points, 0)}</td>
                   <td>{row.matches_played ?? 0}</td>
                   <td><strong>{metric(row.actual_ppg)}</strong></td>
-                  <td>{metric(row.expected_ppg ?? row.value_par)}</td>
+                  <td>{metric(row.par_ppg)}</td>
+                  <td>{metric(row.performance_ppg)}</td>
+                  <td>{metric(row.next_6_ppg)}</td>
                   <td className={valueTone(row.return_delta)}>{signedMetric(row.return_delta)}</td>
                   <td><DeltaPopover row={row} kind="performance" performanceCache={performanceLineage} forwardCache={forwardLineage} setPerformanceCache={setPerformanceLineage} setForwardCache={setForwardLineage} selectPlayer={selectPlayer} /></td>
                   <td><DeltaPopover row={row} kind="forward" performanceCache={performanceLineage} forwardCache={forwardLineage} setPerformanceCache={setPerformanceLineage} setForwardCache={setForwardLineage} selectPlayer={selectPlayer} /></td>
                   <td><button className="action" onClick={() => selectPlayer(row)}>Analyse</button></td>
                 </tr>
               ))}
-              {!playersLoading && visiblePlayers.length === 0 && <tr><td colSpan={11}>No players match these filters.</td></tr>}
+              {!playersLoading && visiblePlayers.length === 0 && <tr><td colSpan={13}>No players match these filters.</td></tr>}
             </tbody>
           </table>
         </article>

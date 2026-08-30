@@ -49,10 +49,12 @@ def squad_analysis(con: sqlite3.Connection, season: str, par_season: str = "2026
           m.player_id, m.player, m.team, m.position, m.current_price,
           m.actual_points, m.season_points, m.games, m.actual_ppg,
           (SELECT COUNT(*) FROM player_gameweeks g WHERE g.season = m.season AND g.player_id = m.player_id AND g.minutes > 0) AS matches_played,
-          m.current_par AS expected_ppg, m.current_par AS value_par, m.return_delta,
-          m.underlying_xppg, m.underlying_xppg AS process_xppg_regressed,
+          m.current_par AS par_ppg, m.current_par AS expected_ppg, m.current_par AS value_par, m.return_delta,
+          CASE WHEN m.performance_data_state = 'sufficient' THEN m.underlying_xppg END AS performance_ppg,
+          m.underlying_xppg,
+          CASE WHEN m.performance_data_state = 'sufficient' THEN m.underlying_xppg END AS process_xppg_regressed,
           m.performance_delta, m.performance_data_state, m.performance_confidence,
-          m.next_6_xppg, m.forward_delta, m.expected_minutes, m.projection_confidence,
+          m.next_6_xppg AS next_6_ppg, m.next_6_xppg, m.forward_delta, m.expected_minutes, m.projection_confidence,
           m.value_trend, m.tracked, s.purchase_price, s.selling_price, s.purchase_price_source
         FROM squad_players s
         JOIN current_player_metrics m ON m.season = s.season AND m.player_id = s.player_id

@@ -380,6 +380,7 @@ def buy_board(
         buy_delta_6 = next_6_xppg - value_par
         value_balance, return_delta = value_balance_and_return_delta(points, played, value_par, frozen_pars.get(row["player_id"]))
         performance_delta = performance_xppg - value_par if performance_data_state == "sufficient" and performance_xppg is not None else None
+        performance_ppg = performance_xppg if performance_data_state == "sufficient" else None
         historical_delta = return_delta
         value_trend = buy_delta_6 - previous_deltas.get(row["player_id"], buy_delta_6)
         captain_delta = captain_adjusted_delta(next_6_xppg, value_par, price)
@@ -397,11 +398,13 @@ def buy_board(
                 "current_price": price,
                 "market_mean": round(market_mean, 2),
                 "value_par": round(value_par, 2),
+                "par_ppg": round(value_par, 2),
                 "value_balance": round(value_balance, 2) if value_balance is not None else None,
                 "actual_ppg": round(actual, 2) if actual is not None else None,
                 "neutral_xppg": round(neutral_xppg, 2),
                 "underlying_xppg": round(performance_xppg if performance_xppg is not None else neutral_xppg, 2),
-                "process_xppg_regressed": round(performance_xppg, 2) if performance_xppg is not None else None,
+                "process_xppg_regressed": round(performance_ppg, 2) if performance_ppg is not None else None,
+                "performance_ppg": round(performance_ppg, 2) if performance_ppg is not None else None,
                 "performance_components": {key: round(value, 2) for key, value in parts.items() if key != "game_underlying_xpts"} if parts else None,
                 "shots": canonical_player.get("shots"),
                 "shots_in_box": canonical_player.get("shots_in_box"),
@@ -410,6 +413,7 @@ def buy_board(
                 "key_passes": canonical_player.get("key_passes"),
                 "next_3_xppg": round(next_3_xppg, 2),
                 "next_6_xppg": round(next_6_xppg, 2),
+                "next_6_ppg": round(next_6_xppg, 2),
                 "buy_delta_3": round(buy_delta_3, 2),
                 "buy_delta_6": round(buy_delta_6, 2),
                 "historical_delta": round(historical_delta, 2) if historical_delta is not None else None,
@@ -478,12 +482,15 @@ TABLE_FIELDS = {
     "current_price",
     "actual_points",
     "value_par",
+    "par_ppg",
     "return_delta",
     "underlying_xppg",
     "process_xppg_regressed",
+    "performance_ppg",
     "performance_delta",
     "performance_data_state",
     "forward_delta",
+    "next_6_ppg",
     "tracked",
 }
 
@@ -496,6 +503,9 @@ SORT_FIELDS = {
     "matches_played": "matches_played",
     "actual_ppg": "actual_ppg",
     "expected_ppg": "current_par",
+    "par_ppg": "current_par",
+    "performance_ppg": "CASE WHEN performance_data_state = 'sufficient' THEN underlying_xppg END",
+    "next_6_ppg": "next_6_xppg",
     "performance_delta": "performance_delta",
     "forward_delta": "forward_delta",
     "return_delta": "return_delta",
@@ -592,7 +602,8 @@ def materialize_current_market(
         expected_ppg = row["value_par"]
         actual_ppg_value = returns.get("actual_ppg")
         return_delta = actual_ppg_value - expected_ppg if actual_ppg_value is not None else None
-        performance_delta = row["process_xppg_regressed"] - expected_ppg if row["process_xppg_regressed"] is not None else None
+        performance_ppg = row["process_xppg_regressed"] if row["performance_data_state"] == "sufficient" else None
+        performance_delta = performance_ppg - expected_ppg if performance_ppg is not None else None
         forward_delta = row["next_6_xppg"] - expected_ppg
         metric_rows.append(
             (
@@ -612,7 +623,7 @@ def materialize_current_market(
                 expected_ppg,
                 round(return_delta, 2) if return_delta is not None else None,
                 row["value_balance"],
-                row["process_xppg_regressed"],
+                performance_ppg,
                 round(performance_delta, 2) if performance_delta is not None else None,
                 row["performance_data_state"],
                 row["performance_confidence"],
@@ -633,7 +644,7 @@ def materialize_current_market(
                 season,
                 row["player_id"],
                 round(performance_delta, 2) if performance_delta is not None else None,
-                row["process_xppg_regressed"],
+                performance_ppg,
                 expected_ppg,
                 row["performance_data_state"],
                 row["performance_confidence"],
@@ -778,9 +789,12 @@ def paginated_players(
         SELECT
           m.player_id, player, team, position, current_price, actual_points, season_points, games,
           (SELECT COUNT(*) FROM player_gameweeks g WHERE g.season = m.season AND g.player_id = m.player_id AND g.minutes > 0) AS matches_played,
-          actual_ppg, current_par AS expected_ppg, current_par AS value_par, return_delta, underlying_xppg,
-          underlying_xppg AS process_xppg_regressed, performance_delta,
-          performance_data_state, next_6_xppg, forward_delta, tracked
+          actual_ppg, current_par AS par_ppg, current_par AS expected_ppg, current_par AS value_par,
+          return_delta,
+          CASE WHEN performance_data_state = 'sufficient' THEN underlying_xppg END AS performance_ppg,
+          underlying_xppg,
+          CASE WHEN performance_data_state = 'sufficient' THEN underlying_xppg END AS process_xppg_regressed,
+          performance_delta, performance_data_state, next_6_xppg AS next_6_ppg, next_6_xppg, forward_delta, tracked
         FROM current_player_metrics m
         WHERE {where_sql}
         ORDER BY {sort_sql} IS NULL, {sort_sql} {direction_sql}, player

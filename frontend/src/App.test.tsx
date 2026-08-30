@@ -19,6 +19,7 @@ function row(overrides: Partial<Record<string, unknown>>) {
     market_mean: 3,
     value_par: 3,
     expected_ppg: 3,
+    par_ppg: 3,
     season_points: 6,
     games: 2,
     matches_played: 1,
@@ -29,6 +30,7 @@ function row(overrides: Partial<Record<string, unknown>>) {
     neutral_xppg: 3,
     underlying_xppg: 3,
     process_xppg_regressed: 3,
+    performance_ppg: 3,
     performance_delta: null,
     performance_data_state: "sufficient",
     performance_confidence: "LOW",
@@ -36,6 +38,7 @@ function row(overrides: Partial<Record<string, unknown>>) {
     performance_sample_minutes: 90,
     next_3_xppg: 3,
     next_6_xppg: 3,
+    next_6_ppg: 3,
     buy_delta_6: 0,
     forward_delta: 0,
     expected_minutes: 90,
@@ -190,7 +193,9 @@ test("sorts, filters, and opens detail with analyse", async () => {
   expect(within(playersTable).getByText("Total Pts")).toBeInTheDocument();
   expect(within(playersTable).getByText("Played")).toBeInTheDocument();
   expect(within(playersTable).getByText("Actual PPG")).toBeInTheDocument();
-  expect(within(playersTable).getByText("Expected PPG")).toBeInTheDocument();
+  expect(within(playersTable).getByText("Par PPG")).toBeInTheDocument();
+  expect(within(playersTable).getByText("Performance PPG")).toBeInTheDocument();
+  expect(within(playersTable).getByText("Next 6 PPG")).toBeInTheDocument();
   expect(await screen.findByText("Zero · TST · MID · £6.0m")).toBeInTheDocument();
   expect(screen.getByText("Season total: 6 pts · 2 elapsed GWs · 3.00 PPG")).toBeInTheDocument();
   expect(screen.getByText("Project Score")).toBeInTheDocument();
@@ -219,13 +224,11 @@ test("renders simplified gameweek history in detail", async () => {
   expect(within(historyRow).getByText("+0.80")).toHaveClass("positive");
 });
 
-test("renders manager context without inventing private fields", async () => {
+test("loads the saved public team id without restoring removed overview styling", async () => {
   settingsResponse = { fpl_team_id: 123, manager: { bank: null, free_transfers: null, chips_remaining: ["freehit", "wildcard"], deadline: "2026-08-29T10:00:00Z", context_type: "public" } };
   render(<App />);
-  expect(await screen.findByText("Bank")).toBeInTheDocument();
-  expect(screen.getAllByText("unavailable").length).toBeGreaterThan(0);
-  expect(screen.getByText("freehit, wildcard")).toBeInTheDocument();
-  expect(screen.getByText(/29\/08\/2026/)).toBeInTheDocument();
+  expect(await screen.findByLabelText("FPL Team ID")).toHaveValue(123);
+  expect(screen.queryByText("Bank")).not.toBeInTheDocument();
 });
 
 test("renders unavailable canonical metrics as dashes", async () => {
@@ -248,14 +251,23 @@ test("renders unavailable canonical metrics as dashes", async () => {
   fireEvent.click(within(playersArticle()).getByRole("button", { name: "Zero" }));
   expect(await screen.findByText("Blank")).toBeInTheDocument();
   expect(screen.getAllByText("—").length).toBeGreaterThan(1);
-  expect(screen.getAllByText("unavailable").length).toBeGreaterThan(0);
 });
 
 test("hides locked gain when squad purchase prices are public fallbacks", async () => {
   squadResponse = [row({ player_id: 1, player: "Zero", purchase_price: 6, selling_price: 6.2, purchase_price_source: "public_current_price_fallback" })];
   render(<App />);
-  expect(await screen.findByText("Squad Value")).toBeInTheDocument();
+  expect((await screen.findAllByText("Zero")).length).toBeGreaterThan(0);
   expect(screen.queryByText("Locked Gain")).not.toBeInTheDocument();
+});
+
+test("labels the four primary PPG metrics with their definitions", async () => {
+  render(<App />);
+  await screen.findByText("Zero");
+  const table = playersArticle();
+  expect(within(table).getByRole("button", { name: "Actual PPG" })).toHaveAttribute("title", "Actual FPL points per elapsed Gameweek.");
+  expect(within(table).getByRole("button", { name: "Par PPG" })).toHaveAttribute("title", "Expected PPG for a player at this price and position.");
+  expect(within(table).getByRole("button", { name: "Performance PPG" })).toHaveAttribute("title", "Expected PPG based on the player's aggregated underlying performance.");
+  expect(within(table).getByRole("button", { name: "Next 6 PPG" })).toHaveAttribute("title", "Projected average PPG across the next six Gameweeks.");
 });
 
 test("players page renders 15 rows and paginates", async () => {
