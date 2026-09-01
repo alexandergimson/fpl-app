@@ -51,9 +51,14 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
                 add_health_event(con, season, run_id, "WARN", "understat_team_failed", str(exc))
             try:
                 shot_data = understat.shots(season)
-                shot_count = replace_understat_shots(con, season, shot_data.frame, shot_data.source, shot_data.fetched_at)
+                shot_quality = replace_understat_shots(con, season, shot_data.frame, shot_data.source, shot_data.fetched_at)
+                shot_count = shot_quality["rows"]
+                if shot_quality["unmapped_players"]:
+                    names = ", ".join(shot_quality["unmapped_names"][:10])
+                    add_health_event(con, season, run_id, "WARN", "understat_shot_mapping", f"{shot_quality['mapped_players']} mapped, {shot_quality['unmapped_players']} unmapped: {names}")
             except Exception as exc:
                 shot_count = 0
+                shot_quality = {"rows": 0, "mapped_players": 0, "unmapped_players": 0, "unmapped_names": []}
                 add_health_event(con, season, run_id, "WARN", "understat_shots_failed", str(exc))
             frozen_pars = freeze_player_gameweek_pars(con, season, par_season)
             set_state(con, season, "current_gameweek", str(gameweek))
@@ -80,7 +85,7 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
                 add_health_event(con, season, run_id, "WARN", "missing_player_underlying", "No player xG/xA rows loaded")
             if con.execute("SELECT COUNT(*) AS n FROM team_underlying_gameweeks WHERE season = ?", (season,)).fetchone()["n"] == 0:
                 add_health_event(con, season, run_id, "WARN", "missing_team_underlying", "No team xG/xGA rows loaded")
-            summary = f"{players} players, {prices} prices, {fixture_count} fixtures, {observations} player GW observations, {team_underlying_count} team xG/xGA rows, {shot_count} Understat player-match rows, {frozen_pars} frozen Pars, {imported_squad} squad picks, {materialized} current metrics, {snapshots} snapshots, {alerts} alerts"
+            summary = f"{players} players, {prices} prices, {fixture_count} fixtures, {observations} player GW observations, {team_underlying_count} team xG/xGA rows, {shot_count} Understat player-match rows ({shot_quality['mapped_players']} mapped/{shot_quality['unmapped_players']} unmapped players), {frozen_pars} frozen Pars, {imported_squad} squad picks, {materialized} current metrics, {snapshots} snapshots, {alerts} alerts"
             finish_ingestion_run(con, run_id, "SUCCESS", summary)
         return {
             "run_id": run_id,
@@ -92,6 +97,7 @@ def refresh_all(season: str = "2026-27", par_season: str = "2026-27", db_path: s
             "observations": observations,
             "team_underlying": team_underlying_count,
             "shot_metrics": shot_count,
+            "understat_shot_mapping": shot_quality,
             "understat_players": {"fetched": 0, "mapped": 0, "unmapped": 0, "duplicate_candidates": 0, "canonical": 0},
             "frozen_pars": frozen_pars,
             "squad": imported_squad,

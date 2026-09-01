@@ -91,7 +91,7 @@ beforeEach(() => {
   squadResponse = [];
   settingsResponse = { fpl_team_id: null, manager: { bank: null, free_transfers: null, chips_remaining: null, deadline: null, context_type: "public" } };
   detailResponse = { player: { id: 1, name: "Zero", team: "TST", position: "MID", current_price: 6 }, current: players[0], projection_breakdown: { fixture_xpts: 3 }, gameweeks: [], recent_gameweeks: [], gameweek_history: [], prediction_history: [], minutes_history: [], role_history: [] };
-  analysisResponse = { player: { player_id: 1, web_name: "Zero", team: "TST", position: "MID", current_price: 6 }, headline: { actual_ppg: 3, par_ppg: 3, performance_ppg: 3.4, next_6_ppg: 3.5, return_delta: 0, performance_delta: 0.4, forward_delta: 0.5, process_gap: 0.4, performance_data_state: "sufficient" }, diagnosis: "Returns supported by process", games: [] };
+  analysisResponse = { player: { player_id: 1, web_name: "Zero", team: "TST", position: "MID", current_price: 6 }, headline: { actual_ppg: 3, par_ppg: 3, performance_ppg: 3.4, next_6_ppg: 3.5, return_delta: 0, performance_delta: 0.4, forward_delta: 0.5, process_gap: 0.4, performance_data_state: "sufficient" }, aggregate: { window: "season", available_windows: ["season"], appearances: 2, minutes: 180, from_gameweek: 1, to_gameweek: 2, benchmark_eligible: true, benchmark_minutes: 90, cohort_size: 20, price_cohort_size: 8, price_band: 0.5, comparisons: [{ key: "xg", label: "xG", raw: 0.42, per_90: 0.42, positional_average: 0.2, percentile: 80, price_average: 0.3, price_band: 0.5, cohort_size: 20, rate_basis: "per90" }] }, diagnosis: "Returns supported by process", games: [] };
   refreshResponse = { status: "SUCCESS", gameweek: 3, players: 640, fixtures: 380, observations: 640, team_underlying: 40, materialized: 640, snapshots: 15, alerts: 2 };
   globalThis.ResizeObserver = class {
     observe() {}
@@ -201,7 +201,8 @@ test("sorts, filters, and opens detail with analyse", async () => {
   expect(within(playersTable).getByText("Next 6 PPG")).toBeInTheDocument();
   expect(await screen.findByText("Zero · TST · MID · £6.0m")).toBeInTheDocument();
   expect(screen.getByText("Returns supported by process")).toBeInTheDocument();
-  expect(screen.getByText("Perf Pts")).toBeInTheDocument();
+  expect(screen.getByText("xG / 90")).toBeInTheDocument();
+  expect(screen.getByText("Position cohort: 20 eligible MIDs · Price cohort: 8 within ±£0.5m")).toBeInTheDocument();
 });
 
 test("renders simplified gameweek history in detail", async () => {
@@ -219,14 +220,15 @@ test("renders simplified gameweek history in detail", async () => {
     minutes_history: [],
     role_history: [],
   };
-  analysisResponse = { player: { player_id: 1, web_name: "Zero", team: "TST", position: "MID", current_price: 6 }, headline: { actual_ppg: 3, par_ppg: 3, performance_ppg: 3.4, next_6_ppg: 3.5, return_delta: 0, performance_delta: 0.4, forward_delta: 0.5, process_gap: 0.4, performance_data_state: "sufficient" }, diagnosis: "Returns supported by process", games: [{ gameweek: 1, opponent: "ARS (H)", minutes: 90, points: 6, starts: 1, goals: 1, assists: 0, bonus: 2, bps: 30, saves: 0, clean_sheets: 0, goals_conceded: 0, xg: 0.42, xa: 0.11, xgi: 0.53, shots: 3, shots_in_box: 2, shots_on_target: 1, key_passes: 1, penalty_shots: 0, penalty_xg: 0, direct_free_kick_shots: 0, team_xg_conceded: 1.2, performance_points: 5.2, actual_minus_performance: 0.8, cumulative_actual_ppg: 6, cumulative_performance_ppg: 5.2, benchmark_eligible: true, benchmark_minutes: 45, headline_metric_keys: ["xg", "xa", "shots"], comparisons: [{ key: "xg", label: "xG", raw: 0.42, per_90: 0.42, positional_average: 0.2, percentile: 80, price_average: 0.3, price_band: 0.5, cohort_size: 10 }, { key: "xa", label: "xA", raw: 0.11, per_90: 0.11, positional_average: 0.1, percentile: 60, price_average: 0.1, price_band: 0.5, cohort_size: 10 }, { key: "shots", label: "Shots", raw: 3, per_90: 3, positional_average: 2, percentile: 75, price_average: 2.2, price_band: 0.5, cohort_size: 10 }] }] };
+  analysisResponse = { player: { player_id: 1, web_name: "Zero", team: "TST", position: "MID", current_price: 6 }, headline: { actual_ppg: 3, par_ppg: 3, performance_ppg: 3.4, next_6_ppg: 3.5, return_delta: 0, performance_delta: 0.4, forward_delta: 0.5, process_gap: 0.4, performance_data_state: "sufficient" }, aggregate: { window: "season", available_windows: ["season"], appearances: 1, minutes: 90, from_gameweek: 1, to_gameweek: 1, benchmark_eligible: true, benchmark_minutes: 45, cohort_size: 10, price_cohort_size: 10, price_band: 0.5, comparisons: [{ key: "xg", label: "xG", raw: 0.42, per_90: 0.42, positional_average: 0.2, percentile: 80, price_average: 0.3, price_band: 0.5, cohort_size: 10, rate_basis: "per90" }] }, diagnosis: "Returns supported by process", games: [{ gameweek: 1, opponent: "ARS (H)", minutes: 90, points: 6, starts: 1, goals: 1, assists: 0, bonus: 2, bps: 30, saves: 0, clean_sheets: 0, goals_conceded: 0, xg: 0.42, xa: 0.11, xgi: 0.53, shots: 3, shots_in_box: 2, shots_on_target: 1, key_passes: 1, penalty_shots: 0, penalty_xg: 0, direct_free_kick_shots: 0, team_xg_conceded: 1.2, performance_points: 5.2, actual_minus_performance: 0.8, cumulative_actual_ppg: 6, cumulative_performance_ppg: 5.2, benchmark_eligible: true, benchmark_minutes: 45, headline_metric_keys: ["xg", "xa", "shots"], comparisons: [{ key: "xg", label: "xG", raw: 0.42, per_90: 0.42, positional_average: 0.2, percentile: 80, price_average: 0.3, price_band: 0.5, cohort_size: 10, rate_basis: "per90" }, { key: "xa", label: "xA", raw: 0.11, per_90: 0.11, positional_average: 0.1, percentile: 60, price_average: 0.1, price_band: 0.5, cohort_size: 10, rate_basis: "per90" }, { key: "shots", label: "Shots", raw: 3, per_90: 3, positional_average: 2, percentile: 75, price_average: 2.2, price_band: 0.5, cohort_size: 10, rate_basis: "per90" }] }] };
   render(<App />);
   await screen.findByText("Zero");
   fireEvent.click(within(playersArticle()).getByRole("button", { name: "Zero" }));
+  fireEvent.click(await screen.findByText("Match breakdown (1)"));
   const historyRow = (await screen.findByRole("button", { name: "Evidence" })).closest("tr")!;
   expect(historyRow).toHaveTextContent("ARS (H)");
   fireEvent.click(within(historyRow).getByRole("button", { name: "Evidence" }));
-  expect(await screen.findByText("80th")).toBeInTheDocument();
+  expect((await screen.findAllByText("80th")).length).toBeGreaterThan(1);
 });
 
 test("loads the saved public team id without restoring removed overview styling", async () => {
@@ -254,6 +256,7 @@ test("renders unavailable canonical metrics as dashes", async () => {
   render(<App />);
   await screen.findByText("Zero");
   fireEvent.click(within(playersArticle()).getByRole("button", { name: "Zero" }));
+  fireEvent.click(await screen.findByText("Match breakdown (0)"));
   expect(await screen.findByText("No game evidence yet")).toBeInTheDocument();
   expect(screen.getAllByText("—").length).toBeGreaterThan(1);
 });

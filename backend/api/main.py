@@ -91,9 +91,9 @@ if FastAPI:
             return player_performance_lineage(con, season, player_id, par_season)
 
     @app.get("/players/{player_id}/analysis")
-    def get_player_analysis(player_id: int, season: str = "2026-27"):
+    def get_player_analysis(player_id: int, season: str = "2026-27", window: str = "auto"):
         with connect() as con:
-            return player_analysis(con, season, player_id) or {}
+            return player_analysis(con, season, player_id, window) or {}
 
     @app.get("/players/{player_id}/forward-lineage")
     def get_player_forward_lineage(player_id: int, season: str = "2026-27", par_season: str = "2026-27"):

@@ -546,11 +546,11 @@ def upsert_fpl_bootstrap_gameweek_observations(con: sqlite3.Connection, season: 
     return len(gameweeks)
 
 
-def replace_understat_shots(con: sqlite3.Connection, season: str, shots: pd.DataFrame, source: str, fetched_at: str) -> int:
+def replace_understat_shots(con: sqlite3.Connection, season: str, shots: pd.DataFrame, source: str, fetched_at: str) -> dict:
     con.execute("DELETE FROM player_shot_gameweeks WHERE season = ?", (season,))
     if shots.empty:
         con.commit()
-        return 0
+        return {"rows": 0, "mapped_players": 0, "unmapped_players": 0, "unmapped_names": []}
     teams = {row["name"]: row["team_id"] for row in con.execute("SELECT team_id, name FROM teams WHERE season = ?", (season,))}
     fixtures = {
         (row["team_id"], row["date"]): (row["gameweek"], row["fixture_id"])
@@ -570,9 +570,15 @@ def replace_understat_shots(con: sqlite3.Connection, season: str, shots: pd.Data
             if name:
                 players[(normalise_name(name), row["team_id"])] = row["player_id"]
     metrics = {}
+    team_shots = {}
+    mapped_players = set()
+    unmapped_players = set()
     for raw in shots.to_dict("records"):
         team = str(raw.get("team") or "")
         team_id = teams.get(team)
+        player_name = str(raw.get("player") or "")
+        shooter = players.get((normalise_name(player_name), team_id))
+        (mapped_players if shooter else unmapped_players).add(f"{player_name} ({team})")
         fixture = fixtures.get((team_id, str(raw.get("match_date") or "")[:10]))
         if not fixture:
             continue
@@ -581,7 +587,11 @@ def replace_understat_shots(con: sqlite3.Connection, season: str, shots: pd.Data
         xg = float(raw.get("xG") or raw.get("xg") or 0)
         result = str(raw.get("result") or "")
         situation = str(raw.get("situation") or "")
-        shooter = players.get((normalise_name(str(raw.get("player") or "")), team_id))
+        defending_team_id = teams.get(str(raw.get("opponent") or ""))
+        if defending_team_id:
+            environment = team_shots.setdefault((defending_team_id, gameweek), [0, 0])
+            environment[0] += 1
+            environment[1] += int(result in {"Goal", "SavedShot"})
         if shooter:
             key = (shooter, gameweek, fixture_id, match_id)
             item = metrics.setdefault(key, {"shots": 0, "shots_in_box": 0, "shots_on_target": 0, "goals": 0, "xg": 0.0, "key_passes": 0, "xa": 0.0, "penalty_shots": 0, "penalty_xg": 0.0, "direct_free_kick_shots": 0})
@@ -613,8 +623,17 @@ def replace_understat_shots(con: sqlite3.Connection, season: str, shots: pd.Data
         """,
         rows,
     )
+    con.executemany(
+        "UPDATE team_underlying_gameweeks SET shots_conceded = ?, shots_on_target_conceded = ? WHERE season = ? AND team_id = ? AND gameweek = ?",
+        [(shots_total, shots_on_target, season, team_id, gameweek) for (team_id, gameweek), (shots_total, shots_on_target) in team_shots.items()],
+    )
     con.commit()
-    return len(rows)
+    return {
+        "rows": len(rows),
+        "mapped_players": len(mapped_players),
+        "unmapped_players": len(unmapped_players),
+        "unmapped_names": sorted(unmapped_players),
+    }
 
 
 def replace_team_underlying(con: sqlite3.Connection, season: str, metrics: pd.DataFrame, source: str, fetched_at: str) -> int:
@@ -622,28 +641,31 @@ def replace_team_underlying(con: sqlite3.Connection, season: str, metrics: pd.Da
     missing = required - set(metrics.columns)
     if missing:
         raise ValueError(f"missing columns: {', '.join(sorted(missing))}")
-    con.execute("DELETE FROM team_underlying_gameweeks WHERE season = ? AND source = ?", (season, source))
-    rows = []
+    con.execute("DELETE FROM team_underlying_gameweeks WHERE season = ?", (season,))
+    grouped = {}
     for row in metrics.itertuples(index=False):
         data = row._asdict()
-        rows.append(
-            (
-                season,
-                int(data["team_id"]),
-                int(data["gameweek"]),
-                None if "is_home" not in data or pd.isna(data.get("is_home")) else int(bool(data["is_home"])),
-                float(data.get("xg") or 0),
-                float(data.get("xga") or 0),
-                source,
-                fetched_at,
-                season,
-            )
-        )
+        key = (int(data["team_id"]), int(data["gameweek"]))
+        item = grouped.setdefault(key, {"is_home": set(), "xg": 0.0, "xga": 0.0, "shots_conceded": 0, "shots_on_target_conceded": 0, "shots_observed": True, "sot_observed": True})
+        if "is_home" in data and pd.notna(data.get("is_home")):
+            item["is_home"].add(int(bool(data["is_home"])))
+        item["xg"] += float(data.get("xg") or 0)
+        item["xga"] += float(data.get("xga") or 0)
+        for key_name, observed_name in (("shots_conceded", "shots_observed"), ("shots_on_target_conceded", "sot_observed")):
+            if key_name not in data or pd.isna(data.get(key_name)):
+                item[observed_name] = False
+            else:
+                item[key_name] += int(data[key_name])
+    rows = [
+        (season, team_id, gameweek, next(iter(data["is_home"])) if len(data["is_home"]) == 1 else None, data["xg"], data["xga"], data["shots_conceded"] if data["shots_observed"] else None, data["shots_on_target_conceded"] if data["sot_observed"] else None, source, fetched_at, season)
+        for (team_id, gameweek), data in grouped.items()
+    ]
     con.executemany(
         """
         INSERT OR REPLACE INTO team_underlying_gameweeks (
-          season, team_id, gameweek, is_home, xg, xga, source, fetched_at, data_period
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          season, team_id, gameweek, is_home, xg, xga, shots_conceded,
+          shots_on_target_conceded, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
     )

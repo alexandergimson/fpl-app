@@ -455,6 +455,42 @@ td small {
   margin: 0 0 14px;
 }
 
+.analysis-window {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin: 14px 0 10px;
+}
+
+.analysis-window button,
+.match-breakdown summary {
+  cursor: pointer;
+}
+
+.analysis-window button.active {
+  background: #0f766e;
+  color: white;
+}
+
+.analysis-window small {
+  margin-left: auto;
+}
+
+.analysis-comparison {
+  margin-bottom: 8px;
+}
+
+.match-breakdown {
+  border-top: 1px solid #dce4df;
+  margin-top: 18px;
+  padding-top: 12px;
+}
+
+.match-breakdown summary {
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
 .evidence-row > td {
   padding: 10px 0;
 }

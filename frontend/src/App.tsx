@@ -136,9 +136,10 @@ type ForwardLineage = {
   gameweeks: { gameweek: number; projected_points: number; fixtures: { opponent: string; home_away: string; expected_minutes: number; total_xpts: number }[] }[];
 };
 
-type AnalysisComparison = { key: string; label: string; raw: number; per_90: number | null; positional_average: number | null; percentile: number | null; price_average: number | null; price_band: number; cohort_size: number };
-type AnalysisGame = { gameweek: number; opponent: string | null; minutes: number; points: number; starts: number; goals: number; assists: number; bonus: number; bps: number; saves: number; clean_sheets: number; goals_conceded: number; xg: number | null; xa: number | null; xgi: number | null; shots: number | null; shots_in_box: number | null; shots_on_target: number | null; key_passes: number | null; penalty_shots: number | null; penalty_xg: number | null; direct_free_kick_shots: number | null; team_xg_conceded: number | null; performance_points: number | null; actual_minus_performance: number | null; cumulative_actual_ppg: number; cumulative_performance_ppg: number; benchmark_eligible: boolean; benchmark_minutes: number; headline_metric_keys: string[]; comparisons: AnalysisComparison[] };
-type PlayerAnalysis = { player: { player_id: number; web_name: string; team: string; position: string; current_price: number }; headline: { actual_ppg: number | null; par_ppg: number | null; performance_ppg: number | null; next_6_ppg: number | null; return_delta: number | null; performance_delta: number | null; forward_delta: number | null; process_gap: number | null; performance_data_state: string }; diagnosis: string; games: AnalysisGame[] };
+type AnalysisComparison = { key: string; label: string; raw: number; per_90: number | null; positional_average: number | null; percentile: number | null; price_average: number | null; price_band: number; cohort_size: number; rate_basis: "per90" | "per_shot" | "per_game" | "save_percentage" };
+type AnalysisGame = { gameweek: number; opponent: string | null; minutes: number; points: number; starts: number; goals: number; assists: number; bonus: number; bps: number; saves: number; clean_sheets: number; goals_conceded: number; xg: number | null; xa: number | null; xgi: number | null; shots: number | null; shots_in_box: number | null; shots_on_target: number | null; key_passes: number | null; penalty_shots: number | null; penalty_xg: number | null; direct_free_kick_shots: number | null; team_xg_conceded: number | null; performance_points: number | null; actual_minus_performance: number | null; cumulative_actual_ppg: number; cumulative_performance_ppg: number | null; benchmark_eligible: boolean; benchmark_minutes: number; headline_metric_keys: string[]; comparisons: AnalysisComparison[] };
+type AnalysisAggregate = { window: "last5" | "season"; available_windows: ("last5" | "season")[]; appearances: number; minutes: number; from_gameweek: number | null; to_gameweek: number | null; benchmark_eligible: boolean; benchmark_minutes: number; cohort_size: number; price_cohort_size: number; price_band: number; comparisons: AnalysisComparison[] };
+type PlayerAnalysis = { player: { player_id: number; web_name: string; team: string; position: string; current_price: number }; headline: { actual_ppg: number | null; par_ppg: number | null; performance_ppg: number | null; next_6_ppg: number | null; return_delta: number | null; performance_delta: number | null; forward_delta: number | null; process_gap: number | null; performance_data_state: string }; aggregate: AnalysisAggregate; diagnosis: string; games: AnalysisGame[] };
 
 type SortKey =
   | "player"
@@ -537,6 +538,14 @@ function loadData() {
     ]).then(([playerDetail, playerAnalysis]) => { setDetail(playerDetail); setAnalysis(playerAnalysis); }).catch(() => { setDetail(null); setAnalysis(null); });
   }
 
+  function selectAnalysisWindow(window: "last5" | "season") {
+    if (!analysis) return;
+    fetch(`${API}/players/${analysis.player.player_id}/analysis?season=${SEASON}&window=${window}`)
+      .then((response) => response.json())
+      .then(setAnalysis)
+      .catch(() => undefined);
+  }
+
   function refreshData() {
     setRefreshing(true);
     setRefreshMessage("");
@@ -716,33 +725,42 @@ function loadData() {
               <div><span>Performance PPG</span><strong>{metric(analysis.headline.performance_ppg)}</strong></div>
               <div><span>Next 6 PPG</span><strong>{metric(analysis.headline.next_6_ppg)}</strong></div>
             </div>
-            <p className="diagnosis"><strong>{analysis.diagnosis}</strong> · Return Δ {signedMetric(analysis.headline.return_delta)} · Performance Δ {signedMetric(analysis.headline.performance_delta)} · Forward Δ {signedMetric(analysis.headline.forward_delta)} · Process gap {signedMetric(analysis.headline.process_gap)}</p>
-            <table>
-              <thead><tr><th>GW</th><th>Opponent</th><th>Min</th><th>Pts</th><th>Perf Pts</th>{(analysis.games[0]?.headline_metric_keys ?? []).map((key) => <th key={key}>{analysis.games.flatMap((game) => game.comparisons).find((item) => item.key === key)?.label ?? key}</th>)}<th></th></tr></thead>
+            <div className="analysis-window" aria-label="Analysis window">
+              {analysis.aggregate.available_windows.includes("last5") && <button className={analysis.aggregate.window === "last5" ? "active" : ""} onClick={() => selectAnalysisWindow("last5")}>Last 5 matches</button>}
+              <button className={analysis.aggregate.window === "season" ? "active" : ""} onClick={() => selectAnalysisWindow("season")}>Season</button>
+              <small>{analysis.aggregate.appearances} appearances · {analysis.aggregate.minutes} minutes</small>
+            </div>
+            {!analysis.aggregate.benchmark_eligible && analysis.aggregate.minutes > 0 && <p className="note">Raw evidence only: {analysis.aggregate.benchmark_minutes} cumulative minutes are required for positional percentiles.</p>}
+            <table className="analysis-comparison">
+              <thead><tr><th>Metric</th><th>Player</th><th>Position avg</th><th>Percentile</th><th>Price avg</th></tr></thead>
               <tbody>
-                {analysis.games.map((game) => (
-                  <React.Fragment key={game.gameweek}>
-                    <tr>
-                      <td>{game.gameweek}</td><td>{game.opponent ?? "—"}</td><td>{game.minutes}</td><td>{game.points}</td><td>{metric(game.performance_points)}</td>
-                      {game.headline_metric_keys.map((key) => <td key={key}>{metric(game.comparisons.find((item) => item.key === key)?.raw)}</td>)}
-                      <td><button className="action" onClick={() => setExpandedGameweek(expandedGameweek === game.gameweek ? null : game.gameweek)}>{expandedGameweek === game.gameweek ? "Close" : "Evidence"}</button></td>
-                    </tr>
-                    {expandedGameweek === game.gameweek && <tr className="evidence-row"><td colSpan={6 + game.headline_metric_keys.length}>
-                      <div className="evidence-panel">
+                {analysis.aggregate.comparisons.map((item) => <tr key={item.key}><td>{item.label}{item.rate_basis === "per90" ? " / 90" : item.rate_basis === "per_shot" ? " / shot" : ""}</td><td><strong>{metric(item.raw)}</strong></td><td>{metric(item.positional_average)}</td><td>{item.percentile == null ? "—" : `${item.percentile}th`}</td><td>{metric(item.price_average)}</td></tr>)}
+                {analysis.aggregate.comparisons.length === 0 && <tr><td colSpan={5}>No aggregate evidence available</td></tr>}
+              </tbody>
+            </table>
+            <p className="note">Position cohort: {analysis.aggregate.cohort_size} eligible {analysis.player.position}s · Price cohort: {analysis.aggregate.price_cohort_size} within ±£{analysis.aggregate.price_band.toFixed(1)}m</p>
+            <p className="diagnosis"><strong>{analysis.diagnosis}</strong><br />Return Δ {signedMetric(analysis.headline.return_delta)} · Performance Δ {signedMetric(analysis.headline.performance_delta)} · Forward Δ {signedMetric(analysis.headline.forward_delta)} · Process gap {signedMetric(analysis.headline.process_gap)}</p>
+            <details className="match-breakdown">
+              <summary>Match breakdown ({analysis.games.length})</summary>
+              <table>
+                <thead><tr><th>GW</th><th>Opponent</th><th>Min</th><th>Pts</th><th>Perf Pts</th>{(analysis.games[0]?.headline_metric_keys ?? []).map((key) => <th key={key}>{analysis.games.flatMap((game) => game.comparisons).find((item) => item.key === key)?.label ?? key}</th>)}<th></th></tr></thead>
+                <tbody>
+                  {analysis.games.map((game) => (
+                    <React.Fragment key={game.gameweek}>
+                      <tr><td>{game.gameweek}</td><td>{game.opponent ?? "—"}</td><td>{game.minutes}</td><td>{game.points}</td><td>{metric(game.performance_points)}</td>{game.headline_metric_keys.map((key) => <td key={key}>{metric(game.comparisons.find((item) => item.key === key)?.raw)}</td>)}<td><button className="action" onClick={() => setExpandedGameweek(expandedGameweek === game.gameweek ? null : game.gameweek)}>{expandedGameweek === game.gameweek ? "Close" : "Evidence"}</button></td></tr>
+                      {expandedGameweek === game.gameweek && <tr className="evidence-row"><td colSpan={6 + game.headline_metric_keys.length}><div className="evidence-panel">
                         <h3>GW{game.gameweek} vs {game.opponent ?? "—"} — {game.minutes} mins</h3>
                         <p>Actual points: <strong>{game.points}</strong> · Performance points: <strong>{metric(game.performance_points)}</strong> · Difference: <strong className={valueTone(game.actual_minus_performance)}>{signedMetric(game.actual_minus_performance)}</strong></p>
                         {!game.benchmark_eligible && <p className="note">Raw evidence only: {game.benchmark_minutes} cumulative minutes are required for percentiles at this point.</p>}
-                        <table><thead><tr><th>Metric</th><th>Player</th><th>Per 90</th><th>Position avg</th><th>Percentile</th><th>Price avg</th></tr></thead>
-                          <tbody>{game.comparisons.map((item) => <tr key={item.key}><td>{item.label}</td><td>{metric(item.raw)}</td><td>{metric(item.per_90)}</td><td>{metric(item.positional_average)}</td><td>{item.percentile == null ? "—" : `${item.percentile}th`}</td><td>{metric(item.price_average)}{item.price_average != null && <small> ±£{item.price_band.toFixed(1)}m</small>}</td></tr>)}</tbody>
-                        </table>
+                        <table><thead><tr><th>Metric</th><th>Player</th><th>Rate</th><th>Position avg</th><th>Percentile</th><th>Price avg</th></tr></thead><tbody>{game.comparisons.map((item) => <tr key={item.key}><td>{item.label}</td><td>{metric(item.raw)}</td><td>{metric(item.rate_basis === "per90" ? item.per_90 : item.raw)}</td><td>{metric(item.positional_average)}</td><td>{item.percentile == null ? "—" : `${item.percentile}th`}</td><td>{metric(item.price_average)}</td></tr>)}</tbody></table>
                         <div className="evidence-outcomes"><span>Goals <strong>{game.goals}</strong></span><span>Assists <strong>{game.assists}</strong></span><span>Bonus <strong>{game.bonus}</strong></span><span>BPS <strong>{game.bps}</strong></span><span>xGI <strong>{metric(game.xgi)}</strong></span><span>Actual PPG <strong>{metric(game.cumulative_actual_ppg)}</strong></span><span>Performance PPG <strong>{metric(game.cumulative_performance_ppg)}</strong></span><span>Team xGC <strong>{metric(game.team_xg_conceded)}</strong></span></div>
-                      </div>
-                    </td></tr>}
-                  </React.Fragment>
-                ))}
-                {analysis.games.length === 0 && <tr><td colSpan={8}>No game evidence yet</td></tr>}
-              </tbody>
-            </table>
+                      </div></td></tr>}
+                    </React.Fragment>
+                  ))}
+                  {analysis.games.length === 0 && <tr><td colSpan={8}>No game evidence yet</td></tr>}
+                </tbody>
+              </table>
+            </details>
           </article>
         )}
 

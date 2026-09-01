@@ -168,6 +168,8 @@ CREATE TABLE IF NOT EXISTS team_underlying_gameweeks (
   is_home INTEGER,
   xg REAL NOT NULL DEFAULT 0,
   xga REAL NOT NULL DEFAULT 0,
+  shots_conceded INTEGER,
+  shots_on_target_conceded INTEGER,
   source TEXT NOT NULL,
   fetched_at TEXT NOT NULL,
   data_period TEXT NOT NULL,
@@ -583,6 +585,7 @@ def connect(path: Path | str = DB_PATH) -> sqlite3.Connection:
             "cbirt_observed": "INTEGER NOT NULL DEFAULT 0",
         },
     )
+    ensure_columns(con, "team_underlying_gameweeks", {"shots_conceded": "INTEGER", "shots_on_target_conceded": "INTEGER"})
     ensure_columns(con, "player_cumulative_observations", {"bps": "INTEGER NOT NULL DEFAULT 0"})
     ensure_columns(con, "game_underlying_xpts", {"deduction_process_ev": "REAL NOT NULL DEFAULT 0"})
     ensure_columns(con, "current_player_metrics", {"season_points": "REAL", "games": "INTEGER", "actual_ppg": "REAL"})
