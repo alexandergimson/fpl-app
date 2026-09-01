@@ -136,6 +136,10 @@ type ForwardLineage = {
   gameweeks: { gameweek: number; projected_points: number; fixtures: { opponent: string; home_away: string; expected_minutes: number; total_xpts: number }[] }[];
 };
 
+type AnalysisComparison = { key: string; label: string; raw: number; per_90: number | null; positional_average: number | null; percentile: number | null; price_average: number | null; price_band: number; cohort_size: number };
+type AnalysisGame = { gameweek: number; opponent: string | null; minutes: number; points: number; starts: number; goals: number; assists: number; bonus: number; bps: number; saves: number; clean_sheets: number; goals_conceded: number; xg: number | null; xa: number | null; xgi: number | null; shots: number | null; shots_in_box: number | null; shots_on_target: number | null; key_passes: number | null; penalty_shots: number | null; penalty_xg: number | null; direct_free_kick_shots: number | null; team_xg_conceded: number | null; performance_points: number | null; actual_minus_performance: number | null; cumulative_actual_ppg: number; cumulative_performance_ppg: number; benchmark_eligible: boolean; benchmark_minutes: number; headline_metric_keys: string[]; comparisons: AnalysisComparison[] };
+type PlayerAnalysis = { player: { player_id: number; web_name: string; team: string; position: string; current_price: number }; headline: { actual_ppg: number | null; par_ppg: number | null; performance_ppg: number | null; next_6_ppg: number | null; return_delta: number | null; performance_delta: number | null; forward_delta: number | null; process_gap: number | null; performance_data_state: string }; diagnosis: string; games: AnalysisGame[] };
+
 type SortKey =
   | "player"
   | "position"
@@ -379,6 +383,8 @@ export function App() {
   const [playersLoading, setPlayersLoading] = useState(false);
   const [squad, setSquad] = useState<BoardRow[]>([]);
   const [detail, setDetail] = useState<PlayerDetail | null>(null);
+  const [analysis, setAnalysis] = useState<PlayerAnalysis | null>(null);
+  const [expandedGameweek, setExpandedGameweek] = useState<number | null>(null);
   const [teamId, setTeamId] = useState("");
   const [manager, setManager] = useState<ManagerContext | null>(null);
   const [teamMessage, setTeamMessage] = useState("");
@@ -524,7 +530,11 @@ function loadData() {
   }
 
   function selectPlayer(row: BoardRow) {
-    fetch(`${API}/players/${row.player_id}?season=${SEASON}`).then((response) => response.json()).then(setDetail).catch(() => setDetail(null));
+    setExpandedGameweek(null);
+    Promise.all([
+      fetch(`${API}/players/${row.player_id}?season=${SEASON}`).then((response) => response.json()),
+      fetch(`${API}/players/${row.player_id}/analysis?season=${SEASON}`).then((response) => response.json()),
+    ]).then(([playerDetail, playerAnalysis]) => { setDetail(playerDetail); setAnalysis(playerAnalysis); }).catch(() => { setDetail(null); setAnalysis(null); });
   }
 
   function refreshData() {
@@ -697,27 +707,40 @@ function loadData() {
           </table>
         </article>
 
-        {detail?.current && (
+        {detail?.current && analysis?.headline && (
           <article className="wide">
             <h2>{detail.player.name} · {detail.player.team ?? "—"} · {detail.player.position} · £{detail.player.current_price.toFixed(1)}m</h2>
-            <p className="note">Season total: {metric(detail.current.season_points, 0)} pts · {detail.current.games ?? "—"} elapsed GWs · {metric(detail.current.actual_ppg)} PPG</p>
+            <div className="analysis-summary">
+              <div><span>Actual PPG</span><strong>{metric(analysis.headline.actual_ppg)}</strong></div>
+              <div><span>Par PPG</span><strong>{metric(analysis.headline.par_ppg)}</strong></div>
+              <div><span>Performance PPG</span><strong>{metric(analysis.headline.performance_ppg)}</strong></div>
+              <div><span>Next 6 PPG</span><strong>{metric(analysis.headline.next_6_ppg)}</strong></div>
+            </div>
+            <p className="diagnosis"><strong>{analysis.diagnosis}</strong> · Return Δ {signedMetric(analysis.headline.return_delta)} · Performance Δ {signedMetric(analysis.headline.performance_delta)} · Forward Δ {signedMetric(analysis.headline.forward_delta)} · Process gap {signedMetric(analysis.headline.process_gap)}</p>
             <table>
-              <thead><tr><th>GW</th><th>Opponent</th><th>Points</th><th>Project Score</th><th>Performance</th><th>xG</th><th>xA</th><th>Minutes</th><th>Price</th></tr></thead>
+              <thead><tr><th>GW</th><th>Opponent</th><th>Min</th><th>Pts</th><th>Perf Pts</th>{(analysis.games[0]?.headline_metric_keys ?? []).map((key) => <th key={key}>{analysis.games.flatMap((game) => game.comparisons).find((item) => item.key === key)?.label ?? key}</th>)}<th></th></tr></thead>
               <tbody>
-                {detail.gameweeks.map((row) => (
-                  <tr key={row.gameweek}>
-                    <td>{row.gameweek}</td>
-                    <td>{row.opponent ?? "—"}</td>
-                    <td>{row.points ?? "—"}</td>
-                    <td>{metric(row.project_score)}</td>
-                    <td className={valueTone(row.performance)}>{signedMetric(row.performance)}</td>
-                    <td>{metric(row.xg)}</td>
-                    <td>{metric(row.xa)}</td>
-                    <td>{row.minutes ?? "—"}</td>
-                    <td>{row.price == null ? "—" : `£${row.price.toFixed(1)}`}</td>
-                  </tr>
+                {analysis.games.map((game) => (
+                  <React.Fragment key={game.gameweek}>
+                    <tr>
+                      <td>{game.gameweek}</td><td>{game.opponent ?? "—"}</td><td>{game.minutes}</td><td>{game.points}</td><td>{metric(game.performance_points)}</td>
+                      {game.headline_metric_keys.map((key) => <td key={key}>{metric(game.comparisons.find((item) => item.key === key)?.raw)}</td>)}
+                      <td><button className="action" onClick={() => setExpandedGameweek(expandedGameweek === game.gameweek ? null : game.gameweek)}>{expandedGameweek === game.gameweek ? "Close" : "Evidence"}</button></td>
+                    </tr>
+                    {expandedGameweek === game.gameweek && <tr className="evidence-row"><td colSpan={6 + game.headline_metric_keys.length}>
+                      <div className="evidence-panel">
+                        <h3>GW{game.gameweek} vs {game.opponent ?? "—"} — {game.minutes} mins</h3>
+                        <p>Actual points: <strong>{game.points}</strong> · Performance points: <strong>{metric(game.performance_points)}</strong> · Difference: <strong className={valueTone(game.actual_minus_performance)}>{signedMetric(game.actual_minus_performance)}</strong></p>
+                        {!game.benchmark_eligible && <p className="note">Raw evidence only: {game.benchmark_minutes} cumulative minutes are required for percentiles at this point.</p>}
+                        <table><thead><tr><th>Metric</th><th>Player</th><th>Per 90</th><th>Position avg</th><th>Percentile</th><th>Price avg</th></tr></thead>
+                          <tbody>{game.comparisons.map((item) => <tr key={item.key}><td>{item.label}</td><td>{metric(item.raw)}</td><td>{metric(item.per_90)}</td><td>{metric(item.positional_average)}</td><td>{item.percentile == null ? "—" : `${item.percentile}th`}</td><td>{metric(item.price_average)}{item.price_average != null && <small> ±£{item.price_band.toFixed(1)}m</small>}</td></tr>)}</tbody>
+                        </table>
+                        <div className="evidence-outcomes"><span>Goals <strong>{game.goals}</strong></span><span>Assists <strong>{game.assists}</strong></span><span>Bonus <strong>{game.bonus}</strong></span><span>BPS <strong>{game.bps}</strong></span><span>xGI <strong>{metric(game.xgi)}</strong></span><span>Actual PPG <strong>{metric(game.cumulative_actual_ppg)}</strong></span><span>Performance PPG <strong>{metric(game.cumulative_performance_ppg)}</strong></span><span>Team xGC <strong>{metric(game.team_xg_conceded)}</strong></span></div>
+                      </div>
+                    </td></tr>}
+                  </React.Fragment>
                 ))}
-                {detail.gameweeks.length === 0 && <tr><td colSpan={9}>No gameweek history yet</td></tr>}
+                {analysis.games.length === 0 && <tr><td colSpan={8}>No game evidence yet</td></tr>}
               </tbody>
             </table>
           </article>

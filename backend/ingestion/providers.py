@@ -26,6 +26,7 @@ FPL_ENTRY_TRANSFERS = "https://fantasy.premierleague.com/api/entry/{team_id}/tra
 FPL_MY_TEAM = "https://fantasy.premierleague.com/api/my-team/{team_id}/"
 UNDERSTAT_LEAGUE_DATA = "https://understat.com/getLeagueData/{league}/{year}"
 UNDERSTAT_MATCH = "https://understat.com/match/{match_id}"
+UNDERSTAT_MATCH_DATA = "https://understat.com/getMatchData/{match_id}"
 
 
 @dataclass(frozen=True)
@@ -191,16 +192,26 @@ class UnderstatProvider:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         cached = self.cache_dir / f"understat-match-{match_id}.json"
         if cached.exists():
-            return json.loads(cached.read_text()), str(cached), datetime.fromtimestamp(cached.stat().st_mtime, timezone.utc).isoformat()
-        request = Request(UNDERSTAT_MATCH.format(match_id=match_id), headers={"User-Agent": "Mozilla/5.0"})
+            payload = json.loads(cached.read_text())
+            return payload.get("shots", payload), str(cached), datetime.fromtimestamp(cached.stat().st_mtime, timezone.utc).isoformat()
+        url = UNDERSTAT_MATCH_DATA.format(match_id=match_id)
+        request = Request(
+            url,
+            headers={
+                "Accept": "application/json",
+                "Accept-Encoding": "gzip",
+                "Referer": UNDERSTAT_MATCH.format(match_id=match_id),
+                "User-Agent": "Mozilla/5.0",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+        )
         with urlopen(request, timeout=60) as response:
-            page = response.read().decode("utf-8")
-        match = re.search(r"var shotsData\s*=\s*JSON.parse\('(.+?)'\)", page)
-        if not match:
-            raise ValueError(f"shotsData not found for Understat match {match_id}")
-        payload = json.loads(match.group(1).encode("utf-8").decode("unicode_escape"))
+            raw = response.read()
+            if response.headers.get("Content-Encoding") == "gzip":
+                raw = gzip.decompress(raw)
+        payload = json.loads(raw.decode("utf-8"))
         cached.write_text(json.dumps(payload))
-        return payload, UNDERSTAT_MATCH.format(match_id=match_id), datetime.now(timezone.utc).isoformat()
+        return payload.get("shots", payload), url, datetime.now(timezone.utc).isoformat()
 
     def shots(self, season: str) -> Dataset:
         payload, source, fetched_at = self._json(season)
@@ -220,6 +231,7 @@ class UnderstatProvider:
                             "team": UNDERSTAT_TEAM_ALIASES.get(team, team),
                             "opponent": UNDERSTAT_TEAM_ALIASES.get(opponent, opponent),
                             "match": match_id,
+                            "match_date": str(match.get("datetime") or "")[:10],
                             "minute": int(shot.get("minute") or 0),
                             "xG": float(shot.get("xG") or 0),
                             "X": float(shot.get("X") or 0),

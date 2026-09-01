@@ -11,6 +11,7 @@ from backend.data.db import connect
 from backend.jobs.refresh import refresh_all
 from backend.ingestion.providers import OfficialFplProvider
 from backend.services.alerts import acknowledge_alert, generate_tracked_alerts, list_alerts
+from backend.services.analysis import player_analysis
 from backend.services.boards import breakout_board, buy_board, paginated_players, player_forward_lineage, player_performance_lineage, trap_board
 from backend.services.canonical_context import manager_context
 from backend.services.minutes import add_minutes_override, override_history
@@ -88,6 +89,11 @@ if FastAPI:
     def get_player_performance_lineage(player_id: int, season: str = "2026-27", par_season: str = "2026-27"):
         with connect() as con:
             return player_performance_lineage(con, season, player_id, par_season)
+
+    @app.get("/players/{player_id}/analysis")
+    def get_player_analysis(player_id: int, season: str = "2026-27"):
+        with connect() as con:
+            return player_analysis(con, season, player_id) or {}
 
     @app.get("/players/{player_id}/forward-lineage")
     def get_player_forward_lineage(player_id: int, season: str = "2026-27", par_season: str = "2026-27"):

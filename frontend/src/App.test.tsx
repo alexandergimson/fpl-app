@@ -84,12 +84,14 @@ function json(data: unknown, status = 200) {
 let squadResponse: unknown[] = [];
 let settingsResponse: unknown = {};
 let detailResponse: unknown = {};
+let analysisResponse: unknown = {};
 let refreshResponse: unknown = {};
 
 beforeEach(() => {
   squadResponse = [];
   settingsResponse = { fpl_team_id: null, manager: { bank: null, free_transfers: null, chips_remaining: null, deadline: null, context_type: "public" } };
   detailResponse = { player: { id: 1, name: "Zero", team: "TST", position: "MID", current_price: 6 }, current: players[0], projection_breakdown: { fixture_xpts: 3 }, gameweeks: [], recent_gameweeks: [], gameweek_history: [], prediction_history: [], minutes_history: [], role_history: [] };
+  analysisResponse = { player: { player_id: 1, web_name: "Zero", team: "TST", position: "MID", current_price: 6 }, headline: { actual_ppg: 3, par_ppg: 3, performance_ppg: 3.4, next_6_ppg: 3.5, return_delta: 0, performance_delta: 0.4, forward_delta: 0.5, process_gap: 0.4, performance_data_state: "sufficient" }, diagnosis: "Returns supported by process", games: [] };
   refreshResponse = { status: "SUCCESS", gameweek: 3, players: 640, fixtures: 380, observations: 640, team_underlying: 40, materialized: 640, snapshots: 15, alerts: 2 };
   globalThis.ResizeObserver = class {
     observe() {}
@@ -117,6 +119,7 @@ beforeEach(() => {
     if (url.includes("/refresh")) return json(refreshResponse) as Promise<Response>;
     if (url.includes("/players/1/performance-lineage")) return json({ player_id: 1, performance_delta: 0, underlying_xppg: 3, value_par: 3, state: "sufficient", confidence: "LOW", sample_gameweeks: 1, sample_minutes: 90, prior: { source: "historical_position_price", confidence: "LOW" }, components: { appearance: 2, goal: 0, assist: 0, clean_sheet: 0, defcon: 0, bonus: 0, saves: 0, deductions: 0 }, available_observations: ["official FPL player process"], missing_required_observations: [], forward_available: true, note: "Based on underlying performance, not actual FPL points." }) as Promise<Response>;
     if (url.includes("/players/1/forward-lineage")) return json({ player_id: 1, forward_delta: 0.5, next_6_xppg: 3.5, value_par: 3, gameweeks: [{ gameweek: 2, projected_points: 3.5, fixtures: [{ opponent: "ARS", home_away: "H", expected_minutes: 90, total_xpts: 3.5 }] }] }) as Promise<Response>;
+    if (url.includes("/players/1/analysis")) return json(analysisResponse) as Promise<Response>;
     if (url.includes("/squad")) return json(squadResponse) as Promise<Response>;
     if (url.includes("/alerts")) return json([]) as Promise<Response>;
     if (url.includes("/price-movements")) return json([]) as Promise<Response>;
@@ -197,8 +200,8 @@ test("sorts, filters, and opens detail with analyse", async () => {
   expect(within(playersTable).getByText("Performance PPG")).toBeInTheDocument();
   expect(within(playersTable).getByText("Next 6 PPG")).toBeInTheDocument();
   expect(await screen.findByText("Zero · TST · MID · £6.0m")).toBeInTheDocument();
-  expect(screen.getByText("Season total: 6 pts · 2 elapsed GWs · 3.00 PPG")).toBeInTheDocument();
-  expect(screen.getByText("Project Score")).toBeInTheDocument();
+  expect(screen.getByText("Returns supported by process")).toBeInTheDocument();
+  expect(screen.getByText("Perf Pts")).toBeInTheDocument();
 });
 
 test("renders simplified gameweek history in detail", async () => {
@@ -216,12 +219,14 @@ test("renders simplified gameweek history in detail", async () => {
     minutes_history: [],
     role_history: [],
   };
+  analysisResponse = { player: { player_id: 1, web_name: "Zero", team: "TST", position: "MID", current_price: 6 }, headline: { actual_ppg: 3, par_ppg: 3, performance_ppg: 3.4, next_6_ppg: 3.5, return_delta: 0, performance_delta: 0.4, forward_delta: 0.5, process_gap: 0.4, performance_data_state: "sufficient" }, diagnosis: "Returns supported by process", games: [{ gameweek: 1, opponent: "ARS (H)", minutes: 90, points: 6, starts: 1, goals: 1, assists: 0, bonus: 2, bps: 30, saves: 0, clean_sheets: 0, goals_conceded: 0, xg: 0.42, xa: 0.11, xgi: 0.53, shots: 3, shots_in_box: 2, shots_on_target: 1, key_passes: 1, penalty_shots: 0, penalty_xg: 0, direct_free_kick_shots: 0, team_xg_conceded: 1.2, performance_points: 5.2, actual_minus_performance: 0.8, cumulative_actual_ppg: 6, cumulative_performance_ppg: 5.2, benchmark_eligible: true, benchmark_minutes: 45, headline_metric_keys: ["xg", "xa", "shots"], comparisons: [{ key: "xg", label: "xG", raw: 0.42, per_90: 0.42, positional_average: 0.2, percentile: 80, price_average: 0.3, price_band: 0.5, cohort_size: 10 }, { key: "xa", label: "xA", raw: 0.11, per_90: 0.11, positional_average: 0.1, percentile: 60, price_average: 0.1, price_band: 0.5, cohort_size: 10 }, { key: "shots", label: "Shots", raw: 3, per_90: 3, positional_average: 2, percentile: 75, price_average: 2.2, price_band: 0.5, cohort_size: 10 }] }] };
   render(<App />);
   await screen.findByText("Zero");
   fireEvent.click(within(playersArticle()).getByRole("button", { name: "Zero" }));
-  const historyRow = await screen.findByRole("row", { name: /1 ARS \(H\) 6 5.20 \+0.80 0.42 0.11 90 £6.0/ });
+  const historyRow = (await screen.findByRole("button", { name: "Evidence" })).closest("tr")!;
   expect(historyRow).toHaveTextContent("ARS (H)");
-  expect(within(historyRow).getByText("+0.80")).toHaveClass("positive");
+  fireEvent.click(within(historyRow).getByRole("button", { name: "Evidence" }));
+  expect(await screen.findByText("80th")).toBeInTheDocument();
 });
 
 test("loads the saved public team id without restoring removed overview styling", async () => {
@@ -249,7 +254,7 @@ test("renders unavailable canonical metrics as dashes", async () => {
   render(<App />);
   await screen.findByText("Zero");
   fireEvent.click(within(playersArticle()).getByRole("button", { name: "Zero" }));
-  expect(await screen.findByText("Blank")).toBeInTheDocument();
+  expect(await screen.findByText("No game evidence yet")).toBeInTheDocument();
   expect(screen.getAllByText("—").length).toBeGreaterThan(1);
 });
 

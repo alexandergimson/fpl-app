@@ -7,6 +7,7 @@ import unicodedata
 
 import pandas as pd
 
+from backend.ingestion.config import understat_shot_in_box
 from backend.models.config import POSITIONS
 from backend.models.price_par import ParPoint
 from backend.services.underlying import rebuild_game_underlying_xpts
@@ -543,6 +544,77 @@ def upsert_fpl_bootstrap_gameweek_observations(con: sqlite3.Connection, season: 
     con.commit()
     rebuild_game_underlying_xpts(con, season, source)
     return len(gameweeks)
+
+
+def replace_understat_shots(con: sqlite3.Connection, season: str, shots: pd.DataFrame, source: str, fetched_at: str) -> int:
+    con.execute("DELETE FROM player_shot_gameweeks WHERE season = ?", (season,))
+    if shots.empty:
+        con.commit()
+        return 0
+    teams = {row["name"]: row["team_id"] for row in con.execute("SELECT team_id, name FROM teams WHERE season = ?", (season,))}
+    fixtures = {
+        (row["team_id"], row["date"]): (row["gameweek"], row["fixture_id"])
+        for row in con.execute(
+            """
+            SELECT team_h AS team_id, SUBSTR(kickoff_time, 1, 10) AS date, gameweek, fixture_id FROM fixtures WHERE season = ?
+            UNION ALL
+            SELECT team_a, SUBSTR(kickoff_time, 1, 10), gameweek, fixture_id FROM fixtures WHERE season = ?
+            """,
+            (season, season),
+        )
+        if row["gameweek"] is not None
+    }
+    players = {}
+    for row in con.execute("SELECT player_id, web_name, first_name, second_name, team_id FROM players WHERE season = ?", (season,)):
+        for name in (row["web_name"], f"{row['first_name'] or ''} {row['second_name'] or ''}".strip()):
+            if name:
+                players[(normalise_name(name), row["team_id"])] = row["player_id"]
+    metrics = {}
+    for raw in shots.to_dict("records"):
+        team = str(raw.get("team") or "")
+        team_id = teams.get(team)
+        fixture = fixtures.get((team_id, str(raw.get("match_date") or "")[:10]))
+        if not fixture:
+            continue
+        gameweek, fixture_id = fixture
+        match_id = str(raw.get("match") or "")
+        xg = float(raw.get("xG") or raw.get("xg") or 0)
+        result = str(raw.get("result") or "")
+        situation = str(raw.get("situation") or "")
+        shooter = players.get((normalise_name(str(raw.get("player") or "")), team_id))
+        if shooter:
+            key = (shooter, gameweek, fixture_id, match_id)
+            item = metrics.setdefault(key, {"shots": 0, "shots_in_box": 0, "shots_on_target": 0, "goals": 0, "xg": 0.0, "key_passes": 0, "xa": 0.0, "penalty_shots": 0, "penalty_xg": 0.0, "direct_free_kick_shots": 0})
+            item["shots"] += 1
+            item["shots_in_box"] += int(understat_shot_in_box(float(raw.get("X") or 0), float(raw.get("Y") or 0)))
+            item["shots_on_target"] += int(result in {"Goal", "SavedShot"})
+            item["goals"] += int(result == "Goal")
+            item["xg"] += xg
+            item["penalty_shots"] += int(situation == "Penalty")
+            item["penalty_xg"] += xg if situation == "Penalty" else 0
+            item["direct_free_kick_shots"] += int(situation == "DirectFreekick")
+        assister = players.get((normalise_name(str(raw.get("player_assisted") or "")), team_id))
+        if assister:
+            key = (assister, gameweek, fixture_id, match_id)
+            item = metrics.setdefault(key, {"shots": 0, "shots_in_box": 0, "shots_on_target": 0, "goals": 0, "xg": 0.0, "key_passes": 0, "xa": 0.0, "penalty_shots": 0, "penalty_xg": 0.0, "direct_free_kick_shots": 0})
+            item["key_passes"] += 1
+            item["xa"] += xg
+    rows = [
+        (season, player_id, gameweek, fixture_id, match_id, data["shots"], data["shots_in_box"], data["shots_on_target"], data["goals"], round(data["xg"], 4), data["key_passes"], round(data["xa"], 4), data["penalty_shots"], round(data["penalty_xg"], 4), data["direct_free_kick_shots"], source, fetched_at, season)
+        for (player_id, gameweek, fixture_id, match_id), data in metrics.items()
+    ]
+    con.executemany(
+        """
+        INSERT INTO player_shot_gameweeks (
+          season, player_id, gameweek, fixture_id, provider_match_id, shots, shots_in_box,
+          shots_on_target, goals, xg, key_passes, xa, penalty_shots, penalty_xg,
+          direct_free_kick_shots, source, fetched_at, data_period
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    con.commit()
+    return len(rows)
 
 
 def replace_team_underlying(con: sqlite3.Connection, season: str, metrics: pd.DataFrame, source: str, fetched_at: str) -> int:

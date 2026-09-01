@@ -538,6 +538,28 @@ CREATE TABLE IF NOT EXISTS understat_player_gameweek_observations (
   data_period TEXT NOT NULL,
   PRIMARY KEY (provider, season, external_player_id, gameweek)
 );
+
+CREATE TABLE IF NOT EXISTS player_shot_gameweeks (
+  season TEXT NOT NULL,
+  player_id INTEGER NOT NULL,
+  gameweek INTEGER NOT NULL,
+  fixture_id INTEGER,
+  provider_match_id TEXT NOT NULL,
+  shots INTEGER NOT NULL DEFAULT 0,
+  shots_in_box INTEGER NOT NULL DEFAULT 0,
+  shots_on_target INTEGER NOT NULL DEFAULT 0,
+  goals INTEGER NOT NULL DEFAULT 0,
+  xg REAL NOT NULL DEFAULT 0,
+  key_passes INTEGER NOT NULL DEFAULT 0,
+  xa REAL NOT NULL DEFAULT 0,
+  penalty_shots INTEGER NOT NULL DEFAULT 0,
+  penalty_xg REAL NOT NULL DEFAULT 0,
+  direct_free_kick_shots INTEGER NOT NULL DEFAULT 0,
+  source TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  data_period TEXT NOT NULL,
+  PRIMARY KEY (season, player_id, provider_match_id)
+);
 """
 
 

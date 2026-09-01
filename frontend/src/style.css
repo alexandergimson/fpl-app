@@ -426,6 +426,50 @@ td small {
   font-size: 14px;
 }
 
+.analysis-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.analysis-summary div,
+.evidence-panel {
+  background: #f6f8f7;
+  border: 1px solid #dce4df;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.analysis-summary span,
+.analysis-summary strong {
+  display: block;
+}
+
+.analysis-summary strong {
+  font-size: 22px;
+  margin-top: 4px;
+}
+
+.diagnosis {
+  margin: 0 0 14px;
+}
+
+.evidence-row > td {
+  padding: 10px 0;
+}
+
+.evidence-panel table {
+  margin-top: 10px;
+}
+
+.evidence-outcomes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 12px;
+}
+
 @media (max-width: 860px) {
   main {
     padding: 14px;
@@ -434,6 +478,10 @@ td small {
   th,
   td {
     padding: 7px 6px;
+  }
+
+  .analysis-summary {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
 
   #players th:nth-child(2),
